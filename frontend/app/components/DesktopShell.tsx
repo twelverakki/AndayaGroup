@@ -48,7 +48,8 @@ import {
   History,
   Calculator,
   Layers,
-  Shield
+  Shield,
+  Send
 } from "lucide-react";
 import TransactionHistoryDrawer from "./TransactionHistoryDrawer";
 
@@ -641,20 +642,37 @@ export default function DesktopShell() {
 
                 {/* Bakso Kang Gemoy (fnb_production) */}
                 {activeContext?.type === "fnb_production" && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveMenu("bakso")}
-                    className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer ${
-                      activeMenu === "bakso"
-                        ? "bg-[#E2FF66] text-[#2B2B2B] shadow-md font-bold"
-                        : isDark
-                          ? "bg-white/5 text-[#94A3B8] hover:bg-white/10 hover:text-white"
-                          : "bg-white/40 text-[#2B2B2B] hover:bg-white/60 hover:shadow-md"
-                    }`}
-                  >
-                    <Layers className="w-4 h-4 shrink-0" />
-                    <span>Bakso Kang Gemoy</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMenu("produksi")}
+                      className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                        activeMenu === "produksi"
+                          ? "bg-[#E2FF66] text-[#2B2B2B] shadow-md font-bold"
+                          : isDark
+                            ? "bg-white/5 text-[#94A3B8] hover:bg-white/10 hover:text-white"
+                            : "bg-white/40 text-[#2B2B2B] hover:bg-white/60 hover:shadow-md"
+                      }`}
+                    >
+                      <Layers className="w-4 h-4 shrink-0 text-amber-500" />
+                      <span>Produksi F&B</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveMenu("distribusi")}
+                      className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                        activeMenu === "distribusi"
+                          ? "bg-[#E2FF66] text-[#2B2B2B] shadow-md font-bold"
+                          : isDark
+                            ? "bg-white/5 text-[#94A3B8] hover:bg-white/10 hover:text-white"
+                            : "bg-white/40 text-[#2B2B2B] hover:bg-white/60 hover:shadow-md"
+                      }`}
+                    >
+                      <Send className="w-4 h-4 shrink-0 text-blue-500" />
+                      <span>Distribusi F&B</span>
+                    </button>
+                  </>
                 )}
 
                 {/* Superadmin Control Center */}
@@ -992,8 +1010,10 @@ export default function DesktopShell() {
               <InventoryModule view="edit" product={editingProduct} onSuccess={() => setActiveMenu("inventory-master")} onCancel={() => setActiveMenu("inventory-master")} />
             ) : activeMenu === "opname" ? (
               <OpnameModule />
-            ) : activeMenu === "bakso" ? (
-              <BaksoModule />
+            ) : activeMenu === "produksi" ? (
+              <BaksoModule mode="production" />
+            ) : activeMenu === "distribusi" ? (
+              <BaksoModule mode="distribution" />
             ) : activeMenu === "superadmin" ? (
               <SuperadminModule />
             ) : activeMenu === "procurement" || activeMenu === "procurement-history" ? (

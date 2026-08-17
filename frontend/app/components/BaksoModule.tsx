@@ -67,27 +67,39 @@ interface StaffMember {
   status: string;
 }
 
-export default function BaksoModule() {
+interface BaksoModuleProps {
+  mode?: "production" | "distribution";
+}
+
+export default function BaksoModule({ mode }: BaksoModuleProps) {
   const { activeContext } = useAuthStore();
   const { language } = useLanguageStore();
   const isOwnerOrAdmin = activeContext?.role === "owner" || activeContext?.role === "admin_gudang";
   
-  // Tabs configuration based on roles
-  const tabs = isOwnerOrAdmin 
+  // Tabs configuration based on roles and mode
+  const rawTabs = isOwnerOrAdmin 
     ? [
-        { id: "produksi", label: "Produksi Mandiri", icon: Sparkles },
-        { id: "distribusi", label: "Kirim Distribusi", icon: Send },
-        { id: "alerts", label: "Stok Menipis", icon: AlertTriangle }
+        { id: "produksi", label: "Produksi Mandiri", icon: Sparkles, category: "production" },
+        { id: "distribusi", label: "Kirim Distribusi", icon: Send, category: "distribution" },
+        { id: "alerts", label: "Stok Menipis", icon: AlertTriangle, category: "distribution" }
       ]
     : [
-        { id: "thaw", label: "Buka Pack (Thaw)", icon: Flame },
-        { id: "penerimaan", label: "Terima Stok", icon: CheckCircle },
-        { id: "qc", label: "Quality Check", icon: ClipboardCheck },
-        { id: "closing", label: "Closing Harian", icon: LogOut },
-        { id: "batches", label: "Stok Anda", icon: Layers }
+        { id: "thaw", label: "Buka Pack (Thaw)", icon: Flame, category: "production" },
+        { id: "penerimaan", label: "Terima Stok", icon: CheckCircle, category: "distribution" },
+        { id: "qc", label: "Quality Check", icon: ClipboardCheck, category: "production" },
+        { id: "closing", label: "Closing Harian", icon: LogOut, category: "distribution" },
+        { id: "batches", label: "Stok Anda", icon: Layers, category: "distribution" }
       ];
 
-  const [activeTab, setActiveTab] = useState(tabs[0].id);
+  const tabs = mode ? rawTabs.filter(t => t.category === mode) : rawTabs;
+
+  const [activeTab, setActiveTab] = useState(tabs[0]?.id || "");
+
+  useEffect(() => {
+    if (tabs.length > 0) {
+      setActiveTab(tabs[0].id);
+    }
+  }, [mode, activeContext]);
 
   // Data lists
   const [products, setProducts] = useState<Product[]>([]);

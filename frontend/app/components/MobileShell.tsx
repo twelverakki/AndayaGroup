@@ -89,7 +89,8 @@ export default function MobileShell({ children }: MobileShellProps) {
   } else if (activeContext?.type === "fnb_production") {
     navItems.push(
       { id: "pos", label: "POS", icon: "🛒" },
-      { id: "bakso", label: "Bakso", icon: "🍢" }
+      { id: "produksi", label: "Produksi", icon: "🍳" },
+      { id: "distribusi", label: "Distribusi", icon: "🚚" }
     );
   } else {
     navItems.push(
@@ -174,8 +175,10 @@ export default function MobileShell({ children }: MobileShellProps) {
           <InventoryModule />
         ) : activeMenu === "procurement" ? (
           <ProcurementModule />
-        ) : activeMenu === "bakso" ? (
-          <BaksoModule />
+        ) : activeMenu === "produksi" ? (
+          <BaksoModule mode="production" />
+        ) : activeMenu === "distribusi" ? (
+          <BaksoModule mode="distribution" />
         ) : activeMenu === "superadmin" ? (
           <SuperadminModule />
         ) : activeMenu === "dashboard" ? (

@@ -15,15 +15,15 @@ INSERT INTO products (
 ) VALUES
 ('d0eebc99-9c0b-4ef8-bb6d-6bb9bd380e31', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12',
  'BK-ORIGINAL', 'Bakso Original', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380d22',
- 'pack', 'batch_thaw', 20000, 30000, 50, 5, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+ 'pack', 'batch_thaw', 20000, 1500, 50, 5, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 
 ('d0eebc99-9c0b-4ef8-bb6d-6bb9bd380e32', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12',
  'BK-KEJU', 'Bakso Keju', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380d22',
- 'pack', 'batch_thaw', 25000, 35000, 40, 5, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+ 'pack', 'batch_thaw', 25000, 1750, 40, 5, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 
 ('d0eebc99-9c0b-4ef8-bb6d-6bb9bd380e33', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12',
  'BK-MERCON', 'Bakso Mercon', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380d22',
- 'pack', 'batch_thaw', 25000, 35000, 35, 5, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ 'pack', 'batch_thaw', 25000, 1750, 35, 5, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
 
 -- 3. Insert Conversions (1 Pack = 20 Pcs)

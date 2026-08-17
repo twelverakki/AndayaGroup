@@ -185,7 +185,27 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   const fetchProducts = async () => {
     try {
       const res = await api.get("/products?status=active");
-      setProducts(res.data || []);
+      let productsList = res.data || [];
+
+      if (activeContext?.type === "fnb_production") {
+        try {
+          const batchesRes = await api.get("/bakso/batches");
+          const batches = batchesRes.data || [];
+          productsList = productsList.map((p: any) => {
+            if (p.inventory_mode === "batch_thaw") {
+              const openedQty = batches
+                .filter((b: any) => b.product_id === p.id && b.batch_status === "opened")
+                .reduce((sum: number, b: any) => sum + b.quantity, 0);
+              return { ...p, current_stock: openedQty };
+            }
+            return p;
+          });
+        } catch (err) {
+          console.error("Failed to load stock batches for POS:", err);
+        }
+      }
+
+      setProducts(productsList);
     } catch (err) {
       console.error("Failed to load products:", err);
     }
@@ -893,9 +913,9 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                           <h4 className="font-bold text-xs leading-tight line-clamp-2 mb-1 dark:text-white">{p.name}</h4>
                           <div className="flex items-center justify-between text-[9px] opacity-60">
                             <span>SKU: {p.sku || "-"}</span>
-                            {p.inventory_mode === "dry_strict" && (
+                            {(p.inventory_mode === "dry_strict" || p.inventory_mode === "batch_thaw") && (
                               <span className={`font-bold ${p.current_stock < 5 ? "text-amber-500 font-bold" : ""}`}>
-                                Stok: {p.current_stock}
+                                Stok: {p.current_stock} {p.inventory_mode === "batch_thaw" ? "pcs" : ""}
                               </span>
                             )}
                           </div>
