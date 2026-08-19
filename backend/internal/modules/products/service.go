@@ -750,5 +750,75 @@ func UpdateProcurementPayment(ctx context.Context, businessID uuid.UUID, procure
 	return err
 }
 
+// GetIngredients retrieves list of ingredients for a business context
+func GetIngredients(ctx context.Context, businessID uuid.UUID) ([]*models.Ingredient, error) {
+	db := config.DB
+	rows, err := db.Query(ctx, `
+		SELECT id, business_id, outlet_id, name, unit_type, current_stock, created_at, updated_at
+		FROM ingredients
+		WHERE business_id = $1
+		ORDER BY name ASC
+	`, businessID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*models.Ingredient
+	for rows.Next() {
+		var i models.Ingredient
+		var unitTypeStr string
+		err = rows.Scan(&i.ID, &i.BusinessID, &i.OutletID, &i.Name, &unitTypeStr, &i.CurrentStock, &i.CreatedAt, &i.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		i.UnitType = models.UnitType(unitTypeStr)
+		list = append(list, &i)
+	}
+	return list, nil
+}
+
+// CreateIngredient inserts a new ingredient record
+func CreateIngredient(ctx context.Context, ing *models.Ingredient) (*models.Ingredient, error) {
+	db := config.DB
+	ing.ID = uuid.New()
+	ing.CreatedAt = time.Now()
+	ing.UpdatedAt = time.Now()
+
+	_, err := db.Exec(ctx, `
+		INSERT INTO ingredients (id, business_id, outlet_id, name, unit_type, current_stock, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, ing.ID, ing.BusinessID, ing.OutletID, ing.Name, string(ing.UnitType), ing.CurrentStock, ing.CreatedAt, ing.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return ing, nil
+}
+
+// UpdateIngredient updates an existing ingredient record
+func UpdateIngredient(ctx context.Context, ing *models.Ingredient) (*models.Ingredient, error) {
+	db := config.DB
+	ing.UpdatedAt = time.Now()
+
+	_, err := db.Exec(ctx, `
+		UPDATE ingredients
+		SET name = $1, unit_type = $2, current_stock = $3, updated_at = $4
+		WHERE id = $5 AND business_id = $6
+	`, ing.Name, string(ing.UnitType), ing.CurrentStock, ing.UpdatedAt, ing.ID, ing.BusinessID)
+	if err != nil {
+		return nil, err
+	}
+	return ing, nil
+}
+
+// DeleteIngredient deletes an ingredient record
+func DeleteIngredient(ctx context.Context, id uuid.UUID, businessID uuid.UUID) error {
+	db := config.DB
+	_, err := db.Exec(ctx, `
+		DELETE FROM ingredients WHERE id = $1 AND business_id = $2
+	`, id, businessID)
+	return err
+}
+
 
 

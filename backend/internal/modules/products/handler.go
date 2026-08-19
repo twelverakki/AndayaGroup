@@ -667,4 +667,190 @@ func HandleUploadFile(c *fiber.Ctx) error {
 	})
 }
 
+// IngredientRequest body payload for ingredient CRUD
+type IngredientRequest struct {
+	Name         string  `json:"name"`
+	UnitType     string  `json:"unit_type"`
+	CurrentStock float64 `json:"current_stock"`
+	OutletID     *string `json:"outlet_id,omitempty"`
+}
+
+// HandleGetIngredients Handles GET /api/v1/ingredients
+func HandleGetIngredients(c *fiber.Ctx) error {
+	businessID, _, err := getTenantContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Access to business context denied",
+		})
+	}
+
+	list, err := GetIngredients(c.Context(), businessID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to fetch ingredients",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(list)
+}
+
+// HandleCreateIngredient Handles POST /api/v1/ingredients
+func HandleCreateIngredient(c *fiber.Ctx) error {
+	role := c.Locals("role").(string)
+	if role != "owner" && role != "admin_gudang" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Only Owner or Admin Gudang can manage ingredients",
+		})
+	}
+
+	businessID, _, err := getTenantContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Access to business context denied",
+		})
+	}
+
+	var req IngredientRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request payload",
+		})
+	}
+
+	if req.Name == "" || req.UnitType == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Name and Unit Type are required",
+		})
+	}
+
+	var outletID *uuid.UUID
+	if req.OutletID != nil && *req.OutletID != "" {
+		id, err := uuid.Parse(*req.OutletID)
+		if err == nil {
+			outletID = &id
+		}
+	}
+
+	ing := &models.Ingredient{
+		BusinessID:   businessID,
+		OutletID:     outletID,
+		Name:         req.Name,
+		UnitType:     models.UnitType(req.UnitType),
+		CurrentStock: req.CurrentStock,
+	}
+
+	created, err := CreateIngredient(c.Context(), ing)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to create ingredient",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(created)
+}
+
+// HandleUpdateIngredient Handles PUT /api/v1/ingredients/:id
+func HandleUpdateIngredient(c *fiber.Ctx) error {
+	role := c.Locals("role").(string)
+	if role != "owner" && role != "admin_gudang" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Only Owner or Admin Gudang can manage ingredients",
+		})
+	}
+
+	idStr := c.Params("id")
+	ingID, err := uuid.Parse(idStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid ingredient ID format",
+		})
+	}
+
+	businessID, _, err := getTenantContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Access to business context denied",
+		})
+	}
+
+	var req IngredientRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request payload",
+		})
+	}
+
+	if req.Name == "" || req.UnitType == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Name and Unit Type are required",
+		})
+	}
+
+	var outletID *uuid.UUID
+	if req.OutletID != nil && *req.OutletID != "" {
+		id, err := uuid.Parse(*req.OutletID)
+		if err == nil {
+			outletID = &id
+		}
+	}
+
+	ing := &models.Ingredient{
+		ID:           ingID,
+		BusinessID:   businessID,
+		OutletID:     outletID,
+		Name:         req.Name,
+		UnitType:     models.UnitType(req.UnitType),
+		CurrentStock: req.CurrentStock,
+	}
+
+	updated, err := UpdateIngredient(c.Context(), ing)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to update ingredient",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(updated)
+}
+
+// HandleDeleteIngredient Handles DELETE /api/v1/ingredients/:id
+func HandleDeleteIngredient(c *fiber.Ctx) error {
+	role := c.Locals("role").(string)
+	if role != "owner" && role != "admin_gudang" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Only Owner or Admin Gudang can manage ingredients",
+		})
+	}
+
+	idStr := c.Params("id")
+	ingID, err := uuid.Parse(idStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid ingredient ID format",
+		})
+	}
+
+	businessID, _, err := getTenantContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Access to business context denied",
+		})
+	}
+
+	err = DeleteIngredient(c.Context(), ingID, businessID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to delete ingredient",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Ingredient successfully deleted",
+	})
+}
+
 

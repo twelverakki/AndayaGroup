@@ -6,7 +6,7 @@ import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import POSModule from "./POSModule";
 import InventoryModule from "./InventoryModule";
 import ProcurementModule from "./ProcurementModule";
-import BaksoModule from "./BaksoModule";
+
 import SuperadminModule from "./SuperadminModule";
 import { Sun, Moon } from "lucide-react";
 
@@ -88,7 +88,6 @@ export default function MobileShell({ children }: MobileShellProps) {
     navItems.push({ id: "superadmin", label: "Akses", icon: "🛡️" });
   } else if (activeContext?.type === "fnb_production") {
     navItems.push(
-      { id: "pos", label: "POS", icon: "🛒" },
       { id: "produksi", label: "Produksi", icon: "🍳" },
       { id: "distribusi", label: "Distribusi", icon: "🚚" }
     );
@@ -176,9 +175,9 @@ export default function MobileShell({ children }: MobileShellProps) {
         ) : activeMenu === "procurement" ? (
           <ProcurementModule />
         ) : activeMenu === "produksi" ? (
-          <BaksoModule mode="production" />
+          <div className="p-4">Produksi Placeholder</div>
         ) : activeMenu === "distribusi" ? (
-          <BaksoModule mode="distribution" />
+          <div className="p-4">Distribusi Placeholder</div>
         ) : activeMenu === "superadmin" ? (
           <SuperadminModule />
         ) : activeMenu === "dashboard" ? (

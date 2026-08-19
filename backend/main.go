@@ -94,6 +94,13 @@ func main() {
 	// Categories Endpoints
 	scopedAPI.Get("/categories", products.HandleGetCategories)
 
+	// Ingredients CRUD Endpoints
+	ingredientsGroup := scopedAPI.Group("/ingredients")
+	ingredientsGroup.Get("/", products.HandleGetIngredients)
+	ingredientsGroup.Post("/", products.HandleCreateIngredient)
+	ingredientsGroup.Put("/:id", products.HandleUpdateIngredient)
+	ingredientsGroup.Delete("/:id", products.HandleDeleteIngredient)
+
 	// Wastage / Opname Logs Endpoints
 	wastageGroup := scopedAPI.Group("/wastage-logs")
 	wastageGroup.Get("/", products.HandleGetWastageLogs)
@@ -133,6 +140,8 @@ func main() {
 	distributionsGroup.Post("/", bakso.HandleCreateDistribution)
 	distributionsGroup.Get("/", bakso.HandleGetDistributions)
 	distributionsGroup.Post("/:id/receive", bakso.HandleReceiveDistribution)
+	distributionsGroup.Post("/return", bakso.HandleCreateReturn)
+	distributionsGroup.Post("/:id/receive-return", bakso.HandleReceiveReturn)
 
 	baksoGroup := scopedAPI.Group("/bakso")
 	baksoGroup.Post("/thaw", bakso.HandleThawBatch)

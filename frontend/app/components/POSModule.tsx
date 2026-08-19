@@ -160,7 +160,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
   // Fetch active shift & products
   useEffect(() => {
-    if (activeContext) {
+    if (activeContext && activeContext.type !== "fnb_production") {
       fetchShiftStatus();
       fetchProducts();
     }

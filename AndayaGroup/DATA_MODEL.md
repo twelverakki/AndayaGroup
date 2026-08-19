@@ -129,10 +129,13 @@ stock_conversions                          -- generic conversion layer, reusable
 
 stock_batches                              -- KHUSUS Bakso Kang Gemoy: Batch Thaw Tracking (D-14a)
 ├── id                 UUID PK
+├── business_id        UUID FK → businesses
+├── outlet_id          UUID FK → outlets (nullable)
 ├── product_id         UUID FK → products
 ├── held_by_user_id    UUID FK → users     -- staff di titik jualan yang pegang batch ini
 ├── batch_status       ENUM('sealed','opened')
 ├── quantity           NUMERIC            -- pack (sealed) atau pcs (opened)
+├── distribution_id    UUID FK → distributions (nullable) -- traceability ke pengiriman
 ├── opened_at          TIMESTAMP (nullable)
 ├── quality_checked_at TIMESTAMP (nullable)  -- dicek tiap pagi, umur maks 1-2 hari sejak opened_at
 ├── quality_check_status ENUM('pending','pass','discard') (nullable)
@@ -158,11 +161,13 @@ wastage_logs                               -- hasil opname Blind Count SEMUA bis
 ├── product_id         UUID FK → products (nullable)
 ├── ingredient_id      UUID FK → ingredients (nullable)
 ├── daily_material_log_id UUID FK → daily_material_logs (nullable — kalau asalnya dari Dual-Track Gorengan)
+├── stock_batch_id     UUID FK → stock_batches (nullable — jika terkait batch Bakso)
 ├── expected_qty       NUMERIC            -- angka sistem (staff TIDAK melihat ini saat blind input)
 ├── actual_qty         NUMERIC            -- hasil hitung fisik staff
 ├── discrepancy        NUMERIC            -- actual - expected
 ├── input_by           UUID FK → users (staff)
 ├── status             ENUM('pending_approval','approved','rejected')
+├── source_stage       ENUM('production','distribution_transit','qc_discard','daily_closing','blind_opname') (nullable)
 ├── approved_by        UUID FK → users (nullable — Manager/Owner)
 ├── approved_at        TIMESTAMP (nullable)
 ├── created_at         TIMESTAMP
@@ -265,13 +270,21 @@ productions
 ├── produced_at         TIMESTAMP
 └── created_at          TIMESTAMP
 
-distributions                               -- gudang pusat → titik jualan (staff individu)
+production_expenses                         -- pencatatan pengeluaran bahan & alat per produksi
+├── id                 UUID PK
+├── production_id      UUID FK → productions
+├── ingredient_id      UUID FK → ingredients (Master Bahan & Alat)
+└── quantity           NUMERIC
+
+distributions                               -- gudang pusat ↔ titik jualan (staff individu)
 ├── id                 UUID PK
 ├── business_id        UUID FK → businesses
 ├── product_id         UUID FK → products
-├── sent_to_user_id     UUID FK → users     -- staff titik jualan penerima
+├── sent_to_user_id     UUID FK → users     -- staff titik jualan penerima/pengirim
 ├── qty                 NUMERIC            -- dalam pack
 ├── status              ENUM('sent','received')
+├── type                ENUM('outbound','return') -- arah kiriman/retur
+├── production_id       UUID FK → productions (nullable) -- traceability ke log produksi
 ├── sent_at             TIMESTAMP
 ├── received_at         TIMESTAMP (nullable)
 └── created_at          TIMESTAMP

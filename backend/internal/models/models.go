@@ -271,10 +271,13 @@ type StockConversion struct {
 // StockBatch represents product batch (specifically for Bakso thawing)
 type StockBatch struct {
 	ID                 uuid.UUID           `json:"id"`
+	BusinessID         uuid.UUID           `json:"business_id"`
+	OutletID           *uuid.UUID          `json:"outlet_id,omitempty"`
 	ProductID          uuid.UUID           `json:"product_id"`
 	HeldByUserID       uuid.UUID           `json:"held_by_user_id"`
 	BatchStatus        BatchStatus         `json:"batch_status"`
 	Quantity           float64             `json:"quantity"`
+	DistributionID     *uuid.UUID          `json:"distribution_id,omitempty"`
 	OpenedAt           *time.Time          `json:"opened_at,omitempty"`
 	QualityCheckedAt   *time.Time          `json:"quality_checked_at,omitempty"`
 	QualityCheckStatus *QualityCheckStatus `json:"quality_check_status,omitempty"`
@@ -304,11 +307,13 @@ type WastageLog struct {
 	ProductID          *uuid.UUID    `json:"product_id,omitempty"`
 	IngredientID       *uuid.UUID    `json:"ingredient_id,omitempty"`
 	DailyMaterialLogID *uuid.UUID    `json:"daily_material_log_id,omitempty"`
+	StockBatchID       *uuid.UUID    `json:"stock_batch_id,omitempty"`
 	ExpectedQty        float64       `json:"expected_qty"`
 	ActualQty          float64       `json:"actual_qty"`
 	Discrepancy        float64       `json:"discrepancy"`
 	InputBy            uuid.UUID     `json:"input_by"`
 	Status             WastageStatus `json:"status"`
+	SourceStage        *string       `json:"source_stage,omitempty"`
 	ApprovedBy         *uuid.UUID    `json:"approved_by,omitempty"`
 	ApprovedAt         *time.Time    `json:"approved_at,omitempty"`
 	CreatedAt          time.Time     `json:"created_at"`
@@ -399,15 +404,25 @@ type ProcurementItem struct {
 // PHASE 3 MODELS (Bakso Kang Gemoy: Production & Distribution)
 // =========================================================================
 
+// ProductionExpense represents the expense log of ingredients/tools per production
+type ProductionExpense struct {
+	ID           uuid.UUID `json:"id"`
+	ProductionID uuid.UUID `json:"production_id"`
+	IngredientID uuid.UUID `json:"ingredient_id"`
+	Quantity     float64   `json:"quantity"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 // Production represents production log of a product (for Bakso Kang Gemoy)
 type Production struct {
-	ID           uuid.UUID `json:"id"`
-	BusinessID   uuid.UUID `json:"business_id"`
-	ProductID    uuid.UUID `json:"product_id"`
-	QtyProduced  float64   `json:"qty_produced"`
-	ProducedBy   uuid.UUID `json:"produced_by"`
-	ProducedAt   time.Time `json:"produced_at"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           uuid.UUID           `json:"id"`
+	BusinessID   uuid.UUID           `json:"business_id"`
+	ProductID    uuid.UUID           `json:"product_id"`
+	QtyProduced  float64             `json:"qty_produced"`
+	ProducedBy   uuid.UUID           `json:"produced_by"`
+	ProducedAt   time.Time           `json:"produced_at"`
+	CreatedAt    time.Time           `json:"created_at"`
+	Expenses     []ProductionExpense `json:"expenses,omitempty"`
 }
 
 // DistributionStatus ENUM type
@@ -418,7 +433,15 @@ const (
 	DistReceived DistributionStatus = "received"
 )
 
-// Distribution represents stock distribution from gudang to cart/staff
+// DistributionType ENUM type
+type DistributionType string
+
+const (
+	TypeOutbound DistributionType = "outbound"
+	TypeReturn   DistributionType = "return"
+)
+
+// Distribution represents stock distribution from gudang to cart/staff (or return)
 type Distribution struct {
 	ID            uuid.UUID          `json:"id"`
 	BusinessID    uuid.UUID          `json:"business_id"`
@@ -426,6 +449,8 @@ type Distribution struct {
 	SentToUserID  uuid.UUID          `json:"sent_to_user_id"`
 	Qty           float64            `json:"qty"`
 	Status        DistributionStatus `json:"status"`
+	Type          DistributionType   `json:"type"`
+	ProductionID  *uuid.UUID         `json:"production_id,omitempty"`
 	SentAt        time.Time          `json:"sent_at"`
 	ReceivedAt    *time.Time         `json:"received_at,omitempty"`
 	CreatedAt     time.Time          `json:"created_at"`

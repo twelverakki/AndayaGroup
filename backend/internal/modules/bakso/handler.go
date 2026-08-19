@@ -6,8 +6,9 @@ import (
 )
 
 type ProductionRequest struct {
-	ProductID   uuid.UUID `json:"product_id"`
-	QtyProduced float64   `json:"qty_produced"`
+	ProductID   uuid.UUID                `json:"product_id"`
+	QtyProduced float64                  `json:"qty_produced"`
+	Expenses    []ProductionExpenseInput `json:"expenses"`
 }
 
 type DistributionRequest struct {
@@ -102,7 +103,7 @@ func HandleCreateProduction(c *fiber.Ctx) error {
 		})
 	}
 
-	prod, err := CreateProduction(c.Context(), businessID, req.ProductID, req.QtyProduced, userID)
+	prod, err := CreateProduction(c.Context(), businessID, req.ProductID, req.QtyProduced, userID, req.Expenses)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Failed to create production entry",
@@ -445,4 +446,90 @@ func HandleGetStockAlerts(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(list)
+}
+
+// HandleCreateReturn Handles POST /api/v1/distributions/return
+func HandleCreateReturn(c *fiber.Ctx) error {
+	businessID, _, err := getTenantContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Access to business context denied",
+		})
+	}
+
+	userID, err := getLoggedUserID(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"message": "Unauthorized user session",
+		})
+	}
+
+	type ReturnRequest struct {
+		ProductID uuid.UUID `json:"product_id"`
+		Qty       float64   `json:"qty"`
+	}
+
+	var req ReturnRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request payload",
+		})
+	}
+
+	if req.ProductID == uuid.Nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Product ID is required",
+		})
+	}
+
+	if req.Qty <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Quantity must be greater than zero",
+		})
+	}
+
+	dist, err := CreateReturn(c.Context(), businessID, req.ProductID, userID, req.Qty)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to create return record",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(dist)
+}
+
+// HandleReceiveReturn Handles POST /api/v1/distributions/:id/receive-return
+func HandleReceiveReturn(c *fiber.Ctx) error {
+	role := c.Locals("role").(string)
+	if role != "owner" && role != "admin_gudang" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Only Owner or Admin Gudang can receive returns",
+		})
+	}
+
+	idStr := c.Params("id")
+	distID, err := uuid.Parse(idStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid distribution return ID format",
+		})
+	}
+
+	businessID, _, err := getTenantContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Access to business context denied",
+		})
+	}
+
+	dist, err := ReceiveReturn(c.Context(), distID, businessID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to receive return",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(dist)
 }

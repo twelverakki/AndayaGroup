@@ -153,6 +153,11 @@ Sistem pelacakan hutang pembelian untuk JnA Mart di MVP awal dibatasi pada statu
 Alasan: Memberikan kapabilitas dasar pelacakan jatuh tempo hutang tanpa kompleksitas pencatatan angsuran di versi pertama.
 Status: ✅ Final.
 
+**D-14h. Bill of Materials (BOM) & Resep Produksi Bakso Kang Gemoy**
+Diputuskan bahwa Bakso Kang Gemoy menggunakan pencatatan BOM (Bill of Materials) secara otomatis HANYA pada level produksi terpusat (menghubungkan `productions` ke `ingredients`). Ketika Owner menginput log produksi pack bakso jadi, sistem otomatis mengurangi stok bahan baku mentah (seperti daging sapi, tepung, bumbu) di tabel `ingredients` berdasarkan resep yang telah ditentukan. Pencatatan BOM tidak dilakukan di tingkat porsi/penjualan eceran POS (POS hanya mengurangi bakso matang `opened` di rombong). Sementara itu, Yasaka & Gorengan Andalan tetap beroperasi tanpa BOM (alasan beda, lihat PRD §6.2).
+Alasan: Menjamin keakuratan stok bahan baku mentah di gudang pusat tanpa menambah kompleksitas penjualan eceran di kasir rombong.
+Status: ✅ Final.
+
 ---
 
 ## 4. Reliabilitas Sistem
@@ -191,6 +196,14 @@ Status: ✅ Final.
 
 **D-20. Basis pemilihan shell: device/context, bukan jenis bisnis**
 Shell (Mobile vs Desktop) ditentukan oleh device & konteks pemakaian saat itu, bukan oleh bisnis mana yang diakses. Kasir JnA Mart yang cek stok dari HP tetap pakai Mobile Shell; Owner Bakso Kang Gemoy yang buka laporan dari laptop tetap pakai Desktop Shell.
+Status: ✅ Final.
+
+**D-22. Revisi Alur Bakso Kang Gemoy (Dihapus POS & BOM Otomatis, Tambah Expense Manual & Retur)**
+Berdasarkan keputusan klien terbaru, sistem Bakso Kang Gemoy diubah dari transaksi real-time menjadi sistem pencatatan standar:
+1. POS untuk Bakso Kang Gemoy dihapus sepenuhnya dari sistem (tidak ada transaksi kasir real-time).
+2. Sistem BOM otomatis & resep produksi dihapus (merevisi D-14h). Sebagai gantinya, produksi dicatat secara manual bersamaan dengan pengeluaran bahan & alat yang dipakai (production expenses) dari Master Bahan & Alat (disimpan di `ingredients`), tanpa running balance/pengurangan stok bahan baku otomatis.
+3. Ditambahkan sistem Retur (pengembalian stok) dari staff titik jualan kembali ke gudang pusat.
+Alasan: Menyesuaikan dengan kebutuhan operasional riil di lapangan yang lebih fokus pada pencatatan logistik & stock opname ketimbang pencatatan kasir retail.
 Status: ✅ Final.
 
 ---
