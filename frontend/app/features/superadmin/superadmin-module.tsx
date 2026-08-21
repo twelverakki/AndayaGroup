@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
-import { api } from "../lib/api";
-import { useAuthStore } from "../lib/store";
+import { api } from "../../lib/api";
+import { useAuthStore } from "../../lib/store";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
   DropdownMenuTrigger 
-} from "./ui/dropdown-menu";
+} from "../../components/ui/dropdown-menu";
 import { 
   Users, 
   UserPlus, 
@@ -268,7 +268,7 @@ export default function SuperadminModule() {
             setError("");
             setShowCreateModal(true);
           }}
-          className="bg-[#E2FF66] text-[#2B2B2B] px-5 py-2.5 rounded-full text-xs font-bold hover:shadow-md cursor-pointer flex items-center gap-2"
+          className="bg-primary text-neutral-dark px-5 py-2.5 rounded-full text-xs font-bold hover:shadow-md cursor-pointer flex items-center gap-2"
         >
           <UserPlus className="w-4 h-4" />
           Tambah User Baru
@@ -307,7 +307,7 @@ export default function SuperadminModule() {
               onClick={() => setStatusFilter(st)}
               className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase transition-all cursor-pointer ${
                 statusFilter === st
-                  ? "bg-[#2B2B2B] text-white dark:bg-[#E2FF66] dark:text-[#2B2B2B]"
+                  ? "bg-neutral-dark text-white dark:bg-primary dark:text-neutral-dark"
                   : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 dark:bg-[#202024] dark:border-slate-800 dark:text-slate-350"
               }`}
             >
@@ -515,7 +515,7 @@ export default function SuperadminModule() {
                 <button
                   type="submit"
                   disabled={formLoading}
-                  className="flex-1 bg-[#E2FF66] text-[#2B2B2B] font-bold text-xs py-2.5 rounded-full hover:shadow-md cursor-pointer disabled:opacity-50"
+                  className="flex-1 bg-primary text-neutral-dark font-bold text-xs py-2.5 rounded-full hover:shadow-md cursor-pointer disabled:opacity-50"
                 >
                   {formLoading ? "Memproses..." : "Buat User"}
                 </button>
@@ -594,7 +594,7 @@ export default function SuperadminModule() {
                 <button
                   type="submit"
                   disabled={formLoading}
-                  className="flex-1 bg-[#E2FF66] text-[#2B2B2B] font-bold text-xs py-2.5 rounded-full hover:shadow-md cursor-pointer disabled:opacity-50"
+                  className="flex-1 bg-primary text-neutral-dark font-bold text-xs py-2.5 rounded-full hover:shadow-md cursor-pointer disabled:opacity-50"
                 >
                   {formLoading ? "Menyimpan..." : "Simpan Perubahan"}
                 </button>
@@ -793,7 +793,7 @@ export default function SuperadminModule() {
                 <button
                   onClick={handleAssignmentsSubmit}
                   disabled={formLoading}
-                  className="flex-1 bg-[#E2FF66] text-[#2B2B2B] font-bold text-xs py-2.5 rounded-full hover:shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-1 bg-primary text-neutral-dark font-bold text-xs py-2.5 rounded-full hover:shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <Save className="w-4 h-4" />
                   {formLoading ? "Menyimpan..." : "Simpan Akses"}

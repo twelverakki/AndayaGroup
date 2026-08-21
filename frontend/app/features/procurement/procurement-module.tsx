@@ -1,20 +1,20 @@
 import { useState, useEffect, useRef } from "react";
-import { api } from "../lib/api";
-import { useAuthStore } from "../lib/store";
+import { api } from "../../lib/api";
+import { useAuthStore } from "../../lib/store";
 import {
   useLanguageStore,
   translations,
   formatNumberInput,
   parseNumberInput,
-} from "../lib/i18n";
-import { toast } from "./ui/sonner";
+} from "../../lib/i18n";
+import { toast } from "../../components/ui/sonner";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "./ui/dropdown-menu";
-import { Checkbox } from "./ui/checkbox";
+} from "../../components/ui/dropdown-menu";
+import { Checkbox } from "../../components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +23,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-} from "./ui/dialog";
+} from "../../components/ui/dialog";
 import {
   FileSpreadsheet, Plus, Search, Filter, Eye, Copy, Check,
   ChevronLeft, ChevronRight, SlidersHorizontal, ArrowLeft,
@@ -421,12 +421,12 @@ export default function ProcurementModule({
   const labelClass = "block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 text-left";
   const inputClass = `w-full px-4 py-2.5 rounded-full border text-sm font-semibold focus:outline-none focus:ring-2 transition-all duration-200 ${
     isDarkMode
-      ? "bg-[#1E1E22] border-[#38383C] text-white focus:ring-[#E2FF66]/20 focus:border-[#E2FF66]"
+      ? "bg-dark-bg border-dark-border text-white focus:ring-primary/20 focus:border-primary"
       : "bg-slate-50/70 border-slate-200 text-slate-850 focus:ring-slate-400/20 focus:border-slate-500"
   }`;
   const bentoCardClass = `p-6 rounded-3xl border transition-all duration-200 ${
     isDarkMode
-      ? "bg-[#232326] border-[#38383C] text-slate-100 shadow-xl"
+      ? "bg-dark-card border-dark-border text-slate-100 shadow-xl"
       : "bg-white border-slate-200/80 text-slate-900 shadow-sm"
   }`;
   const cardHeadingClass = "text-sm font-extrabold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 dark:border-[#303035] pb-3 mb-4";
@@ -444,7 +444,7 @@ export default function ProcurementModule({
             <button
               type="button"
               onClick={onCancel}
-              className="p-2 rounded-full border border-slate-200 dark:border-[#38383C] bg-white dark:bg-[#232326] text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-all"
+              className="p-2 rounded-full border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-all"
               title={t.cancel}
             >
               <ArrowLeft className="w-4 h-4" />
@@ -470,7 +470,7 @@ export default function ProcurementModule({
               {/* Card 1: Informasi Faktur & Supplier */}
               <div className={bentoCardClass}>
                 <h4 className={cardHeadingClass}>
-                  <Building2 className="w-4 h-4 text-slate-700 dark:text-[#E2FF66]" />
+                  <Building2 className="w-4 h-4 text-slate-700 dark:text-primary" />
                   <span>Informasi Supplier & Faktur</span>
                 </h4>
 
@@ -517,7 +517,7 @@ export default function ProcurementModule({
               {/* Card 2: Tambah Barang ke Nota */}
               <div className={bentoCardClass}>
                 <h4 className={cardHeadingClass}>
-                  <Package className="w-4 h-4 text-slate-700 dark:text-[#E2FF66]" />
+                  <Package className="w-4 h-4 text-slate-700 dark:text-primary" />
                   <span>{t.addItemButton}</span>
                 </h4>
 
@@ -529,7 +529,7 @@ export default function ProcurementModule({
                     <DropdownMenu>
                       <DropdownMenuTrigger className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full border text-xs font-bold transition-all text-left outline-none cursor-pointer ${
                         isDarkMode
-                          ? "bg-[#232326] border-[#38383C] text-white"
+                          ? "bg-dark-card border-dark-border text-white"
                           : "bg-white border-slate-200 text-slate-850"
                       }`}>
                         <span className="truncate">
@@ -539,7 +539,7 @@ export default function ProcurementModule({
                         </span>
                         <span className="text-[10px] text-slate-400 ml-2 shrink-0">▼</span>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#38383C] shadow-xl rounded-2xl p-1.5 min-w-[260px] max-h-[280px] overflow-y-auto">
+                      <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border shadow-xl rounded-2xl p-1.5 min-w-[260px] max-h-[280px] overflow-y-auto">
                         {products.map((p) => (
                           <DropdownMenuItem
                             key={p.id}
@@ -579,7 +579,7 @@ export default function ProcurementModule({
                         value={itemCost}
                         onChange={(e) => setItemCost(formatNumberInput(e.target.value))}
                         placeholder="0"
-                        className="w-full pl-9 pr-3 py-2.5 rounded-full border text-sm font-semibold focus:outline-none focus:ring-2 transition-all bg-slate-50/70 dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-850 dark:text-white"
+                        className="w-full pl-9 pr-3 py-2.5 rounded-full border text-sm font-semibold focus:outline-none focus:ring-2 transition-all bg-slate-50/70 dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-850 dark:text-white"
                       />
                     </div>
                   </div>
@@ -590,7 +590,7 @@ export default function ProcurementModule({
                       type="button"
                       onClick={handleAddItem}
                       disabled={!selectedProductId || !itemQty || !itemCost}
-                      className="w-full py-2.5 px-4 font-bold text-xs bg-slate-900 hover:bg-slate-800 dark:bg-[#E2FF66] dark:hover:bg-[#E2FF66]/85 text-white dark:text-slate-900 rounded-full transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="w-full py-2.5 px-4 font-bold text-xs bg-slate-900 hover:bg-slate-800 dark:bg-primary dark:hover:bg-primary/85 text-white dark:text-slate-900 rounded-full transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Plus className="w-3.5 h-3.5 stroke-[3]" />
                       <span>{t.addItemButton.split(" ")[0]}</span>
@@ -623,7 +623,7 @@ export default function ProcurementModule({
                     <tbody>
                       {items.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="text-center py-10 text-slate-400 dark:text-slate-500 font-bold border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td colSpan={5} className="text-center py-10 text-slate-400 dark:text-slate-500 font-bold border-b border-slate-200/80 dark:border-dark-border">
                             {t.noItemsAdded}
                           </td>
                         </tr>
@@ -632,19 +632,19 @@ export default function ProcurementModule({
                           const subtotal = item.qty * item.unit_cost;
                           return (
                             <tr key={idx} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.03] transition-colors">
-                              <td className="px-5 py-3.5 font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-[#38383C]">
+                              <td className="px-5 py-3.5 font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-dark-border">
                                 {item.product_name}
                               </td>
-                              <td className="px-5 py-3.5 text-center font-mono font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200/80 dark:border-[#38383C]">
+                              <td className="px-5 py-3.5 text-center font-mono font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200/80 dark:border-dark-border">
                                 {item.qty} {item.product_unit}
                               </td>
-                              <td className="px-5 py-3.5 text-right font-mono text-slate-600 dark:text-slate-300 border-b border-slate-200/80 dark:border-[#38383C]">
+                              <td className="px-5 py-3.5 text-right font-mono text-slate-600 dark:text-slate-300 border-b border-slate-200/80 dark:border-dark-border">
                                 Rp {item.unit_cost.toLocaleString("id-ID")}
                               </td>
-                              <td className="px-5 py-3.5 text-right font-mono font-bold text-slate-900 dark:text-[#E2FF66] border-b border-slate-200/80 dark:border-[#38383C]">
+                              <td className="px-5 py-3.5 text-right font-mono font-bold text-slate-900 dark:text-primary border-b border-slate-200/80 dark:border-dark-border">
                                 Rp {subtotal.toLocaleString("id-ID")}
                               </td>
-                              <td className="px-5 py-3.5 text-center border-b border-slate-200/80 dark:border-[#38383C]">
+                              <td className="px-5 py-3.5 text-center border-b border-slate-200/80 dark:border-dark-border">
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveItem(idx)}
@@ -671,7 +671,7 @@ export default function ProcurementModule({
               {/* Card 3: Status Pembayaran & Hutang */}
               <div className={bentoCardClass}>
                 <h4 className={cardHeadingClass}>
-                  <CreditCard className="w-4 h-4 text-slate-700 dark:text-[#E2FF66]" />
+                  <CreditCard className="w-4 h-4 text-slate-700 dark:text-primary" />
                   <span>{t.paymentStatusLabel}</span>
                 </h4>
 
@@ -690,8 +690,8 @@ export default function ProcurementModule({
                           onClick={() => setPaymentStatus(opt.val as any)}
                           className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                             isActive
-                              ? "bg-slate-900 text-white border-slate-900 dark:bg-[#E2FF66] dark:border-[#E2FF66] dark:text-slate-900 font-bold shadow-xs"
-                              : "bg-slate-50/70 dark:bg-[#1E1E22] border-slate-200/80 dark:border-[#333338] text-slate-700 dark:text-slate-300 hover:border-slate-400"
+                              ? "bg-slate-900 text-white border-slate-900 dark:bg-primary dark:border-primary dark:text-slate-900 font-bold shadow-xs"
+                              : "bg-slate-50/70 dark:bg-dark-bg border-slate-200/80 dark:border-[#333338] text-slate-700 dark:text-slate-300 hover:border-slate-400"
                           }`}
                         >
                           <div className="flex items-center gap-2">
@@ -714,7 +714,7 @@ export default function ProcurementModule({
                           value={amountOwed}
                           onChange={(e) => setAmountOwed(formatNumberInput(e.target.value))}
                           placeholder={totalCostCalculated ? totalCostCalculated.toLocaleString("id-ID") : "0"}
-                          className="w-full pl-9 pr-3 py-2.5 rounded-full border text-sm font-bold focus:outline-none focus:ring-2 bg-slate-50/70 dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-red-600 dark:text-red-400"
+                          className="w-full pl-9 pr-3 py-2.5 rounded-full border text-sm font-bold focus:outline-none focus:ring-2 bg-slate-50/70 dark:bg-dark-bg border-slate-200 dark:border-dark-border text-red-600 dark:text-red-400"
                         />
                       </div>
                     </div>
@@ -725,7 +725,7 @@ export default function ProcurementModule({
               {/* Card 4: Ringkasan Total Faktur PO */}
               <div className={bentoCardClass}>
                 <h4 className={cardHeadingClass}>
-                  <Sparkles className="w-4 h-4 text-slate-700 dark:text-[#E2FF66]" />
+                  <Sparkles className="w-4 h-4 text-slate-700 dark:text-primary" />
                   <span>Ringkasan Nota PO</span>
                 </h4>
 
@@ -747,7 +747,7 @@ export default function ProcurementModule({
                     <span className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
                       {t.totalProcurementCost}
                     </span>
-                    <span className="font-mono font-black text-base text-slate-900 dark:text-[#E2FF66]">
+                    <span className="font-mono font-black text-base text-slate-900 dark:text-primary">
                       Rp {totalCostCalculated.toLocaleString("id-ID")}
                     </span>
                   </div>
@@ -764,7 +764,7 @@ export default function ProcurementModule({
               <button
                 type="button"
                 onClick={onCancel}
-                className="px-6 py-3 font-bold border border-slate-200 dark:border-[#38383C] bg-white dark:bg-[#232326] text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 rounded-full cursor-pointer text-xs transition-all"
+                className="px-6 py-3 font-bold border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 rounded-full cursor-pointer text-xs transition-all"
               >
                 {t.cancel}
               </button>
@@ -772,7 +772,7 @@ export default function ProcurementModule({
             <button
               type="submit"
               disabled={items.length === 0 || formLoading}
-              className="px-8 py-3 font-extrabold rounded-full cursor-pointer text-xs shadow-md transition-all bg-slate-900 hover:bg-slate-800 dark:bg-[#E2FF66] dark:hover:bg-[#E2FF66]/85 text-white dark:text-slate-900 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-8 py-3 font-extrabold rounded-full cursor-pointer text-xs shadow-md transition-all bg-slate-900 hover:bg-slate-800 dark:bg-primary dark:hover:bg-primary/85 text-white dark:text-slate-900 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {formLoading ? (
                 <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -809,7 +809,7 @@ export default function ProcurementModule({
           <button
             type="button"
             onClick={() => onNavigate("procurement-new")}
-            className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-[#E2FF66] dark:hover:bg-[#E2FF66]/85 text-white dark:text-slate-900 text-xs font-extrabold rounded-full shadow-sm transition-all cursor-pointer self-start sm:self-auto"
+            className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-primary dark:hover:bg-primary/85 text-white dark:text-slate-900 text-xs font-extrabold rounded-full shadow-sm transition-all cursor-pointer self-start sm:self-auto"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>{t.procurementNewTitle}</span>
@@ -820,8 +820,8 @@ export default function ProcurementModule({
       {/* ── KPI METRICS SUMMARY CARDS ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Spend */}
-        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-[#38383C] p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-[#2A2A2E] flex items-center justify-center text-slate-800 dark:text-[#E2FF66] shrink-0">
+        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-[#2A2A2E] flex items-center justify-center text-slate-800 dark:text-primary shrink-0">
             <DollarSign className="w-5 h-5" />
           </div>
           <div className="min-w-0">
@@ -835,7 +835,7 @@ export default function ProcurementModule({
         </div>
 
         {/* Total Debt */}
-        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-[#38383C] p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
+        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
           <div className="w-10 h-10 rounded-2xl bg-red-50 dark:bg-red-950/30 flex items-center justify-center text-red-500 shrink-0">
             <CreditCard className="w-5 h-5" />
           </div>
@@ -850,7 +850,7 @@ export default function ProcurementModule({
         </div>
 
         {/* Total Invoices */}
-        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-[#38383C] p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
+        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
           <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-[#2A2A2E] flex items-center justify-center text-slate-800 dark:text-slate-200 shrink-0">
             <FileSpreadsheet className="w-5 h-5" />
           </div>
@@ -865,7 +865,7 @@ export default function ProcurementModule({
         </div>
 
         {/* Paid / Unpaid Status Counter */}
-        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-[#38383C] p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
+        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
           <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-500 shrink-0">
             <CheckCircle2 className="w-5 h-5" />
           </div>
@@ -896,7 +896,7 @@ export default function ProcurementModule({
                 setCurrentPage(1);
               }}
               placeholder="Cari nama supplier atau ID faktur..."
-              className="w-full pl-12 pr-12 py-3 rounded-full bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-[#38383C] text-slate-800 dark:text-slate-100 placeholder-slate-400 text-xs font-semibold shadow-xs focus:outline-none focus:ring-2 focus:ring-slate-400/20 dark:focus:ring-[#E2FF66]/20 transition-all"
+              className="w-full pl-12 pr-12 py-3 rounded-full bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border text-slate-800 dark:text-slate-100 placeholder-slate-400 text-xs font-semibold shadow-xs focus:outline-none focus:ring-2 focus:ring-slate-400/20 dark:focus:ring-primary/20 transition-all"
             />
             <div className="absolute right-4 top-3 flex items-center gap-1.5 pointer-events-none">
               <kbd className="px-2 py-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-[#2E2E34] rounded-md border border-slate-200 dark:border-[#3A3A3E]">
@@ -907,12 +907,12 @@ export default function ProcurementModule({
 
           {/* Supplier Filter Dropdown */}
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-[#38383C] text-slate-700 dark:text-slate-200 rounded-full text-xs font-bold shadow-xs hover:border-slate-400 dark:hover:border-slate-500 cursor-pointer outline-none transition-all">
+            <DropdownMenuTrigger className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 rounded-full text-xs font-bold shadow-xs hover:border-slate-400 dark:hover:border-slate-500 cursor-pointer outline-none transition-all">
               <Building2 className="w-3.5 h-3.5 text-slate-400" />
               <span>{filterSupplier === "all" ? "Semua Supplier" : filterSupplier}</span>
               <span className="text-[10px] text-slate-400">▼</span>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#38383C] shadow-xl rounded-2xl p-1.5 min-w-[200px] max-h-[260px] overflow-y-auto">
+            <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border shadow-xl rounded-2xl p-1.5 min-w-[200px] max-h-[260px] overflow-y-auto">
               <DropdownMenuItem
                 onClick={() => {
                   setFilterSupplier("all");
@@ -942,7 +942,7 @@ export default function ProcurementModule({
           </DropdownMenu>
 
           {/* Payment Status Filter (Pill Group) */}
-          <div className="flex items-center gap-1.5 p-1 bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-[#38383C] rounded-full shadow-xs overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 p-1 bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border rounded-full shadow-xs overflow-x-auto scrollbar-none">
             {[
               { val: "all", label: "Semua" },
               { val: "paid", label: "Lunas" },
@@ -960,7 +960,7 @@ export default function ProcurementModule({
                   }}
                   className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                     isActive
-                      ? "bg-slate-900 text-white dark:bg-[#E2FF66] dark:text-slate-900 shadow-xs"
+                      ? "bg-slate-900 text-white dark:bg-primary dark:text-slate-900 shadow-xs"
                       : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5"
                   }`}
                 >
@@ -975,12 +975,12 @@ export default function ProcurementModule({
 
       {/* ── PROCUREMENT TABLE CONTAINER CARD (ROUNDED-28PX) ── */}
       <div
-        className="bg-white dark:bg-[#232326] border border-slate-200/80 dark:border-[#38383C] rounded-[28px] shadow-sm p-4 sm:p-6"
+        className="bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border rounded-[28px] shadow-sm p-4 sm:p-6"
         style={{ boxShadow: isDarkMode ? "0 4px 24px 0 rgba(0,0,0,0.35)" : "0 4px 20px 0 rgba(0,0,0,0.06)" }}
       >
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24">
-            <div className="w-10 h-10 border-4 border-slate-700 dark:border-[#E2FF66] border-t-transparent rounded-full animate-spin mb-3" />
+            <div className="w-10 h-10 border-4 border-slate-700 dark:border-primary border-t-transparent rounded-full animate-spin mb-3" />
             <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">{t.loading}</span>
           </div>
         ) : (
@@ -1087,7 +1087,7 @@ export default function ProcurementModule({
               <tbody>
                 {filteredProcurements.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-16 text-slate-400 dark:text-slate-500 font-bold border-b border-slate-200/80 dark:border-[#38383C]">
+                    <td colSpan={7} className="text-center py-16 text-slate-400 dark:text-slate-500 font-bold border-b border-slate-200/80 dark:border-dark-border">
                       Tidak ada faktur pengadaan yang cocok
                     </td>
                   </tr>
@@ -1110,9 +1110,9 @@ export default function ProcurementModule({
                       >
                         {/* Supplier */}
                         {columnVisibility.supplier && (
-                          <td className="px-5 py-3.5 font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-5 py-3.5 font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-dark-border">
                             <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-[#2E2E34] flex items-center justify-center text-slate-700 dark:text-[#E2FF66] font-bold text-[11px] shrink-0">
+                              <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-[#2E2E34] flex items-center justify-center text-slate-700 dark:text-primary font-bold text-[11px] shrink-0">
                                 {proc.supplier_name.charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0">
@@ -1125,7 +1125,7 @@ export default function ProcurementModule({
 
                         {/* Date */}
                         {columnVisibility.date && (
-                          <td className="px-5 py-3.5 text-center font-mono text-slate-600 dark:text-slate-300 border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-5 py-3.5 text-center font-mono text-slate-600 dark:text-slate-300 border-b border-slate-200/80 dark:border-dark-border">
                             {new Date(proc.procurement_date).toLocaleDateString("id-ID", {
                               day: "2-digit",
                               month: "short",
@@ -1136,14 +1136,14 @@ export default function ProcurementModule({
 
                         {/* Total Cost */}
                         {columnVisibility.totalCost && (
-                          <td className="px-5 py-3.5 text-right font-mono font-black text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-5 py-3.5 text-right font-mono font-black text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-dark-border">
                             Rp {proc.total_cost.toLocaleString("id-ID")}
                           </td>
                         )}
 
                         {/* Payment Status Badge */}
                         {columnVisibility.paymentStatus && (
-                          <td className="px-5 py-3.5 text-center border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-5 py-3.5 text-center border-b border-slate-200/80 dark:border-dark-border">
                             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wide ${
                               proc.payment_status === "paid"
                                 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50"
@@ -1161,7 +1161,7 @@ export default function ProcurementModule({
 
                         {/* Amount Owed */}
                         {columnVisibility.amountOwed && (
-                          <td className={`px-5 py-3.5 text-right font-mono font-bold border-b border-slate-200/80 dark:border-[#38383C] ${
+                          <td className={`px-5 py-3.5 text-right font-mono font-bold border-b border-slate-200/80 dark:border-dark-border ${
                             proc.amount_owed && proc.amount_owed > 0 ? "text-red-500 dark:text-red-400 font-extrabold" : "text-slate-400"
                           }`}>
                             Rp {proc.amount_owed ? proc.amount_owed.toLocaleString("id-ID") : 0}
@@ -1170,7 +1170,7 @@ export default function ProcurementModule({
 
                         {/* Due Date */}
                         {columnVisibility.dueDate && (
-                          <td className="px-5 py-3.5 text-center font-mono text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-5 py-3.5 text-center font-mono text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-dark-border">
                             {proc.due_date ? (
                               <div className="flex items-center justify-center gap-1">
                                 {isDueExpired && <AlertCircle className="w-3 h-3 text-red-500" />}
@@ -1190,7 +1190,7 @@ export default function ProcurementModule({
 
                         {/* Actions (3-dots dropdown) */}
                         {columnVisibility.actions && (
-                          <td className="px-5 py-3.5 text-center border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-5 py-3.5 text-center border-b border-slate-200/80 dark:border-dark-border">
                             <DropdownMenu>
                               <DropdownMenuTrigger
                                 onClick={(e) => e.stopPropagation()}
@@ -1203,7 +1203,7 @@ export default function ProcurementModule({
                                   onClick={() => handleOpenDetail(proc)}
                                   className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
                                 >
-                                  <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-[#E2FF66]" />
+                                  <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-primary" />
                                   <span>{t.viewDetails}</span>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
@@ -1331,7 +1331,7 @@ export default function ProcurementModule({
             top: `${contextMenu.y}px`,
             left: `${contextMenu.x}px`,
           }}
-          className="fixed z-50 min-w-[200px] bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#38383C] rounded-2xl shadow-2xl p-1.5 animate-in fade-in-0 zoom-in-95 text-slate-800 dark:text-slate-100"
+          className="fixed z-50 min-w-[200px] bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border rounded-2xl shadow-2xl p-1.5 animate-in fade-in-0 zoom-in-95 text-slate-800 dark:text-slate-100"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-[#333338] mb-1 truncate max-w-[210px]">
@@ -1346,7 +1346,7 @@ export default function ProcurementModule({
             }}
             className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg flex items-center gap-2 cursor-pointer transition-colors"
           >
-            <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-[#E2FF66]" />
+            <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-primary" />
             <span>{t.viewDetails}</span>
           </button>
 
@@ -1384,10 +1384,10 @@ export default function ProcurementModule({
 
       {/* ── DETAIL DIALOG (SHADCN DIALOG) ── */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-2xl bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-slate-100 rounded-3xl p-6 shadow-2xl">
+        <DialogContent className="max-w-2xl bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border text-slate-900 dark:text-slate-100 rounded-3xl p-6 shadow-2xl">
           <DialogHeader className="border-b border-slate-100 dark:border-[#303035] pb-4 text-left">
             <DialogTitle className="text-lg font-bold flex items-center gap-2">
-              <FileSpreadsheet className="w-5 h-5 text-slate-800 dark:text-[#E2FF66]" />
+              <FileSpreadsheet className="w-5 h-5 text-slate-800 dark:text-primary" />
               <span>{t.procurementDetailTitle}</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400 font-medium">
@@ -1397,7 +1397,7 @@ export default function ProcurementModule({
 
           {loadingDetail ? (
             <div className="py-16 flex flex-col items-center justify-center">
-              <div className="w-8 h-8 border-3 border-slate-900 dark:border-[#E2FF66] border-t-transparent rounded-full animate-spin mb-3" />
+              <div className="w-8 h-8 border-3 border-slate-900 dark:border-primary border-t-transparent rounded-full animate-spin mb-3" />
               <span className="text-xs font-bold text-slate-400">Memuat rincian barang...</span>
             </div>
           ) : detailProcurement ? (
@@ -1419,7 +1419,7 @@ export default function ProcurementModule({
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{t.paymentStatusLabel}</span>
-                  <span className="text-xs font-bold capitalize text-slate-800 dark:text-[#E2FF66] block">
+                  <span className="text-xs font-bold capitalize text-slate-800 dark:text-primary block">
                     {detailProcurement.payment_status}
                   </span>
                 </div>
@@ -1454,23 +1454,23 @@ export default function ProcurementModule({
                     {detailProcurement.items && detailProcurement.items.length > 0 ? (
                       detailProcurement.items.map((it, idx) => (
                         <tr key={idx} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
-                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-dark-border">
                             {it.product_name}
                           </td>
-                          <td className="px-4 py-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-4 py-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200/80 dark:border-dark-border">
                             {it.qty} {it.product_unit}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-slate-300 border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-slate-300 border-b border-slate-200/80 dark:border-dark-border">
                             Rp {it.unit_cost.toLocaleString("id-ID")}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono font-bold text-slate-900 dark:text-[#E2FF66] border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-4 py-3 text-right font-mono font-bold text-slate-900 dark:text-primary border-b border-slate-200/80 dark:border-dark-border">
                             Rp {it.subtotal.toLocaleString("id-ID")}
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={4} className="text-center py-6 text-slate-400 font-medium border-b border-slate-200/80 dark:border-[#38383C]">
+                        <td colSpan={4} className="text-center py-6 text-slate-400 font-medium border-b border-slate-200/80 dark:border-dark-border">
                           Data rincian barang tidak ditemukan
                         </td>
                       </tr>
@@ -1484,7 +1484,7 @@ export default function ProcurementModule({
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
                   {t.totalProcurementCost}
                 </span>
-                <span className="text-base font-mono font-black text-slate-900 dark:text-[#E2FF66]">
+                <span className="text-base font-mono font-black text-slate-900 dark:text-primary">
                   Rp {detailProcurement.total_cost.toLocaleString("id-ID")}
                 </span>
               </div>
@@ -1496,7 +1496,7 @@ export default function ProcurementModule({
             <button
               type="button"
               onClick={() => setIsDetailOpen(false)}
-              className="px-6 py-2.5 font-bold text-xs bg-slate-900 dark:bg-[#E2FF66] text-white dark:text-slate-900 rounded-full cursor-pointer hover:opacity-90 transition-opacity"
+              className="px-6 py-2.5 font-bold text-xs bg-slate-900 dark:bg-primary text-white dark:text-slate-900 rounded-full cursor-pointer hover:opacity-90 transition-opacity"
             >
               {t.close}
             </button>

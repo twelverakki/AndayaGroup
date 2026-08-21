@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { api } from "../lib/api";
-import { useAuthStore } from "../lib/store";
+import { api } from "../../lib/api";
+import { useAuthStore } from "../../lib/store";
 import {
   useLanguageStore,
   translations,
@@ -9,15 +9,15 @@ import {
   getStatusOptions,
   formatNumberInput,
   parseNumberInput,
-} from "../lib/i18n";
-import { toast } from "./ui/sonner";
+} from "../../lib/i18n";
+import { toast } from "../../components/ui/sonner";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "./ui/dropdown-menu";
-import { Checkbox } from "./ui/checkbox";
+} from "../../components/ui/dropdown-menu";
+import { Checkbox } from "../../components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +26,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-} from "./ui/dialog";
+} from "../../components/ui/dialog";
 import { 
   ArrowLeft, Barcode, CheckCircle2, AlertCircle, 
   Info, Sparkles, Tag, DollarSign, Package, Plus, Edit3,
@@ -553,23 +553,23 @@ export default function InventoryModule({
     // Icon-prefixed input (with padding left)
     const inputClass = `w-full pl-11 pr-4 py-2.5 rounded-full border text-sm font-semibold focus:outline-none focus:ring-2 transition-all duration-200 ${
       isDarkMode 
-        ? "bg-[#1E1E22] border-[#38383C] text-white focus:ring-[#E2FF66]/20 focus:border-[#E2FF66]" 
+        ? "bg-dark-bg border-dark-border text-white focus:ring-primary/20 focus:border-primary" 
         : "bg-slate-50/70 border-slate-200 text-slate-850 focus:ring-slate-400/20 focus:border-slate-500"
     }`;
 
     // Normal input without left icon
     const normalInputClass = `w-full px-4 py-2.5 rounded-full border text-sm font-semibold focus:outline-none focus:ring-2 transition-all duration-200 ${
       isDarkMode 
-        ? "bg-[#1E1E22] border-[#38383C] text-white focus:ring-[#E2FF66]/20 focus:border-[#E2FF66]" 
+        ? "bg-dark-bg border-dark-border text-white focus:ring-primary/20 focus:border-primary" 
         : "bg-slate-50/70 border-slate-200 text-slate-850 focus:ring-slate-400/20 focus:border-slate-500"
     }`;
 
-    const dropdownTriggerClass = `w-full flex items-center justify-between px-4 py-2.5 rounded-full border focus:outline-none focus:ring-2 bg-slate-50/70 dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-800 dark:text-slate-100 text-sm font-semibold cursor-pointer transition-all`;
+    const dropdownTriggerClass = `w-full flex items-center justify-between px-4 py-2.5 rounded-full border focus:outline-none focus:ring-2 bg-slate-50/70 dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-800 dark:text-slate-100 text-sm font-semibold cursor-pointer transition-all`;
 
-    const bentoCardClass = "bg-white dark:bg-[#232326] border border-slate-200/80 dark:border-[#38383C] rounded-3xl p-6 shadow-xs space-y-4 text-left";
-    const bentoSidebarCardClass = "bg-white dark:bg-[#232326] border border-slate-200/80 dark:border-[#38383C] rounded-3xl p-5 shadow-xs space-y-4 text-left";
+    const bentoCardClass = "bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border rounded-3xl p-6 shadow-xs space-y-4 text-left";
+    const bentoSidebarCardClass = "bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border rounded-3xl p-5 shadow-xs space-y-4 text-left";
 
-    const cardHeadingClass = "text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-[#E2FF66] flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-[#333338]";
+    const cardHeadingClass = "text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-primary flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-[#333338]";
 
     // Calculations for real-time Profit Matrix
     const buyNum = parseNumberInput(prodBuy);
@@ -595,7 +595,7 @@ export default function InventoryModule({
               type="button"
               onClick={onCancel}
               className={`p-2.5 rounded-full border transition-all cursor-pointer ${
-                isDarkMode ? "bg-[#232326] border-[#38383C] text-white hover:bg-white/5" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                isDarkMode ? "bg-dark-card border-dark-border text-white hover:bg-white/5" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
               }`}
               title={t.cancel}
             >
@@ -604,7 +604,7 @@ export default function InventoryModule({
           )}
           <div>
             <span className="text-[10px] uppercase font-bold tracking-widest opacity-60 flex items-center gap-1.5 text-slate-500">
-              <Package className="w-3 h-3 text-slate-700 dark:text-[#E2FF66]" /> {t.inventoryBreadcrumb} / {view === "new" ? t.addNewProduct : t.edit}
+              <Package className="w-3 h-3 text-slate-700 dark:text-primary" /> {t.inventoryBreadcrumb} / {view === "new" ? t.addNewProduct : t.edit}
             </span>
             <h3 className="text-xl font-bold tracking-tight mt-0.5 text-slate-900 dark:text-slate-100">
               {view === "new" ? t.addNewProduct : t.editProductTitle}
@@ -622,7 +622,7 @@ export default function InventoryModule({
               {/* Card 1: Informasi Dasar Produk */}
               <div className={bentoCardClass}>
                 <h4 className={cardHeadingClass}>
-                  <Package className="w-4 h-4 text-slate-700 dark:text-[#E2FF66]" />
+                  <Package className="w-4 h-4 text-slate-700 dark:text-primary" />
                   <span>{t.basicInfoSection}</span>
                 </h4>
 
@@ -655,7 +655,7 @@ export default function InventoryModule({
                       <button
                         type="button"
                         onClick={handleGenerateSku}
-                        className="text-[10px] font-bold text-slate-700 dark:text-[#E2FF66] hover:underline flex items-center gap-1 cursor-pointer"
+                        className="text-[10px] font-bold text-slate-700 dark:text-primary hover:underline flex items-center gap-1 cursor-pointer"
                         title={t.generateSku}
                       >
                         <Sparkles className="w-3 h-3" />
@@ -692,7 +692,7 @@ export default function InventoryModule({
                             setProdCat("General");
                           }
                         }}
-                        className="text-[10px] font-bold text-slate-700 dark:text-[#E2FF66] hover:underline cursor-pointer"
+                        className="text-[10px] font-bold text-slate-700 dark:text-primary hover:underline cursor-pointer"
                       >
                         {isCustomCat ? t.backToListCategory : t.customCategoryOption}
                       </button>
@@ -713,7 +713,7 @@ export default function InventoryModule({
                           <span>{prodCat || t.selectCategory}</span>
                           <span className="text-[10px] opacity-60">▼</span>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#38383C] shadow-xl rounded-xl p-1.5 min-w-[220px] max-h-60 overflow-y-auto">
+                        <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border shadow-xl rounded-xl p-1.5 min-w-[220px] max-h-60 overflow-y-auto">
                           {existingCategories.length === 0 ? (
                             <DropdownMenuItem disabled className="text-xs opacity-60 px-3 py-2">
                               {t.noCategoriesYet}
@@ -735,7 +735,7 @@ export default function InventoryModule({
                               setIsCustomCat(true);
                               setProdCat("");
                             }}
-                            className="cursor-pointer px-3 py-2 text-xs text-slate-800 dark:text-[#E2FF66] hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg font-extrabold flex items-center gap-1.5"
+                            className="cursor-pointer px-3 py-2 text-xs text-slate-800 dark:text-primary hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg font-extrabold flex items-center gap-1.5"
                           >
                             <Plus className="w-3.5 h-3.5" /> {t.customCategoryOption}
                           </DropdownMenuItem>
@@ -761,7 +761,7 @@ export default function InventoryModule({
                           setProdUnit("pcs");
                         }
                       }}
-                      className="text-[10px] font-bold text-slate-700 dark:text-[#E2FF66] hover:underline cursor-pointer"
+                      className="text-[10px] font-bold text-slate-700 dark:text-primary hover:underline cursor-pointer"
                     >
                       {isCustomUnit ? t.backToListUnit : t.customUnitOption}
                     </button>
@@ -782,7 +782,7 @@ export default function InventoryModule({
                         <span className="capitalize">{unitTypes.find(u => u.val === prodUnit)?.label || prodUnit}</span>
                         <span className="text-[10px] opacity-60">▼</span>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#38383C] shadow-xl rounded-xl p-1.5 min-w-[220px]">
+                      <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border shadow-xl rounded-xl p-1.5 min-w-[220px]">
                         {unitTypes.map((u) => (
                           <DropdownMenuItem
                             key={u.val}
@@ -798,7 +798,7 @@ export default function InventoryModule({
                             setIsCustomUnit(true);
                             setProdUnit("");
                           }}
-                          className="cursor-pointer px-3 py-2 text-xs text-slate-800 dark:text-[#E2FF66] hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg font-extrabold flex items-center gap-1.5"
+                          className="cursor-pointer px-3 py-2 text-xs text-slate-800 dark:text-primary hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg font-extrabold flex items-center gap-1.5"
                         >
                           <Plus className="w-3.5 h-3.5" /> {t.customUnitOption}
                         </DropdownMenuItem>
@@ -811,7 +811,7 @@ export default function InventoryModule({
               {/* Card 2: Penetapan Harga & Margin Matrix */}
               <div className={bentoCardClass}>
                 <h4 className={cardHeadingClass}>
-                  <DollarSign className="w-4 h-4 text-slate-700 dark:text-[#E2FF66]" />
+                  <DollarSign className="w-4 h-4 text-slate-700 dark:text-primary" />
                   <span>{t.pricingSection}</span>
                 </h4>
 
@@ -879,7 +879,7 @@ export default function InventoryModule({
               {/* Card 3: Inventori & Aturan Mode */}
               <div className={bentoCardClass}>
                 <h4 className={cardHeadingClass}>
-                  <Layers className="w-4 h-4 text-slate-700 dark:text-[#E2FF66]" />
+                  <Layers className="w-4 h-4 text-slate-700 dark:text-primary" />
                   <span>{t.inventorySection}</span>
                 </h4>
 
@@ -896,8 +896,8 @@ export default function InventoryModule({
                           onClick={() => setProdMode(m.val)}
                           className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
                             isModeActive
-                              ? "bg-slate-900 text-white border-slate-900 dark:bg-[#E2FF66] dark:border-[#E2FF66] dark:text-slate-900 shadow-xs"
-                              : "bg-slate-50/70 dark:bg-[#1E1E22] border-slate-200/80 dark:border-[#333338] text-slate-700 dark:text-slate-300 hover:border-slate-400"
+                              ? "bg-slate-900 text-white border-slate-900 dark:bg-primary dark:border-primary dark:text-slate-900 shadow-xs"
+                              : "bg-slate-50/70 dark:bg-dark-bg border-slate-200/80 dark:border-[#333338] text-slate-700 dark:text-slate-300 hover:border-slate-400"
                           }`}
                         >
                           <div className="flex items-center justify-between w-full">
@@ -950,7 +950,7 @@ export default function InventoryModule({
               {/* Card 4: Media / Foto Produk */}
               <div className={bentoSidebarCardClass}>
                 <h4 className={cardHeadingClass}>
-                  <Upload className="w-4 h-4 text-slate-700 dark:text-[#E2FF66]" />
+                  <Upload className="w-4 h-4 text-slate-700 dark:text-primary" />
                   <span>{t.mediaSection}</span>
                 </h4>
 
@@ -962,10 +962,10 @@ export default function InventoryModule({
                   onDrop={handleDrop}
                   className={`relative w-full h-40 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden transition-all duration-200 cursor-pointer ${
                     dragActive 
-                      ? "border-slate-800 dark:border-[#E2FF66] bg-slate-100/50 dark:bg-[#E2FF66]/5 scale-[1.01]" 
+                      ? "border-slate-800 dark:border-primary bg-slate-100/50 dark:bg-primary/5 scale-[1.01]" 
                       : prodImage 
                         ? "border-emerald-500/50 bg-emerald-500/[0.02]" 
-                        : "border-slate-300 dark:border-[#3A3A3A] hover:border-slate-400 dark:hover:border-slate-600 bg-slate-50/50 dark:bg-[#1E1E22]"
+                        : "border-slate-300 dark:border-dark-border-lighter hover:border-slate-400 dark:hover:border-slate-600 bg-slate-50/50 dark:bg-dark-bg"
                   }`}
                 >
                   <input
@@ -982,7 +982,7 @@ export default function InventoryModule({
 
                   {uploading ? (
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-800 dark:border-t-[#E2FF66] rounded-full animate-spin" />
+                      <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-800 dark:border-t-primary rounded-full animate-spin" />
                       <span className="text-xs font-bold opacity-75">{t.uploadingImage}</span>
                     </div>
                   ) : activeDisplayImage ? (
@@ -1022,9 +1022,9 @@ export default function InventoryModule({
                       onClick={() => document.getElementById("product-image-file")?.click()}
                       className="w-full h-full flex flex-col items-center justify-center p-4 text-center space-y-1.5"
                     >
-                      <Upload className="w-7 h-7 text-slate-400 dark:text-[#E2FF66] opacity-70" />
+                      <Upload className="w-7 h-7 text-slate-400 dark:text-primary opacity-70" />
                       <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        {t.dragDropPrompt} <span className="text-slate-800 dark:text-[#E2FF66] underline">{t.browseFile}</span>
+                        {t.dragDropPrompt} <span className="text-slate-800 dark:text-primary underline">{t.browseFile}</span>
                       </div>
                       <p className="text-[10px] opacity-60">{t.fileSupportHint}</p>
                     </div>
@@ -1056,7 +1056,7 @@ export default function InventoryModule({
               {/* Card 5: Status & Visibilitas */}
               <div className={bentoSidebarCardClass}>
                 <h4 className={cardHeadingClass}>
-                  <Eye className="w-4 h-4 text-slate-700 dark:text-[#E2FF66]" />
+                  <Eye className="w-4 h-4 text-slate-700 dark:text-primary" />
                   <span>{t.statusSection}</span>
                 </h4>
 
@@ -1070,8 +1070,8 @@ export default function InventoryModule({
                         onClick={() => setProdStatus(s.val as any)}
                         className={`w-full flex items-center justify-between px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                           isStatusActive
-                            ? "bg-slate-900 text-white border-slate-900 dark:bg-[#E2FF66] dark:border-[#E2FF66] dark:text-slate-900 font-bold shadow-xs"
-                            : "bg-slate-50/70 dark:bg-[#1E1E22] border-slate-200/80 dark:border-[#333338] text-slate-700 dark:text-slate-300 hover:border-slate-400"
+                            ? "bg-slate-900 text-white border-slate-900 dark:bg-primary dark:border-primary dark:text-slate-900 font-bold shadow-xs"
+                            : "bg-slate-50/70 dark:bg-dark-bg border-slate-200/80 dark:border-[#333338] text-slate-700 dark:text-slate-300 hover:border-slate-400"
                         }`}
                       >
                         <span className="capitalize">{s.label}</span>
@@ -1085,7 +1085,7 @@ export default function InventoryModule({
               {/* Card 6: Pratinjau Kartu Produk (Live Preview) */}
               <div className={bentoSidebarCardClass}>
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-[#333338]">
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-[#E2FF66] flex items-center gap-1.5">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-primary flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>{t.livePreview}</span>
                   </h4>
@@ -1134,7 +1134,7 @@ export default function InventoryModule({
               <button
                 type="button"
                 onClick={onCancel}
-                className="px-6 py-3 font-bold border border-slate-200 dark:border-[#38383C] bg-white dark:bg-[#232326] text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 rounded-full cursor-pointer text-xs transition-all"
+                className="px-6 py-3 font-bold border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 rounded-full cursor-pointer text-xs transition-all"
               >
                 {t.cancel}
               </button>
@@ -1142,7 +1142,7 @@ export default function InventoryModule({
             <button
               type="submit"
               disabled={formLoading}
-              className="px-8 py-3 font-extrabold rounded-full cursor-pointer text-xs shadow-md transition-all bg-slate-900 hover:bg-slate-800 dark:bg-[#E2FF66] dark:hover:bg-[#E2FF66]/85 text-white dark:text-slate-900 flex items-center gap-2"
+              className="px-8 py-3 font-extrabold rounded-full cursor-pointer text-xs shadow-md transition-all bg-slate-900 hover:bg-slate-800 dark:bg-primary dark:hover:bg-primary/85 text-white dark:text-slate-900 flex items-center gap-2"
             >
               {formLoading ? (
                 <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -1245,7 +1245,7 @@ export default function InventoryModule({
               if (onAddNew) onAddNew();
               else if (onNavigate) onNavigate("inventory-add");
             }}
-            className="px-4 py-2.5 rounded-full font-bold text-xs bg-[#CCF657] dark:bg-[#E2FF66] text-slate-900 shadow-sm hover:brightness-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer self-start sm:self-auto shrink-0"
+            className="px-4 py-2.5 rounded-full font-bold text-xs bg-primary dark:bg-primary text-slate-900 shadow-sm hover:brightness-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer self-start sm:self-auto shrink-0"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>{t.menuAddNewProduct}</span>
@@ -1271,8 +1271,8 @@ export default function InventoryModule({
               placeholder={t.searchPlaceholder}
               className={`w-full pl-12 pr-16 py-3 rounded-full border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-400/20 transition-all ${
                 isDarkMode 
-                  ? "bg-[#232326] border-[#38383C] text-white focus:border-[#E2FF66]" 
-                  : "bg-white border-[#B8B9BE]/60 text-slate-800 focus:border-slate-500"
+                  ? "bg-dark-card border-dark-border text-white focus:border-primary" 
+                  : "bg-white border-light-border/60 text-slate-800 focus:border-slate-500"
               }`}
             />
             <div className="absolute right-4 top-3 flex items-center gap-1.5">
@@ -1287,7 +1287,7 @@ export default function InventoryModule({
                 </button>
               ) : (
                 <kbd
-                  className="hidden sm:inline-flex items-center px-2 py-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-[#1E1E22] border border-slate-200 dark:border-[#38383C] rounded-md pointer-events-none shadow-2xs"
+                  className="hidden sm:inline-flex items-center px-2 py-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-md pointer-events-none shadow-2xs"
                   title={t.shortcutSearchHint}
                 >
                   /
@@ -1303,16 +1303,16 @@ export default function InventoryModule({
             <DropdownMenu>
               <DropdownMenuTrigger className={`flex items-center gap-2 px-4 py-3 rounded-full border text-xs font-bold cursor-pointer transition-all ${
                 activeFiltersCount > 0
-                  ? "bg-slate-900 text-white border-slate-900 dark:bg-[#E2FF66] dark:border-[#E2FF66] dark:text-slate-900 shadow-sm"
+                  ? "bg-slate-900 text-white border-slate-900 dark:bg-primary dark:border-primary dark:text-slate-900 shadow-sm"
                   : isDarkMode
-                  ? "bg-[#232326] border-[#38383C] text-slate-200 hover:bg-white/5"
-                  : "bg-white border-[#B8B9BE]/60 text-slate-700 hover:bg-slate-50"
+                  ? "bg-dark-card border-dark-border text-slate-200 hover:bg-white/5"
+                  : "bg-white border-light-border/60 text-slate-700 hover:bg-slate-50"
               }`}>
                 <Filter className="w-3.5 h-3.5" />
                 <span>{t.filter}</span>
                 {activeFiltersCount > 0 && (
                   <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                    isDarkMode ? "bg-black text-[#E2FF66]" : "bg-white text-slate-900"
+                    isDarkMode ? "bg-black text-primary" : "bg-white text-slate-900"
                   }`}>
                     {activeFiltersCount}
                   </span>
@@ -1390,12 +1390,12 @@ export default function InventoryModule({
                         }}
                         className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer text-left ${
                           filterMode === "all"
-                            ? "text-slate-900 dark:text-[#E2FF66] font-bold bg-slate-100 dark:bg-white/5"
+                            ? "text-slate-900 dark:text-primary font-bold bg-slate-100 dark:bg-white/5"
                             : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.02]"
                         }`}
                       >
                         <div className="w-4 h-4 flex items-center justify-center shrink-0">
-                          {filterMode === "all" && <Check className="w-3.5 h-3.5 stroke-[2.5] text-slate-900 dark:text-[#E2FF66]" />}
+                          {filterMode === "all" && <Check className="w-3.5 h-3.5 stroke-[2.5] text-slate-900 dark:text-primary" />}
                         </div>
                         <span className="truncate">{t.filterModeAll}</span>
                       </button>
@@ -1411,12 +1411,12 @@ export default function InventoryModule({
                             }}
                             className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer text-left ${
                               isSelected
-                                ? "text-slate-900 dark:text-[#E2FF66] font-bold bg-slate-100 dark:bg-white/5"
+                                ? "text-slate-900 dark:text-primary font-bold bg-slate-100 dark:bg-white/5"
                                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.02]"
                             }`}
                           >
                             <div className="w-4 h-4 flex items-center justify-center shrink-0">
-                              {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] text-slate-900 dark:text-[#E2FF66]" />}
+                              {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] text-slate-900 dark:text-primary" />}
                             </div>
                             <span className="truncate">{m.label}</span>
                           </button>
@@ -1448,12 +1448,12 @@ export default function InventoryModule({
                             }}
                             className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer text-left ${
                               isSelected
-                                ? "text-slate-900 dark:text-[#E2FF66] font-bold bg-slate-100 dark:bg-white/5"
+                                ? "text-slate-900 dark:text-primary font-bold bg-slate-100 dark:bg-white/5"
                                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.02]"
                             }`}
                           >
                             <div className="w-4 h-4 flex items-center justify-center shrink-0">
-                              {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] text-slate-900 dark:text-[#E2FF66]" />}
+                              {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] text-slate-900 dark:text-primary" />}
                             </div>
                             <span className="truncate">{stk.label}</span>
                           </button>
@@ -1502,13 +1502,13 @@ export default function InventoryModule({
                   }}
                   className={`relative px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer whitespace-nowrap capitalize shrink-0 ${
                     isCatActive
-                      ? "text-slate-900 dark:text-[#E2FF66]"
+                      ? "text-slate-900 dark:text-primary"
                       : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                   }`}
                 >
                   {cat === "all" ? t.allCategories : cat}
                   {isCatActive && (
-                    <span className="absolute bottom-0 left-3.5 right-3.5 h-[2px] bg-slate-900 dark:bg-[#E2FF66] rounded-full" />
+                    <span className="absolute bottom-0 left-3.5 right-3.5 h-[2px] bg-slate-900 dark:bg-primary rounded-full" />
                   )}
                 </button>
               );
@@ -1535,14 +1535,14 @@ export default function InventoryModule({
             >
               <ChevronRight className="w-4 h-4" />
             </button>
-            <div className="w-[1px] h-4 bg-slate-300 dark:bg-[#38383C] mx-0.5" />
+            <div className="w-[1px] h-4 bg-slate-300 dark:bg-dark-border mx-0.5" />
             <button
               type="button"
               onClick={() => {
                 setCategorySearch("");
                 setIsCategoryDialogOpen(true);
               }}
-              className="w-8 h-8 rounded-full flex items-center justify-center bg-white dark:bg-[#2B2B30] text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-[#E2FF66] hover:scale-105 border border-slate-200/80 dark:border-[#38383C] shadow-sm transition-all cursor-pointer"
+              className="w-8 h-8 rounded-full flex items-center justify-center bg-white dark:bg-[#2B2B30] text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-primary hover:scale-105 border border-slate-200/80 dark:border-dark-border shadow-sm transition-all cursor-pointer"
               title={t.viewAllCategories}
               aria-label={t.viewAllCategories}
             >
@@ -1554,15 +1554,15 @@ export default function InventoryModule({
 
       {/* Loading state */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-[#232326] border border-slate-200/80 dark:border-slate-800 rounded-[28px] shadow-sm">
-          <div className="w-10 h-10 border-4 border-slate-700 dark:border-[#E2FF66] border-t-transparent rounded-full animate-spin mb-3" />
+        <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-dark-card border border-slate-200/80 dark:border-slate-800 rounded-[28px] shadow-sm">
+          <div className="w-10 h-10 border-4 border-slate-700 dark:border-primary border-t-transparent rounded-full animate-spin mb-3" />
           <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">{t.loading}</span>
         </div>
       ) : (
         <>
           {/* ── TABLE CARD ── */}
           <div
-            className="bg-white dark:bg-[#232326] border border-slate-200/80 dark:border-[#38383C] rounded-[28px] shadow-sm p-4 sm:p-6"
+            className="bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border rounded-[28px] shadow-sm p-4 sm:p-6"
             style={{ boxShadow: isDarkMode ? "0 4px 24px 0 rgba(0,0,0,0.35)" : "0 4px 20px 0 rgba(0,0,0,0.06)" }}
           >
             <div className="overflow-x-auto">
@@ -1732,8 +1732,8 @@ export default function InventoryModule({
                       >
                         {/* Gambar Produk */}
                         {visibleColumns.image && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C]">
-                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 dark:bg-[#1C1C1F] flex items-center justify-center border border-slate-200/60 dark:border-[#38383C] shrink-0">
+                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border">
+                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 dark:bg-[#1C1C1F] flex items-center justify-center border border-slate-200/60 dark:border-dark-border shrink-0">
                               {p.image_url ? (
                                 <img
                                   src={getFullImageUrl(p.image_url)}
@@ -1749,21 +1749,21 @@ export default function InventoryModule({
 
                         {/* Nama Produk */}
                         {visibleColumns.name && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C] text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
+                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
                             {p.name}
                           </td>
                         )}
 
                         {/* SKU */}
                         {visibleColumns.sku && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C] font-mono text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border font-mono text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                             {p.sku || "—"}
                           </td>
                         )}
 
                         {/* Kategori */}
                         {visibleColumns.category && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C]">
+                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border">
                             <span
                               className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide"
                               style={{
@@ -1778,28 +1778,28 @@ export default function InventoryModule({
 
                         {/* Inventory Mode */}
                         {visibleColumns.mode && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C] text-xs text-slate-600 dark:text-slate-400 capitalize whitespace-nowrap">
+                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-xs text-slate-600 dark:text-slate-400 capitalize whitespace-nowrap">
                             {p.inventory_mode.replace(/_/g, " ")}
                           </td>
                         )}
 
                         {/* Harga Modal */}
                         {visibleColumns.buyPrice && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C] text-right font-mono text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-right font-mono text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
                             Rp {p.purchase_price.toLocaleString("id-ID")}
                           </td>
                         )}
 
                         {/* Harga Jual */}
                         {visibleColumns.sellPrice && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C] text-right font-mono text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
+                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-right font-mono text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
                             Rp {p.sell_price.toLocaleString("id-ID")}
                           </td>
                         )}
 
                         {/* Stok */}
                         {visibleColumns.stock && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C] text-center whitespace-nowrap">
+                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-center whitespace-nowrap">
                             <span
                               className={`font-bold text-sm font-mono ${
                                 p.current_stock <= 0
@@ -1819,7 +1819,7 @@ export default function InventoryModule({
 
                         {/* Status */}
                         {visibleColumns.status && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C] text-center whitespace-nowrap">
+                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-center whitespace-nowrap">
                             <span
                               className={`text-sm font-semibold ${
                                 p.status === "active"
@@ -1840,7 +1840,7 @@ export default function InventoryModule({
 
                         {/* Aksi — three-dot menu */}
                         <td 
-                          className="px-6 py-3.5 border-b border-slate-200/80 dark:border-[#38383C] text-right"
+                          className="px-6 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-right"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <DropdownMenu>
@@ -1858,7 +1858,7 @@ export default function InventoryModule({
                                 }}
                                 className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
                               >
-                                <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-[#E2FF66]" />
+                                <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-primary" />
                                 {t.viewDetails}
                               </DropdownMenuItem>
                               {onEditProduct && (
@@ -2034,7 +2034,7 @@ export default function InventoryModule({
             top: `${headerContextMenu.y}px`,
             left: `${headerContextMenu.x}px`,
           }}
-          className="fixed z-50 min-w-[210px] bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#38383C] rounded-2xl shadow-2xl p-2 animate-in fade-in-0 zoom-in-95 text-slate-800 dark:text-slate-100"
+          className="fixed z-50 min-w-[210px] bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border rounded-2xl shadow-2xl p-2 animate-in fade-in-0 zoom-in-95 text-slate-800 dark:text-slate-100"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-[#333338] mb-1 flex items-center justify-between">
@@ -2088,7 +2088,7 @@ export default function InventoryModule({
             top: `${contextMenu.y}px`,
             left: `${contextMenu.x}px`,
           }}
-          className="fixed z-50 min-w-[190px] bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#38383C] rounded-2xl shadow-2xl p-1.5 animate-in fade-in-0 zoom-in-95 text-slate-800 dark:text-slate-100"
+          className="fixed z-50 min-w-[190px] bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border rounded-2xl shadow-2xl p-1.5 animate-in fade-in-0 zoom-in-95 text-slate-800 dark:text-slate-100"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-[#333338] mb-1 truncate max-w-[200px]">
@@ -2103,7 +2103,7 @@ export default function InventoryModule({
             }}
             className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg flex items-center gap-2 cursor-pointer transition-colors"
           >
-            <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-[#E2FF66]" />
+            <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-primary" />
             {t.viewDetails}
           </button>
           {isManagerOrOwner && onEditProduct && (
@@ -2207,10 +2207,10 @@ export default function InventoryModule({
 
       {/* ── ALL CATEGORIES MODAL DIALOG ── */}
       <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-        <DialogContent className="max-w-2xl p-6 bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C]">
+        <DialogContent className="max-w-2xl p-6 bg-white dark:bg-[#202024] border-slate-200 dark:border-dark-border">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-[#2E2E34] flex items-center justify-center text-slate-700 dark:text-[#E2FF66]">
+              <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-[#2E2E34] flex items-center justify-center text-slate-700 dark:text-primary">
                 <LayoutGrid className="w-5 h-5" />
               </div>
               <div>
@@ -2232,7 +2232,7 @@ export default function InventoryModule({
               value={categorySearch}
               onChange={(e) => setCategorySearch(e.target.value)}
               placeholder={t.searchCategories}
-              className="w-full pl-10 pr-4 py-2.5 rounded-full border border-slate-200 dark:border-[#38383C] bg-slate-50 dark:bg-[#1C1C1F] text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+              className="w-full pl-10 pr-4 py-2.5 rounded-full border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-[#1C1C1F] text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-400/20"
             />
             {categorySearch && (
               <button
@@ -2269,8 +2269,8 @@ export default function InventoryModule({
                     }}
                     className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
                       isCatActive
-                        ? "bg-slate-900 dark:bg-[#E2FF66] border-slate-900 dark:border-[#E2FF66] text-white dark:text-slate-900 shadow-md"
-                        : "bg-slate-50 dark:bg-[#1E1E22] border-slate-200/80 dark:border-[#35353A] hover:border-slate-400 dark:hover:border-slate-600 text-slate-800 dark:text-slate-200"
+                        ? "bg-slate-900 dark:bg-primary border-slate-900 dark:border-primary text-white dark:text-slate-900 shadow-md"
+                        : "bg-slate-50 dark:bg-dark-bg border-slate-200/80 dark:border-[#35353A] hover:border-slate-400 dark:hover:border-slate-600 text-slate-800 dark:text-slate-200"
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -2303,12 +2303,12 @@ export default function InventoryModule({
 
       {/* ── PRODUCT DETAIL DIALOG ── */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-xl p-6 bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C]">
+        <DialogContent className="max-w-xl p-6 bg-white dark:bg-[#202024] border-slate-200 dark:border-dark-border">
           {detailProduct && (
             <div className="space-y-5">
               <DialogHeader>
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-[#1C1C1F] flex items-center justify-center overflow-hidden border border-slate-200/80 dark:border-[#38383C] shrink-0">
+                  <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-[#1C1C1F] flex items-center justify-center overflow-hidden border border-slate-200/80 dark:border-dark-border shrink-0">
                     {detailProduct.image_url ? (
                       <img
                         src={getFullImageUrl(detailProduct.image_url)}
@@ -2383,7 +2383,7 @@ export default function InventoryModule({
 
               {/* Mode Rule Explanation (Depth Gray palette) */}
               <div className="p-3.5 bg-slate-100/90 dark:bg-[#1B1B1E] rounded-2xl border border-slate-200/80 dark:border-[#303035] text-xs flex items-start gap-3">
-                <Info className="w-4 h-4 text-slate-600 dark:text-[#E2FF66] shrink-0 mt-0.5" />
+                <Info className="w-4 h-4 text-slate-600 dark:text-primary shrink-0 mt-0.5" />
                 <div>
                   <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">
                     {t.inventoryModeLabel}: {detailProduct.inventory_mode.replace(/_/g, " ")}
@@ -2402,7 +2402,7 @@ export default function InventoryModule({
                       setIsDetailOpen(false);
                       onEditProduct(detailProduct);
                     }}
-                    className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-[#E2FF66] dark:hover:bg-[#E2FF66]/85 text-white dark:text-slate-900 text-xs font-bold rounded-full transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                    className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-primary dark:hover:bg-primary/85 text-white dark:text-slate-900 text-xs font-bold rounded-full transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                     {t.editThisProduct}

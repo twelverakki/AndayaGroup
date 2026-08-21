@@ -22,6 +22,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TooltipProvider,
 } from "~/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
 
@@ -128,23 +129,25 @@ function SidebarProvider({
 
   return (
     <SidebarContext.Provider value={contextValue}>
-      <div
-        data-slot="sidebar-wrapper"
-        style={
-          {
-            "--sidebar-width": SIDEBAR_WIDTH,
-            "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
-            ...style,
-          } as React.CSSProperties
-        }
-        className={cn(
-          "group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar",
-          className
-        )}
-        {...props}
-      >
-        {children}
-      </div>
+      <TooltipProvider delay={0}>
+        <div
+          data-slot="sidebar-wrapper"
+          style={
+            {
+              "--sidebar-width": SIDEBAR_WIDTH,
+              "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
+              ...style,
+            } as React.CSSProperties
+          }
+          className={cn(
+            "group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar",
+            className
+          )}
+          {...props}
+        >
+          {children}
+        </div>
+      </TooltipProvider>
     </SidebarContext.Provider>
   )
 }
@@ -375,7 +378,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-sidebar="content"
       className={cn(
         "no-scrollbar flex min-h-0 flex-1 flex-col gap-0 overflow-auto",
-        "group-data-[collapsible=icon]:bg-white/45 group-data-[collapsible=icon]:dark:bg-white/5 group-data-[collapsible=icon]:shadow-md group-data-[collapsible=icon]:p-1 group-data-[collapsible=icon]:rounded-full group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-2 group-data-[collapsible=icon]:py-3 group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:w-12 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:overflow-y-auto group-data-[collapsible=icon]:max-h-[calc(100vh-12rem)]",
+        "group-data-[collapsible=icon]:bg-white/45 group-data-[collapsible=icon]:dark:bg-white/5 group-data-[collapsible=icon]:shadow-md group-data-[collapsible=icon]:p-2 group-data-[collapsible=icon]:rounded-full group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-2 group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:w-14 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:overflow-y-auto group-data-[collapsible=icon]:max-h-[calc(100vh-12rem)]",
         className
       )}
       {...props}

@@ -81,9 +81,9 @@ Dokumen ini berisi standar dan aturan baku arsitektur UI/UX serta interaksi untu
 
 ---
 
-## 9. Sistem Notifikasi & Info (ShadCN Toast / Sonner)
-- **Info & Feedback -> Toast ShadCN**:
-  - Gunakan `toast.success()`, `toast.error()`, `toast.info()`, atau `toast.warning()` dari `frontend/app/components/ui/sonner.tsx` untuk menampilkan feedback operasi (sukses simpan, salin SKU, arsip produk, ubah status, pesan validasi/error).
+## 9. Sistem Notifikasi & Info (ShadCN Toast / Sonner - Wajib)
+- **Info & Feedback -> Toast ShadCN (Sonner)**:
+  - Setiap aksi penting (menyimpan data, mengubah status operasional, menyalin ID/SKU/Invoice, mengarsipkan produk, atau kegagalan sistem/API error) **WAJIB** menampilkan status aksinya dengan memanggil `toast.success()`, `toast.error()`, `toast.info()`, atau `toast.warning()` dari `frontend/app/components/ui/sonner.tsx`.
   - **Aturan Warna & Tampilan**:
     - Background toast **wajib bernuansa netral/clean** (`bg-white dark:bg-[#202024]` dengan border halus), tidak menggunakan warna background yang terlalu mencolok.
     - **Ekspresi status (sukses/gagal/info/peringatan) diwakili sepenuhnya oleh icon line** di dalam toast (`CheckCircle2` hijau untuk sukses, `AlertCircle` merah untuk error, `Info` biru/lime untuk info, `AlertTriangle` kuning untuk warning).

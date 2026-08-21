@@ -1,9 +1,16 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { api } from "../lib/api";
-import { useAuthStore } from "../lib/store";
-import { useLanguageStore, translations } from "../lib/i18n";
+import { api } from "../../lib/api";
+import { useAuthStore } from "../../lib/store";
+import { useLanguageStore, translations } from "../../lib/i18n";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import {
   TrendingUp,
   Calendar,
@@ -212,10 +219,10 @@ export default function SalesReportModule() {
     <div className="flex-1 flex flex-col overflow-y-auto space-y-6 p-6 lg:p-8 scrollbar-thin">
       
       {/* ================= HEADER SECTION ================= */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-[#38383C]">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-dark-border">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#9362FC]/10 dark:bg-[#E2FF66]/10 text-[#9362FC] dark:text-[#E2FF66] flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-2xl bg-brand-purple/10 dark:bg-primary/10 text-brand-purple dark:text-primary flex items-center justify-center font-bold">
               <TrendingUp className="w-5 h-5" />
             </div>
             <div>
@@ -237,7 +244,7 @@ export default function SalesReportModule() {
             type="button"
             onClick={fetchReportData}
             disabled={loading}
-            className="p-2.5 rounded-xl border border-slate-200 dark:border-[#38383C] bg-white dark:bg-[#26262A] hover:bg-slate-50 dark:hover:bg-[#2E2E34] text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+            className="p-2.5 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-[#26262A] hover:bg-slate-50 dark:hover:bg-[#2E2E34] text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
             title="Refresh Data"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -246,16 +253,16 @@ export default function SalesReportModule() {
           <button
             type="button"
             onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-[#38383C] bg-white dark:bg-[#26262A] hover:bg-slate-50 dark:hover:bg-[#2E2E34] text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer shadow-xs"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-[#26262A] hover:bg-slate-50 dark:hover:bg-[#2E2E34] text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer shadow-xs"
           >
-            <Download className="w-4 h-4 text-purple-600 dark:text-[#E2FF66]" />
+            <Download className="w-4 h-4 text-purple-600 dark:text-primary" />
             <span>Ekspor CSV</span>
           </button>
 
           <button
             type="button"
             onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#9362FC] hover:bg-[#7D4BE3] text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-purple hover:bg-brand-purple-hover text-white text-xs font-bold transition-all shadow-md cursor-pointer"
           >
             <Printer className="w-4 h-4" />
             <span>Cetak Laporan</span>
@@ -264,11 +271,11 @@ export default function SalesReportModule() {
       </div>
 
       {/* ================= FILTER TOOLBAR ================= */}
-      <div className="p-4 rounded-3xl bg-slate-50/80 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-3">
+      <div className="p-4 rounded-3xl bg-slate-50/80 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           
           {/* Quick Date Range Presets */}
-          <div className="flex items-center gap-1.5 bg-white dark:bg-[#1E1E22] p-1 rounded-2xl border border-slate-200 dark:border-[#38383C]">
+          <div className="flex items-center gap-1.5 bg-white dark:bg-dark-bg p-1 rounded-2xl border border-slate-200 dark:border-dark-border">
             {[
               { id: "today", label: language === "id" ? "Hari Ini" : "Today" },
               { id: "7days", label: language === "id" ? "7 Hari" : "7 Days" },
@@ -281,7 +288,7 @@ export default function SalesReportModule() {
                 onClick={() => applyDatePreset(p.id as any)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   datePreset === p.id
-                    ? "bg-[#9362FC] dark:bg-[#E2FF66] text-white dark:text-[#1a1a1a] shadow-xs"
+                    ? "bg-brand-purple dark:bg-primary text-white dark:text-[#1a1a1a] shadow-xs"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
                 }`}
               >
@@ -292,7 +299,7 @@ export default function SalesReportModule() {
 
           {/* Date Picker Inputs */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-xs font-semibold">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-xs font-semibold">
               <Calendar className="w-3.5 h-3.5 text-slate-400" />
               <input
                 type="date"
@@ -305,7 +312,7 @@ export default function SalesReportModule() {
               />
             </div>
             <span className="text-xs text-slate-400 font-bold">s/d</span>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-xs font-semibold">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-xs font-semibold">
               <Calendar className="w-3.5 h-3.5 text-slate-400" />
               <input
                 type="date"
@@ -321,26 +328,28 @@ export default function SalesReportModule() {
 
           {/* Payment Method & Type Filter Dropdowns */}
           <div className="flex items-center gap-2">
-            <select
-              value={paymentFilter}
-              onChange={(e) => setPaymentFilter(e.target.value)}
-              className="px-3 py-2 rounded-xl text-xs font-bold border bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
-            >
-              <option value="all">{language === "id" ? "Semua Pembayaran" : "All Payments"}</option>
-              <option value="cash">Tunai (Cash)</option>
-              <option value="qris">QRIS</option>
-              <option value="other">{language === "id" ? "Lainnya" : "Other"}</option>
-            </select>
+            <Select value={paymentFilter} onValueChange={(val) => setPaymentFilter(val || "all")}>
+              <SelectTrigger className="w-[160px] text-xs font-bold h-9 rounded-xl border bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-700 dark:text-slate-200">
+                <SelectValue placeholder={language === "id" ? "Pilih Pembayaran" : "Select Payment"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{language === "id" ? "Semua Pembayaran" : "All Payments"}</SelectItem>
+                <SelectItem value="cash">Tunai (Cash)</SelectItem>
+                <SelectItem value="qris">QRIS</SelectItem>
+                <SelectItem value="other">{language === "id" ? "Lainnya" : "Other"}</SelectItem>
+              </SelectContent>
+            </Select>
 
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="px-3 py-2 rounded-xl text-xs font-bold border bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
-            >
-              <option value="all">{language === "id" ? "Semua Tipe" : "All Types"}</option>
-              <option value="sale">{language === "id" ? "Penjualan (Sales)" : "Customer Sales"}</option>
-              <option value="internal_take">{language === "id" ? "Konsumsi Internal" : "Internal Take"}</option>
-            </select>
+            <Select value={typeFilter} onValueChange={(val) => setTypeFilter(val || "all")}>
+              <SelectTrigger className="w-[150px] text-xs font-bold h-9 rounded-xl border bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-700 dark:text-slate-200">
+                <SelectValue placeholder={language === "id" ? "Pilih Tipe" : "Select Type"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{language === "id" ? "Semua Tipe" : "All Types"}</SelectItem>
+                <SelectItem value="sale">{language === "id" ? "Penjualan (Sales)" : "Customer Sales"}</SelectItem>
+                <SelectItem value="internal_take">{language === "id" ? "Konsumsi Internal" : "Internal Take"}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
         </div>
@@ -358,7 +367,7 @@ export default function SalesReportModule() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* 1. Total Gross Revenue */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-3 shadow-xs">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
               {language === "id" ? "Total Omset Bruto" : "Total Gross Sales"}
@@ -368,7 +377,7 @@ export default function SalesReportModule() {
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-extrabold text-emerald-600 dark:text-[#E2FF66]">
+            <h3 className="text-2xl font-extrabold text-emerald-600 dark:text-primary">
               Rp {(summary?.total_gross_sales || 0).toLocaleString("id-ID")}
             </h3>
             <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 font-medium">
@@ -379,12 +388,12 @@ export default function SalesReportModule() {
         </div>
 
         {/* 2. Total Transactions & AOV */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-3 shadow-xs">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
               {language === "id" ? "Rata-rata Nilai Nota (AOV)" : "Average Order Value"}
             </span>
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-[#E2FF66] flex items-center justify-center font-bold">
+            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-primary flex items-center justify-center font-bold">
               <Receipt className="w-4 h-4" />
             </div>
           </div>
@@ -399,7 +408,7 @@ export default function SalesReportModule() {
         </div>
 
         {/* 3. Total Items Sold */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-3 shadow-xs">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
               {language === "id" ? "Total Produk Terjual" : "Total Items Sold"}
@@ -419,7 +428,7 @@ export default function SalesReportModule() {
         </div>
 
         {/* 4. Total Void Transactions */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-3 shadow-xs">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
               {language === "id" ? "Transaksi Dibatalkan (Void)" : "Voided Losses"}
@@ -444,11 +453,11 @@ export default function SalesReportModule() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Daily Sales Bar Chart (Span 2) */}
-        <div className="lg:col-span-2 p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-4 shadow-xs">
+        <div className="lg:col-span-2 p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-purple-600 dark:text-[#E2FF66]" />
+                <TrendingUp className="w-4 h-4 text-purple-600 dark:text-primary" />
                 <span>{language === "id" ? "Tren Penjualan Harian" : "Daily Sales Revenue Trend"}</span>
               </h3>
               <p className="text-[11px] text-slate-400">
@@ -483,7 +492,7 @@ export default function SalesReportModule() {
                       <div className="w-full h-full flex items-end">
                         <div
                           style={{ height: `${heightPercent}%` }}
-                          className="w-full rounded-xl bg-gradient-to-t from-purple-600 to-indigo-500 dark:from-[#9362FC] dark:to-[#E2FF66] transition-all group-hover:brightness-110 shadow-xs"
+                          className="w-full rounded-xl bg-gradient-to-t from-purple-600 to-indigo-500 dark:from-brand-purple dark:to-primary transition-all group-hover:brightness-110 shadow-xs"
                         />
                       </div>
 
@@ -500,10 +509,10 @@ export default function SalesReportModule() {
         </div>
 
         {/* Payment Method Distribution (Span 1) */}
-        <div className="p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-4 shadow-xs flex flex-col justify-between">
+        <div className="p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-4 shadow-xs flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-purple-600 dark:text-[#E2FF66]" />
+              <CreditCard className="w-4 h-4 text-purple-600 dark:text-primary" />
               <span>{language === "id" ? "Distribusi Pembayaran" : "Payment Methods"}</span>
             </h3>
             <p className="text-[11px] text-slate-400">
@@ -521,7 +530,7 @@ export default function SalesReportModule() {
                 const isCash = pm.method === "cash";
                 const isQris = pm.method === "qris";
                 return (
-                  <div key={pm.method} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#1E1E22] border border-slate-200/60 dark:border-[#38383C] space-y-2">
+                  <div key={pm.method} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-dark-bg border border-slate-200/60 dark:border-dark-border space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div
@@ -551,11 +560,11 @@ export default function SalesReportModule() {
                     </div>
 
                     {/* Progress Percentage Bar */}
-                    <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-[#38383C] overflow-hidden">
+                    <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-dark-border overflow-hidden">
                       <div
                         style={{ width: `${Math.min(100, Math.max(5, pm.percentage))}%` }}
                         className={`h-full rounded-full ${
-                          isCash ? "bg-emerald-500" : isQris ? "bg-blue-500" : "bg-[#9362FC]"
+                          isCash ? "bg-emerald-500" : isQris ? "bg-blue-500" : "bg-brand-purple"
                         }`}
                       />
                     </div>
@@ -565,7 +574,7 @@ export default function SalesReportModule() {
             )}
           </div>
 
-          <div className="pt-2 text-[10px] text-slate-400 text-center border-t border-slate-200/60 dark:border-[#38383C]">
+          <div className="pt-2 text-[10px] text-slate-400 text-center border-t border-slate-200/60 dark:border-dark-border">
             Total Omset: Rp {(summary?.total_gross_sales || 0).toLocaleString("id-ID")}
           </div>
         </div>
@@ -573,7 +582,7 @@ export default function SalesReportModule() {
       </div>
 
       {/* ================= TOP SELLING PRODUCTS LEADERBOARD ================= */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-4 shadow-xs">
+      <div className="p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-4 shadow-xs">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
@@ -596,7 +605,7 @@ export default function SalesReportModule() {
             {summary.top_products.map((p, idx) => (
               <div
                 key={p.product_id}
-                className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1E1E22] border border-slate-200/80 dark:border-[#38383C] flex items-center justify-between"
+                className="p-4 rounded-2xl bg-slate-50 dark:bg-dark-bg border border-slate-200/80 dark:border-dark-border flex items-center justify-between"
               >
                 <div className="flex items-center gap-3">
                   <div
@@ -607,7 +616,7 @@ export default function SalesReportModule() {
                         ? "bg-slate-300 text-slate-800"
                         : idx === 2
                         ? "bg-amber-700/80 text-white"
-                        : "bg-slate-200 dark:bg-[#38383C] text-slate-600 dark:text-slate-400"
+                        : "bg-slate-200 dark:bg-dark-border text-slate-600 dark:text-slate-400"
                     }`}
                   >
                     #{idx + 1}
@@ -624,7 +633,7 @@ export default function SalesReportModule() {
                 </div>
 
                 <div className="text-right shrink-0">
-                  <span className="text-xs font-extrabold text-emerald-600 dark:text-[#E2FF66]">
+                  <span className="text-xs font-extrabold text-emerald-600 dark:text-primary">
                     Rp {p.total_sales.toLocaleString("id-ID")}
                   </span>
                 </div>
@@ -635,11 +644,11 @@ export default function SalesReportModule() {
       </div>
 
       {/* ================= DETAILED TRANSACTIONS TABLE ================= */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-4 shadow-xs">
+      <div className="p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-4 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Receipt className="w-4 h-4 text-purple-600 dark:text-[#E2FF66]" />
+              <Receipt className="w-4 h-4 text-purple-600 dark:text-primary" />
               <span>{language === "id" ? "Rincian Riwayat Transaksi" : "Transaction Records"}</span>
             </h3>
             <p className="text-[11px] text-slate-400">
@@ -656,12 +665,12 @@ export default function SalesReportModule() {
                 placeholder={language === "id" ? "Cari no nota, kasir, nominal..." : "Search invoice ID, staff..."}
                 value={searchTxQuery}
                 onChange={(e) => setSearchTxQuery(e.target.value)}
-                className="w-56 pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-[#1E1E22] border border-slate-200 dark:border-[#38383C] focus:outline-none"
+                className="w-56 pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border focus:outline-none"
               />
             </div>
 
             {/* Status filter tabs */}
-            <div className="flex gap-1 bg-slate-100 dark:bg-[#1E1E22] p-1 rounded-xl">
+            <div className="flex gap-1 bg-slate-100 dark:bg-dark-bg p-1 rounded-xl">
               {[
                 { id: "all", label: language === "id" ? "Semua" : "All" },
                 { id: "completed", label: language === "id" ? "Sukses" : "Completed" },
@@ -685,9 +694,9 @@ export default function SalesReportModule() {
         </div>
 
         {/* Table Container */}
-        <div className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-[#38383C]">
+        <div className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-dark-border">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-[#1E1E22] text-slate-500 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-[#38383C]">
+            <thead className="bg-slate-50 dark:bg-dark-bg text-slate-500 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-dark-border">
               <tr>
                 <th className="px-4 py-3">No. Nota</th>
                 <th className="px-4 py-3">Waktu</th>
@@ -698,7 +707,7 @@ export default function SalesReportModule() {
                 <th className="px-4 py-3 text-center">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-[#38383C]/60 font-medium">
+            <tbody className="divide-y divide-slate-100 dark:divide-dark-border/60 font-medium">
               {filteredTransactions.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-400">
@@ -729,7 +738,7 @@ export default function SalesReportModule() {
                         {tx.type === "sale" ? "Sales" : "Internal"}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="uppercase text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#1E1E22] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#38383C]">
+                        <span className="uppercase text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-dark-bg text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-dark-border">
                           {tx.payment_method}
                         </span>
                       </td>

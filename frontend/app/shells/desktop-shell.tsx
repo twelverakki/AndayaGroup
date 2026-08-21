@@ -3,13 +3,16 @@ import { useAuthStore } from "../lib/store";
 import { useLanguageStore, translations } from "../lib/i18n";
 import { api } from "../lib/api";
 import { useNavigate } from "react-router";
-import POSModule from "./POSModule";
-import InventoryModule from "./InventoryModule";
-import ProcurementModule from "./ProcurementModule";
-import OpnameModule from "./OpnameModule";
-import SalesReportModule from "./SalesReportModule";
-import { sidebarMenuConfig } from "../config/navigation";
-import SuperadminModule from "./SuperadminModule";
+import POSModule from "../features/pos/pos-module";
+import InventoryModule from "../features/inventory/inventory-module";
+import ProcurementModule from "../features/procurement/procurement-module";
+import OpnameModule from "../features/opname/opname-module";
+import SalesReportModule from "../features/sales-report/sales-report-module";
+import { sidebarMenuConfig, isMenuItemAllowed } from "../config/navigation";
+import SuperadminModule from "../features/superadmin/superadmin-module";
+import { useTheme } from "../hooks/use-theme";
+import { usePOSSettings } from "../hooks/use-pos-settings";
+import ShiftCloseModal from "../components/ShiftCloseModal";
 import {
   SidebarProvider,
   Sidebar,
@@ -20,21 +23,21 @@ import {
   SidebarMenuButton,
   SidebarHeader,
   SidebarFooter,
-} from "./ui/sidebar";
+} from "../components/ui/sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+} from "../components/ui/dropdown-menu";
 import {
   Drawer,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
   DrawerDescription,
-} from "./ui/drawer";
+} from "../components/ui/drawer";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -62,7 +65,7 @@ import {
   Shield,
   Send
 } from "lucide-react";
-import TransactionHistoryDrawer from "./TransactionHistoryDrawer";
+import TransactionHistoryDrawer from "../components/TransactionHistoryDrawer";
 
 interface Product {
   id: string;
@@ -85,34 +88,23 @@ export default function DesktopShell() {
   const t = translations[language] || translations.id;
   const navigate = useNavigate();
 
-  // Close Shift states
-  const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
-  const [closingCashActual, setClosingCashActual] = useState("");
-  const [closingError, setClosingError] = useState("");
-  const [closingLoading, setClosingLoading] = useState(false);
+  const { isDark, toggleTheme } = useTheme();
+  const {
+    showNumpad,
+    setShowNumpad,
+    gridCols,
+    setGridCols,
+    enableTax,
+    setEnableTax,
+    enableDiscount,
+    setEnableDiscount,
+  } = usePOSSettings();
 
-  const handleCloseShift = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setClosingLoading(true);
-    setClosingError("");
-    try {
-      await api.post("/shifts/close", {
-        closing_cash_actual: parseInt(closingCashActual) || 0,
-      });
-      setActiveShift(null);
-      setShowCloseShiftModal(false);
-      setClosingCashActual("");
-      alert("Shift kasir berhasil ditutup!");
-    } catch (err: any) {
-      setClosingError(err.response?.data?.message || "Gagal menutup shift kasir");
-    } finally {
-      setClosingLoading(false);
-    }
-  };
+  // Close Shift Modal state
+  const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
   
   // Navigation & Shell States
   const [activeMenu, setActiveMenu] = useState("dashboard");
-  const [isDark, setIsDark] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(true);
   const [procurementOpen, setProcurementOpen] = useState(true);
@@ -122,22 +114,6 @@ export default function DesktopShell() {
   const [activeDrawer, setActiveDrawer] = useState<"settings" | "calendar" | "notifications" | null>(null);
   const [showSettingsHistoryDrawer, setShowSettingsHistoryDrawer] = useState(false);
   const [isToolsGroupExpanded, setIsToolsGroupExpanded] = useState(false);
-
-  // POS Preferences (Passed to POSModule / synced via events)
-  const [showNumpad, setShowNumpad] = useState(() => {
-    const saved = localStorage.getItem("pos_show_numpad");
-    return saved === null ? true : saved === "true";
-  });
-  const [gridCols, setGridCols] = useState(() => {
-    const saved = localStorage.getItem("pos_grid_cols");
-    return saved === null ? 4 : parseInt(saved);
-  });
-  const [posEnableTax, setPosEnableTax] = useState(() => {
-    return localStorage.getItem("pos_enable_tax") === "true";
-  });
-  const [posEnableDiscount, setPosEnableDiscount] = useState(() => {
-    return localStorage.getItem("pos_enable_discount") === "true";
-  });
   const [posTaxRate, setPosTaxRate] = useState(() => {
     const saved = localStorage.getItem("pos_tax_rate");
     return saved ? Number(saved) : 11;
@@ -149,25 +125,21 @@ export default function DesktopShell() {
 
   const handleSetShowNumpad = (val: boolean) => {
     setShowNumpad(val);
-    localStorage.setItem("pos_show_numpad", val ? "true" : "false");
     window.dispatchEvent(new Event("pos_settings_changed"));
   };
 
   const handleSetGridCols = (val: number) => {
     setGridCols(val);
-    localStorage.setItem("pos_grid_cols", val.toString());
     window.dispatchEvent(new Event("pos_settings_changed"));
   };
 
   const handleSetEnableTax = (val: boolean) => {
-    setPosEnableTax(val);
-    localStorage.setItem("pos_enable_tax", val ? "true" : "false");
+    setEnableTax(val);
     window.dispatchEvent(new Event("pos_settings_changed"));
   };
 
   const handleSetEnableDiscount = (val: boolean) => {
-    setPosEnableDiscount(val);
-    localStorage.setItem("pos_enable_discount", val ? "true" : "false");
+    setEnableDiscount(val);
     window.dispatchEvent(new Event("pos_settings_changed"));
   };
 
@@ -186,19 +158,6 @@ export default function DesktopShell() {
   // Product Editing state (for inventory sub-view)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Initialize Theme
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("theme");
-    const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (savedTheme === "dark" || (!savedTheme && systemPrefersDark)) {
-      document.documentElement.classList.add("dark");
-      setIsDark(true);
-    } else {
-      document.documentElement.classList.remove("dark");
-      setIsDark(false);
-    }
-  }, []);
-
   // Superadmin default menu toggle
   useEffect(() => {
     if (activeContext?.role === "superadmin") {
@@ -207,18 +166,6 @@ export default function DesktopShell() {
       setActiveMenu("dashboard");
     }
   }, [activeContext]);
-
-  const toggleDarkMode = () => {
-    const nextDark = !isDark;
-    setIsDark(nextDark);
-    if (nextDark) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  };
 
   // Global Keyboard Shortcuts (Sidebar Expand/Collapse & Tools Group)
   useEffect(() => {
@@ -267,7 +214,7 @@ export default function DesktopShell() {
       // 5. Theme Toggle: Alt + T
       if (e.altKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
-        toggleDarkMode();
+        toggleTheme();
         return;
       }
 
@@ -317,7 +264,7 @@ export default function DesktopShell() {
         backgroundImage: "radial-gradient(circle at 50% 50%, #eae5f7 0%, #f5e3f0 35%, #D6D7DC 80%)"
       } : undefined}
       className={`w-full min-h-screen font-sans transition-colors duration-300 ${
-        isDark ? "dark bg-[#1E1E1E] text-[#F8FAFC]" : "text-[#2B2B2B]"
+        isDark ? "dark bg-[#1E1E1E] text-[#F8FAFC]" : "text-neutral-dark"
       }`}
     >
       {/* Custom Scrollbars */}
@@ -350,12 +297,12 @@ export default function DesktopShell() {
                   <DropdownMenuTrigger className={`w-full flex items-center space-x-3 p-1.5 rounded-xl transition-all cursor-pointer text-left outline-none ${
                     isDark ? "hover:bg-white/10" : "hover:bg-black/5"
                   }`}>
-                    <div className="w-8 h-8 rounded-lg bg-[#9362FC] flex items-center justify-center text-white font-bold shrink-0 shadow-sm" title={activeContext?.name}>
+                    <div className="w-8 h-8 rounded-lg bg-brand-purple flex items-center justify-center text-white font-bold shrink-0 shadow-sm" title={activeContext?.name}>
                       {activeContext?.name?.charAt(0) || "W"}
                     </div>
                     {!isSidebarCollapsed && (
                       <div className="min-w-0 flex-1 leading-tight animate-fade-in">
-                        <span className={`font-bold text-sm tracking-tight truncate block ${isDark ? "text-white" : "text-[#2B2B2B]"}`}>
+                        <span className={`font-bold text-sm tracking-tight truncate block ${isDark ? "text-white" : "text-neutral-dark"}`}>
                           {activeContext?.name || "Workspace"}
                         </span>
                         <p className="text-[10px] opacity-60 truncate capitalize">
@@ -401,7 +348,7 @@ export default function DesktopShell() {
                   type="button" 
                   onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
                   className={`p-1.5 rounded-full cursor-pointer transition-colors ${
-                    isDark ? "hover:bg-white/10 text-white" : "hover:bg-black/5 text-[#2B2B2B]"
+                    isDark ? "hover:bg-white/10 text-white" : "hover:bg-black/5 text-neutral-dark"
                   }`}
                   title={
                     isSidebarCollapsed
@@ -419,12 +366,7 @@ export default function DesktopShell() {
               <SidebarGroup className="p-0">
                 <SidebarMenu className="space-y-2">
                   {sidebarMenuConfig
-                    .filter((menu) => {
-                      if (menu.excludeTypes?.includes(activeContext?.type || "")) return false;
-                      if (menu.onlyTypes && !menu.onlyTypes.includes(activeContext?.type || "")) return false;
-                      if (menu.requiredRoles && !menu.requiredRoles.includes(activeContext?.role || "")) return false;
-                      return true;
-                    })
+                    .filter((menu) => isMenuItemAllowed(menu, activeContext))
                     .map((menu) => {
                       const label = t[menu.translationKey as keyof typeof t] || menu.defaultLabel;
                       const Icon = menu.icon;
@@ -444,7 +386,7 @@ export default function DesktopShell() {
                                     ? "bg-primary text-primary-foreground shadow-md font-bold hover:brightness-105"
                                     : isDark
                                       ? "bg-white/5 text-[#94A3B8] hover:bg-white/10 hover:text-white"
-                                      : "bg-white/40 text-[#2B2B2B] hover:bg-white/60 hover:shadow-md"
+                                      : "bg-white/40 text-neutral-dark hover:bg-white/60 hover:shadow-md"
                                 }`}
                               >
                                 <div className="flex items-center space-x-3">
@@ -470,10 +412,10 @@ export default function DesktopShell() {
                                       onClick={() => setActiveMenu(sub.id)}
                                       className={`w-full flex items-center px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-150 cursor-pointer ${
                                         activeMenu === sub.id
-                                          ? "bg-[#9362FC]/20 text-[#9362FC] dark:text-primary"
+                                          ? "bg-brand-purple/20 text-brand-purple dark:text-primary"
                                           : isDark
                                             ? "bg-white/5 text-[#94A3B8]/80 hover:bg-white/10 hover:text-white"
-                                            : "bg-[#2B2B2B]/10 text-[#2B2B2B] hover:bg-white/50"
+                                            : "bg-neutral-dark/10 text-neutral-dark hover:bg-white/50"
                                       }`}
                                     >
                                       <span>{t[sub.translationKey as keyof typeof t] || sub.defaultLabel}</span>
@@ -509,63 +451,104 @@ export default function DesktopShell() {
               </SidebarGroup>
             </SidebarContent>
 
-            {/* 3. Footer: User Account Profile Avatar & Settings popover */}
+            {/* 3. Footer: User Account Profile & Settings Dropdown */}
             <SidebarFooter className="p-0 pt-4 border-t border-slate-200 dark:border-slate-800/40 relative">
-              <div className="flex items-center justify-between w-full">
-                <div className="relative shrink-0">
-                  <button 
-                    type="button"
-                    onClick={() => setShowProfilePopover(!showProfilePopover)}
-                    className="w-8 h-8 rounded-full bg-[#9362FC] flex items-center justify-center font-bold text-white shadow-sm shrink-0 cursor-pointer overflow-hidden hover:opacity-90 active:scale-95 transition-all text-xs"
-                  >
-                    {user?.name?.charAt(0) || "U"}
-                  </button>
-                  {showProfilePopover && (
-                    <>
-                      <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowProfilePopover(false)} />
-                      <div className={`absolute bottom-11 w-56 p-3 rounded-2xl shadow-xl border z-50 text-left transition-all duration-200 ${
-                        isSidebarCollapsed ? "left-14" : "left-0"
-                      } ${
-                        isDark ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-white border-[#B8B9BE] text-[#2B2B2B]"
-                      }`}>
-                        <div className="pb-2 border-b border-border/40 mb-2">
-                          <p className="text-xs font-bold">{user?.name || "User Account"}</p>
-                          <p className="text-[9px] opacity-65">{user?.phone_or_email}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <button type="button" onClick={() => { setActiveDrawer("settings"); setShowProfilePopover(false); }} className="w-full text-left px-2 py-1.5 text-[10px] font-semibold rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer">{t.menuSettings}</button>
-                          <button type="button" onClick={handleLogout} className="w-full text-left px-2 py-1.5 text-[10px] font-bold text-red-500 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer">{t.menuLogout}</button>
-                        </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className={`w-full flex items-center p-1.5 rounded-xl transition-all duration-200 cursor-pointer outline-none ${
+                    isSidebarCollapsed ? "justify-center" : "space-x-3 justify-between hover:bg-black/5 dark:hover:bg-white/5"
+                  }`}
+                >
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-brand-purple flex items-center justify-center font-bold text-white shadow-sm shrink-0 text-xs">
+                      {user?.name?.charAt(0) || "U"}
+                    </div>
+                    {!isSidebarCollapsed && (
+                      <div className="text-left min-w-0">
+                        <p className="text-xs font-bold truncate text-slate-900 dark:text-slate-100">
+                          {user?.name || "User Account"}
+                        </p>
+                        <p className="text-[9px] opacity-65 truncate text-slate-500 dark:text-slate-400">
+                          {user?.phone_or_email}
+                        </p>
                       </div>
-                    </>
-                  )}
-                </div>
-
-                {!isSidebarCollapsed && (
-                  <div className="flex items-center space-x-1">
-                    {/* Theme Toggle */}
-                    <button 
-                      type="button" 
-                      onClick={() => toggleDarkMode()} 
-                      className={`p-1.5 rounded-full cursor-pointer transition-colors ${
-                        isDark ? "hover:bg-white/10 text-amber-400" : "hover:bg-black/5 text-[#6F5847]"
-                      }`}
-                    >
-                      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                    </button>
-                    {/* Language Selector */}
-                    <button 
-                      type="button" 
-                      onClick={() => setLanguage(language === "id" ? "en" : "id")} 
-                      className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full transition-all border ${
-                        isDark ? "border-white/10 hover:bg-white/5 text-white" : "border-slate-350 hover:bg-black/5 text-[#2B2B2B]"
-                      }`}
-                    >
-                      {language.toUpperCase()}
-                    </button>
+                    )}
                   </div>
-                )}
-              </div>
+                  {!isSidebarCollapsed && (
+                    <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  )}
+                </DropdownMenuTrigger>
+
+                <DropdownMenuContent
+                  side={isSidebarCollapsed ? "right" : "top"}
+                  align={isSidebarCollapsed ? "end" : "start"}
+                  className={`w-56 p-2 rounded-2xl shadow-xl border z-50 text-left transition-all duration-200 ${
+                    isDark ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-white border-light-border text-neutral-dark"
+                  }`}
+                >
+                  {/* Profile Header (Shows info when collapsed or expanded) */}
+                  <div className="px-2 py-1.5 pb-2 border-b border-slate-200/40 dark:border-slate-800/40 mb-1.5">
+                    <p className="text-xs font-extrabold text-slate-900 dark:text-white">
+                      {user?.name || "User Account"}
+                    </p>
+                    <p className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold truncate mt-0.5">
+                      {user?.phone_or_email}
+                    </p>
+                    <p className="inline-block px-1.5 py-0.5 rounded-full text-[8px] font-extrabold uppercase mt-1.5 bg-brand-purple/10 text-brand-purple dark:bg-primary/10 dark:text-primary">
+                      {activeContext?.role || "Staff"}
+                    </p>
+                  </div>
+
+                  {/* Dropdown Items */}
+                  <DropdownMenuItem
+                    onClick={() => setActiveDrawer("settings")}
+                    className="flex items-center gap-2.5 px-2 py-2 text-[11px] font-bold rounded-xl cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <Settings className="w-4 h-4 text-slate-500" />
+                    <span>{language === "id" ? "Pengaturan Sistem" : "System Settings"}</span>
+                  </DropdownMenuItem>
+
+                  {/* Theme Toggle Item */}
+                  <DropdownMenuItem
+                    onClick={() => toggleTheme()}
+                    className="flex items-center gap-2.5 px-2 py-2 text-[11px] font-bold rounded-xl cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                  >
+                    {isDark ? (
+                      <>
+                        <Sun className="w-4 h-4 text-amber-400" />
+                        <span>Mode Terang (Light Mode)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Moon className="w-4 h-4 text-[#6F5847]" />
+                        <span>Mode Gelap (Dark Mode)</span>
+                      </>
+                    )}
+                  </DropdownMenuItem>
+
+                  {/* Language Selector Item */}
+                  <DropdownMenuItem
+                    onClick={() => setLanguage(language === "id" ? "en" : "id")}
+                    className="flex items-center gap-2.5 px-2 py-2 text-[11px] font-bold rounded-xl cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <Globe className="w-4 h-4 text-slate-500" />
+                    <span>
+                      {language === "id" ? "Bahasa: English (EN)" : "Language: Indonesia (ID)"}
+                    </span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator className="my-1.5 border-slate-200/40 dark:border-slate-800/40" />
+
+                  {/* Logout Item */}
+                  <DropdownMenuItem
+                    onClick={handleLogout}
+                    className="flex items-center gap-2.5 px-2 py-2 text-[11px] font-extrabold text-red-500 rounded-xl cursor-pointer hover:bg-red-500/10 transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>{language === "id" ? "Keluar Sesi" : "Logout"}</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </SidebarFooter>
           </Sidebar>
           {/* ================= MAIN CONTAINER ================= */}
@@ -614,7 +597,7 @@ export default function DesktopShell() {
               <div className="max-w-4xl mx-auto space-y-6">
                 {/* Feature Welcome Chunky Card */}
                 <div className={`border rounded-card p-8 shadow-sm transition-colors ${
-                  isDark ? "bg-[#292929] border-[#3A3A3A]" : "bg-white border-slate-200"
+                  isDark ? "bg-dark-card-lighter border-dark-border-lighter" : "bg-white border-slate-200"
                 }`}>
                   <h3 className="text-2xl font-bold mb-3">
                     Selamat Datang di Andaya ERP!
@@ -638,66 +621,12 @@ export default function DesktopShell() {
         </main>
       </SidebarProvider>
 
-      {/* Global Close Shift Modal inside DesktopShell */}
-      {showCloseShiftModal && activeShift && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-[#2B2B2B]">
-          <div className={`w-full max-w-md border rounded-3xl p-6 shadow-2xl transition-all ${
-            isDark ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-white border-[#B8B9BE]"
-          }`}>
-            <h3 className="text-lg font-bold mb-1 dark:text-white">Tutup Shift Kasir</h3>
-            <p className="opacity-70 text-xs font-semibold leading-relaxed mb-5 dark:text-slate-300">
-              Masukkan nominal uang fisik yang ada di dalam laci kasir saat ini untuk proses rekonsiliasi.
-            </p>
-
-            {closingError && (
-              <div className="mb-4 p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20 text-left flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
-                <span>{closingError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCloseShift} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold opacity-75 uppercase tracking-wider mb-2 ml-1 text-left dark:text-slate-350">
-                  Uang Fisik di Laci (Rupiah)
-                </label>
-                <input
-                  type="number"
-                  value={closingCashActual}
-                  onChange={(e) => setClosingCashActual(e.target.value)}
-                  placeholder="150000"
-                  className={`w-full text-center text-xl font-bold px-4 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-[#9362FC]/40 focus:border-[#9362FC] transition-all ${
-                    isDark ? "bg-[#1E1E1E] border-[#3A3A3A] text-white" : "bg-slate-50 border-[#B8B9BE]"
-                  }`}
-                  style={{ minHeight: "56px" }}
-                  required
-                />
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCloseShiftModal(false);
-                    setClosingCashActual("");
-                    setClosingError("");
-                  }}
-                  className="flex-1 py-3 text-xs font-bold border border-[#B8B9BE] dark:border-[#3A3A3A] hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={closingLoading}
-                  className="flex-1 py-3 text-xs font-bold bg-[#9362FC] text-white hover:bg-[#7D4BE3] rounded-xl transition-all cursor-pointer shadow-md"
-                >
-                  {closingLoading ? "Menutup..." : "Tutup Shift"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Global Close Shift Modal */}
+      <ShiftCloseModal
+        isOpen={showCloseShiftModal}
+        onClose={() => setShowCloseShiftModal(false)}
+        isDark={isDark}
+      />
 
       {/* ================= TOOLS DRAWER ================= */}
       <Drawer
@@ -707,12 +636,12 @@ export default function DesktopShell() {
       >
         <DrawerContent
           className={`w-[480px] sm:w-[500px] md:w-[520px] max-w-[95vw] border-l ${
-            isDark ? "bg-[#202024] border-[#38383C] text-white" : "bg-white border-slate-200 text-[#2B2B2B]"
+            isDark ? "bg-[#202024] border-dark-border text-white" : "bg-white border-slate-200 text-neutral-dark"
           }`}
         >
           <div className="flex flex-col justify-between h-full w-full p-6 sm:p-7">
             <div className="space-y-6 overflow-y-auto pr-1 flex-1">
-              <DrawerHeader className="p-0 border-b border-slate-200 dark:border-[#38383C] pb-4">
+              <DrawerHeader className="p-0 border-b border-slate-200 dark:border-dark-border pb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-[#2E2E34] flex items-center justify-center text-slate-800 dark:text-primary shrink-0">
                     {activeDrawer === "settings" && <Settings className="w-5 h-5" />}
@@ -738,7 +667,7 @@ export default function DesktopShell() {
               {activeDrawer === "settings" && (
                 <div className="space-y-4">
                   {/* 1. Language */}
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-2.5">
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                         <Globe className="w-4 h-4 text-slate-500 dark:text-primary" />
@@ -752,7 +681,7 @@ export default function DesktopShell() {
                         className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                           language === "id"
                             ? "bg-primary text-primary-foreground border-transparent shadow-sm"
-                            : "bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
+                            : "bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
                         }`}
                       >
                         <span>🇮🇩</span>
@@ -764,7 +693,7 @@ export default function DesktopShell() {
                         className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                           language === "en"
                             ? "bg-primary text-primary-foreground border-transparent shadow-sm"
-                            : "bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
+                            : "bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
                         }`}
                       >
                         <span>🇬🇧</span>
@@ -774,7 +703,7 @@ export default function DesktopShell() {
                   </div>
 
                   {/* 2. Theme Toggle */}
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-2.5">
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-2.5">
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                       {isDark ? <Moon className="w-4 h-4 text-primary" /> : <Sun className="w-4 h-4 text-amber-500" />}
                       <span>{language === "id" ? "Mode Tampilan" : "Display Theme"}</span>
@@ -782,11 +711,11 @@ export default function DesktopShell() {
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() => isDark && toggleDarkMode()}
+                        onClick={() => isDark && toggleTheme()}
                         className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                           !isDark
                             ? "bg-primary text-primary-foreground border-transparent shadow-sm"
-                            : "bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
+                            : "bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
                         }`}
                       >
                         <Sun className="w-3.5 h-3.5" />
@@ -794,11 +723,11 @@ export default function DesktopShell() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => !isDark && toggleDarkMode()}
+                        onClick={() => !isDark && toggleTheme()}
                         className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                           isDark
                             ? "bg-primary text-primary-foreground border-transparent shadow-sm"
-                            : "bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
+                            : "bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
                         }`}
                       >
                         <Moon className="w-3.5 h-3.5" />
@@ -810,7 +739,7 @@ export default function DesktopShell() {
                   {/* ── SECTION DIVIDER: POS CASHIER SETUP ── */}
                   {activeMenu === "pos" && (
                     <div className="pt-2">
-                      <div className="flex items-center gap-2 py-1 mb-2 border-b border-slate-200 dark:border-[#38383C]">
+                      <div className="flex items-center gap-2 py-1 mb-2 border-b border-slate-200 dark:border-dark-border">
                         <ShoppingCart className="w-3.5 h-3.5 text-purple-600 dark:text-primary" />
                         <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-300">
                           {language === "id" ? "Konfigurasi Kasir (POS)" : "POS Cashier Setup"}
@@ -819,7 +748,7 @@ export default function DesktopShell() {
 
                       <div className="space-y-3">
                         {/* 3. POS Tax (PPN) Variable Toggle */}
-                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-2.5">
+                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                               <FileSpreadsheet className="w-4 h-4 text-slate-500 dark:text-primary" />
@@ -827,14 +756,14 @@ export default function DesktopShell() {
                             </span>
                             <button
                               type="button"
-                              onClick={() => handleSetEnableTax(!posEnableTax)}
+                              onClick={() => handleSetEnableTax(!enableTax)}
                               className={`w-10 h-5 rounded-full transition-colors relative cursor-pointer ${
-                                posEnableTax ? "bg-primary" : "bg-slate-300 dark:bg-[#38383C]"
+                                enableTax ? "bg-primary" : "bg-slate-300 dark:bg-dark-border"
                               }`}
                             >
                               <div
                                 className={`w-4 h-4 rounded-full bg-white transition-transform transform absolute top-0.5 ${
-                                  posEnableTax ? "translate-x-5.5 bg-slate-900" : "translate-x-0.5"
+                                  enableTax ? "translate-x-5.5 bg-slate-900" : "translate-x-0.5"
                                 }`}
                               />
                             </button>
@@ -844,8 +773,8 @@ export default function DesktopShell() {
                               ? "Aktifkan untuk menambahkan kalkulasi PPN pada setiap transaksi checkout kasir."
                               : "Enable to include VAT calculation on checkout transactions."}
                           </p>
-                          {posEnableTax && (
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-[#38383C]">
+                          {enableTax && (
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-dark-border">
                               <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                                 {language === "id" ? "Tarif PPN (%):" : "Tax Rate (%):"}
                               </span>
@@ -856,7 +785,7 @@ export default function DesktopShell() {
                                   max="50"
                                   value={posTaxRate}
                                   onChange={(e) => handleSetTaxRate(Math.max(0, Math.min(50, Number(e.target.value) || 0)))}
-                                  className="w-14 px-2 py-1 rounded-xl border text-center font-bold text-xs bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#9362FC]"
+                                  className="w-14 px-2 py-1 rounded-xl border text-center font-bold text-xs bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-purple"
                                 />
                                 <span className="text-xs font-bold text-slate-400">%</span>
                               </div>
@@ -865,7 +794,7 @@ export default function DesktopShell() {
                         </div>
 
                         {/* 4. POS Discount Variable Toggle */}
-                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-2.5">
+                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                               <Package className="w-4 h-4 text-slate-500 dark:text-primary" />
@@ -873,14 +802,14 @@ export default function DesktopShell() {
                             </span>
                             <button
                               type="button"
-                              onClick={() => handleSetEnableDiscount(!posEnableDiscount)}
+                              onClick={() => handleSetEnableDiscount(!enableDiscount)}
                               className={`w-10 h-5 rounded-full transition-colors relative cursor-pointer ${
-                                posEnableDiscount ? "bg-primary" : "bg-slate-300 dark:bg-[#38383C]"
+                                enableDiscount ? "bg-primary" : "bg-slate-300 dark:bg-dark-border"
                               }`}
                             >
                               <div
                                 className={`w-4 h-4 rounded-full bg-white transition-transform transform absolute top-0.5 ${
-                                  posEnableDiscount ? "translate-x-5.5 bg-slate-900" : "translate-x-0.5"
+                                  enableDiscount ? "translate-x-5.5 bg-slate-900" : "translate-x-0.5"
                                 }`}
                               />
                             </button>
@@ -890,8 +819,8 @@ export default function DesktopShell() {
                               ? "Aktifkan jika kasir diizinkan memasukkan potongan diskon transaksi."
                               : "Enable if cashiers are allowed to apply transaction discounts."}
                           </p>
-                          {posEnableDiscount && (
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-[#38383C]">
+                          {enableDiscount && (
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-dark-border">
                               <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                                 {language === "id" ? "Default Diskon (%):" : "Default Discount (%):"}
                               </span>
@@ -902,7 +831,7 @@ export default function DesktopShell() {
                                   max="100"
                                   value={posDiscountRate}
                                   onChange={(e) => handleSetDiscountRate(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
-                                  className="w-14 px-2 py-1 rounded-xl border text-center font-bold text-xs bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#9362FC]"
+                                  className="w-14 px-2 py-1 rounded-xl border text-center font-bold text-xs bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-purple"
                                 />
                                 <span className="text-xs font-bold text-slate-400">%</span>
                               </div>
@@ -911,7 +840,7 @@ export default function DesktopShell() {
                         </div>
 
                         {/* 5. Virtual Numpad Toggle */}
-                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-2.5">
+                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                               <Calculator className="w-4 h-4 text-slate-500 dark:text-primary" />
@@ -921,7 +850,7 @@ export default function DesktopShell() {
                               type="button"
                               onClick={() => handleSetShowNumpad(!showNumpad)}
                               className={`w-10 h-5 rounded-full transition-colors relative cursor-pointer ${
-                                showNumpad ? "bg-primary" : "bg-slate-300 dark:bg-[#38383C]"
+                                showNumpad ? "bg-primary" : "bg-slate-300 dark:bg-dark-border"
                               }`}
                             >
                               <div
@@ -939,7 +868,7 @@ export default function DesktopShell() {
                         </div>
 
                         {/* 6. POS Column Layout */}
-                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-2.5">
+                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                               <LayoutDashboard className="w-4 h-4 text-slate-500 dark:text-primary" />
@@ -956,7 +885,7 @@ export default function DesktopShell() {
                                 className={`py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                                   gridCols === cols
                                     ? "bg-primary text-primary-foreground border-transparent shadow-sm"
-                                    : "bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#38383C] text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
+                                    : "bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
                                 }`}
                               >
                                 {cols} {language === "id" ? "Kolom" : "Cols"}
@@ -970,7 +899,7 @@ export default function DesktopShell() {
 
                   {/* ── SECTION: SHIFT & CONTEXT ── */}
                   {activeMenu === "pos" ? (
-                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-3">
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                           <ClipboardCheck className="w-4 h-4 text-slate-500 dark:text-primary" />
@@ -1006,7 +935,7 @@ export default function DesktopShell() {
                     </div>
                   ) : (
                     /* Non-POS Context Information */
-                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-2.5">
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-2.5">
                       <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Informasi Workspace Aktif</p>
                       <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                         <div className="flex items-center justify-between">
@@ -1032,14 +961,14 @@ export default function DesktopShell() {
                     <button
                       type="button"
                       onClick={() => setShowSettingsHistoryDrawer(true)}
-                      className="w-full p-4 rounded-2xl bg-[#9362FC]/5 dark:bg-primary/5 hover:bg-[#9362FC]/10 dark:hover:bg-primary/10 border border-[#9362FC]/20 dark:border-primary/20 text-left flex items-center justify-between transition-all cursor-pointer group shadow-xs"
+                      className="w-full p-4 rounded-2xl bg-brand-purple/5 dark:bg-primary/5 hover:bg-brand-purple/10 dark:hover:bg-primary/10 border border-brand-purple/20 dark:border-primary/20 text-left flex items-center justify-between transition-all cursor-pointer group shadow-xs"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-[#9362FC]/15 dark:bg-primary/15 text-[#9362FC] dark:text-primary flex items-center justify-center shrink-0">
+                        <div className="w-10 h-10 rounded-xl bg-brand-purple/15 dark:bg-primary/15 text-brand-purple dark:text-primary flex items-center justify-center shrink-0">
                           <History className="w-5 h-5" />
                         </div>
                         <div>
-                          <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-[#9362FC] dark:group-hover:text-primary transition-colors flex items-center gap-1.5">
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-brand-purple dark:group-hover:text-primary transition-colors flex items-center gap-1.5">
                             <span>{language === "id" ? "Buka Riwayat Transaksi & Void" : "Open Transaction History & Void"}</span>
                           </h4>
                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -1058,7 +987,7 @@ export default function DesktopShell() {
               {/* ── CALENDAR DRAWER BODY ── */}
               {activeDrawer === "calendar" && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C] space-y-2">
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-2">
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-slate-500 dark:text-primary" />
                       <span>{language === "id" ? "Jadwal & Agenda Operasional" : "Operational Schedules"}</span>
@@ -1069,7 +998,7 @@ export default function DesktopShell() {
                         : "Synchronized calendar for procurement payment due dates and monthly stock opname reminders."}
                     </p>
                   </div>
-                  <div className="p-4 rounded-2xl border border-dashed border-slate-200 dark:border-[#38383C] text-center py-8">
+                  <div className="p-4 rounded-2xl border border-dashed border-slate-200 dark:border-dark-border text-center py-8">
                     <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
                       {language === "id" ? "Tidak ada tagihan jatuh tempo hari ini." : "No due invoices scheduled today."}
                     </p>
@@ -1080,7 +1009,7 @@ export default function DesktopShell() {
               {/* ── NOTIFICATIONS DRAWER BODY ── */}
               {activeDrawer === "notifications" && (
                 <div className="py-16 flex flex-col items-center justify-center text-center px-4">
-                  <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-[#28282D] flex items-center justify-center text-slate-400 dark:text-slate-500 mb-4 border border-slate-200 dark:border-[#38383C]">
+                  <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-[#28282D] flex items-center justify-center text-slate-400 dark:text-slate-500 mb-4 border border-slate-200 dark:border-dark-border">
                     <Bell className="w-8 h-8 opacity-60" />
                   </div>
                   <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">
@@ -1096,7 +1025,7 @@ export default function DesktopShell() {
             </div>
 
             {/* Drawer Footer */}
-            <div className="pt-4 border-t border-slate-200 dark:border-[#38383C] text-[10px] text-slate-400 text-center shrink-0">
+            <div className="pt-4 border-t border-slate-200 dark:border-dark-border text-[10px] text-slate-400 text-center shrink-0">
               Andaya Group ERP • Enterprise System
             </div>
           </div>

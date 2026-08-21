@@ -1,15 +1,22 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { api } from "../lib/api";
-import { useAuthStore } from "../lib/store";
-import { enqueueTransaction } from "../lib/indexeddb";
+import { api } from "../../lib/api";
+import { useAuthStore } from "../../lib/store";
+import { enqueueTransaction } from "../../lib/indexeddb";
 import { 
   Search, Trash2, Barcode, ChevronRight, CreditCard, 
   CheckCircle2, RotateCcw, XCircle, ShoppingCart, 
   Package, ClipboardCheck, FileSpreadsheet, BarChart3, 
-  ChevronDown, GripVertical, History, Printer
+  ChevronDown, GripVertical, History, Printer, AlertCircle, KeyRound
 } from "lucide-react";
-import TransactionHistoryDrawer, { type TransactionRecord } from "./TransactionHistoryDrawer";
-import { useLanguageStore, translations } from "../lib/i18n";
+import TransactionHistoryDrawer, { type TransactionRecord } from "../../components/TransactionHistoryDrawer";
+import { useLanguageStore, translations } from "../../lib/i18n";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerDescription,
+} from "../../components/ui/drawer";
 
 interface Product {
   id: string;
@@ -80,6 +87,27 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   });
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "qris" | "other">("cash");
   const [isInternalTake, setIsInternalTake] = useState(false);
+  const [isMobileCartExpanded, setIsMobileCartExpanded] = useState(false);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+
+  // Touch Drag Handlers for Mobile Cart Sheet
+  const handleCartTouchStart = (e: React.TouchEvent) => {
+    setTouchStartY(e.touches[0].clientY);
+  };
+
+  const handleCartTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartY === null) return;
+    const touchEndY = e.changedTouches[0].clientY;
+    const deltaY = touchEndY - touchStartY;
+
+    if (!isMobileCartExpanded && deltaY < -35) {
+      setIsMobileCartExpanded(true);
+    } else if (isMobileCartExpanded && deltaY > 35) {
+      setIsMobileCartExpanded(false);
+    }
+
+    setTouchStartY(null);
+  };
 
   // Sync settings when changed from DesktopShell Settings Drawer
   useEffect(() => {
@@ -721,7 +749,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   if (loadingShift) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <div className="w-12 h-12 border-4 border-[#9362FC] border-t-transparent rounded-full animate-spin mb-4" />
+        <div className="w-12 h-12 border-4 border-brand-purple border-t-transparent rounded-full animate-spin mb-4" />
         <span className="text-slate-500 dark:text-slate-400 font-bold text-sm">Memeriksa status laci kasir...</span>
       </div>
     );
@@ -731,17 +759,18 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   if (!activeShift) {
     return (
       <div className={`max-w-md mx-auto border shadow-xl rounded-3xl p-8 text-center mt-10 transition-colors ${
-        isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-[#FFFFFF] border-[#B8B9BE] text-[#2B2B2B]"
+        isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border text-neutral-dark"
       }`}>
-        <span className="text-5xl block mb-4">🔑</span>
+        <KeyRound className="w-12 h-12 mx-auto text-primary mb-4 stroke-[2.5]" />
         <h3 className="text-2xl font-bold mb-2">Buka Shift Kasir</h3>
         <p className="opacity-80 text-xs font-semibold leading-relaxed mb-6">
           Laci kasir saat ini terkunci. Anda harus membuka shift baru dan menginput nominal kas awal untuk memulai transaksi.
         </p>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20">
-            ⚠️ {error}
+          <div className="mb-4 p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20 flex items-center gap-1.5 justify-center">
+            <AlertCircle className="w-4 h-4 shrink-0 stroke-[2.5]" />
+            <span>{error}</span>
           </div>
         )}
 
@@ -755,8 +784,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
               value={openingCash}
               onChange={(e) => setOpeningCash(e.target.value)}
               placeholder="150000"
-              className={`w-full text-center text-xl font-bold px-4 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-[#9362FC]/40 focus:border-[#9362FC] transition-all ${
-                isDarkMode ? "bg-[#1E1E1E] border-[#3A3A3A] text-white" : "bg-slate-50 border-[#B8B9BE] text-[#2B2B2B]"
+              className={`w-full text-center text-xl font-bold px-4 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-brand-purple/40 focus:border-brand-purple transition-all ${
+                isDarkMode ? "bg-[#1E1E1E] border-dark-border-lighter text-white" : "bg-slate-50 border-light-border text-neutral-dark"
               }`}
               style={{ minHeight: "56px" }}
               required
@@ -766,7 +795,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           <button
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center font-bold text-white bg-[#9362FC] hover:bg-[#7D4BE3] rounded-2xl shadow-md transition-all duration-200 cursor-pointer text-sm"
+            className="w-full flex items-center justify-center font-bold text-white bg-brand-purple hover:bg-brand-purple-hover rounded-2xl shadow-md transition-all duration-200 cursor-pointer text-sm"
             style={{ minHeight: "56px" }}
           >
             {loading ? "Membuka Laci..." : "Mulai Shift Baru"}
@@ -778,75 +807,80 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
   // Active POS Screen Layout
   return (
-    <div className="flex-1 flex overflow-hidden h-full gap-6">
+    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden h-full gap-4 lg:gap-6 relative">
       
       {/* ================= LEFT SIDE: PRODUCTS GRID ================= */}
-      <section className="flex-1 flex flex-col overflow-hidden space-y-5">
+      <section className="flex-1 flex flex-col overflow-hidden space-y-3 lg:space-y-5 pb-16 lg:pb-0">
 
-        {/* Search Bar & Barcode Scanner button (Rounded Pill design) */}
-        <form onSubmit={handleBarcodeSubmit} className="flex gap-3 flex-shrink-0">
-          <div className="flex-1 relative">
-            <Search className="absolute left-5 top-4 w-4 h-4 text-[#2B2B2B] opacity-65 dark:text-white" />
+        {/* Search Bar (Rounded Pill design) */}
+        <form onSubmit={handleBarcodeSubmit} className="w-full flex-shrink-0">
+          <div className="relative w-full">
+            <Search className="absolute left-5 top-4 w-4 h-4 text-neutral-dark opacity-65 dark:text-white" />
             <input
               ref={barcodeInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={`${t.posSearchPlaceholder} ( / )`}
-              className={`w-full pl-12 pr-6 py-3 rounded-full border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#9362FC]/40 focus:border-[#9362FC] transition-colors ${
-                isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-[#FFFFFF] border-[#B8B9BE] text-[#2B2B2B]"
+              className={`w-full pl-12 pr-6 py-3 rounded-full border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-purple/40 focus:border-brand-purple transition-colors ${
+                isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border text-neutral-dark"
               }`}
               style={{ minHeight: "48px" }}
             />
           </div>
-          
-          <button 
-            type="submit" 
-            className="flex items-center space-x-2 px-6 py-3.5 bg-[#2B2B2B] hover:bg-[#1E1E1E] dark:bg-[#E2FF66] dark:hover:bg-[#E2FF66]/85 dark:text-[#2B2B2B] text-white font-semibold rounded-full shadow-sm transition-all cursor-pointer shrink-0"
-          >
-            <Barcode className="w-4 h-4" />
-            <span className="text-xs">Scan Barcode</span>
-          </button>
         </form>
 
         {/* Global Error & Success Alerts */}
         {error && (
-          <div className="p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20 text-left">
-            ⚠️ {error}
+          <div className="p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20 text-left flex items-center gap-1.5">
+            <AlertCircle className="w-4 h-4 shrink-0 stroke-[2.5]" />
+            <span>{error}</span>
           </div>
         )}
         {success && (
-          <div className="p-3 bg-emerald-500/10 text-emerald-500 text-xs font-bold rounded-xl border border-emerald-500/20 text-left">
-            ✅ {success}
+          <div className="p-3 bg-emerald-500/10 text-emerald-500 text-xs font-bold rounded-xl border border-emerald-500/20 text-left flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 shrink-0 stroke-[2.5]" />
+            <span>{success}</span>
           </div>
         )}
 
-        {/* Horizontal Category Pill selector */}
+        {/* Horizontal Category Pill selector (Mobile & Desktop Optimized) */}
         <div className="relative flex items-center w-full flex-shrink-0">
           <div 
             ref={categoryRef}
-            className="flex-1 flex space-x-3 overflow-x-auto pb-3 scrollbar-thin scroll-smooth"
+            className="flex-1 flex space-x-2 overflow-x-auto pb-1 scrollbar-none scroll-smooth"
           >
             {categories.map((cat) => {
               const isCatActive = activeCategory === cat;
               const displayLabel = cat === "ALL_CATEGORY_KEY" ? t.posAllCategories : cat;
+              const count = categoryCounts[cat] || 0;
               return (
                 <button
                   key={cat}
                   type="button"
                   onClick={() => setActiveCategory(cat)}
-                  className={`flex flex-col items-center justify-between p-3.5 min-w-[105px] h-22 rounded-2xl border transition-all duration-200 cursor-pointer shrink-0 ${
+                  className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition-all duration-200 cursor-pointer shrink-0 ${
                     isCatActive
                       ? isDarkMode
-                        ? "bg-[#E2FF66] border-[#E2FF66] text-[#2B2B2B] shadow-md shadow-[#E2FF66]/15"
-                        : "bg-[#2B2B2B] border-[#2B2B2B] text-white shadow-md shadow-[#2B2B2B]/15"
+                        ? "bg-primary border-primary text-neutral-dark shadow-sm"
+                        : "bg-neutral-dark border-neutral-dark text-white shadow-sm"
                       : isDarkMode
-                        ? "bg-[#292929] border-[#3A3A3A] text-[#F3EFE9] hover:bg-[#333333]"
-                        : "bg-[#FFFFFF] border-[#B8B9BE] text-[#2B2B2B] hover:bg-[#FFFFFF]/90"
+                        ? "bg-dark-card-lighter border-dark-border-lighter text-slate-300 hover:bg-white/10"
+                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
                   }`}
                 >
-                  <span className="text-xs opacity-75 font-semibold self-start truncate max-w-full">{displayLabel}</span>
-                  <span className="text-lg font-bold self-end mt-1">{categoryCounts[cat] || 0}</span>
+                  <span className="truncate max-w-[140px]">{displayLabel}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                    isCatActive
+                      ? isDarkMode
+                        ? "bg-neutral-dark/20 text-neutral-dark"
+                        : "bg-white/20 text-white"
+                      : isDarkMode
+                        ? "bg-white/10 text-slate-400"
+                        : "bg-slate-100 text-slate-500"
+                  }`}>
+                    {count}
+                  </span>
                 </button>
               );
             })}
@@ -857,10 +891,10 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
             onClick={() => {
               categoryRef.current?.scrollBy({ left: 180, behavior: 'smooth' });
             }}
-            className="h-22 w-6 flex items-center justify-center text-muted-foreground hover:text-foreground hover:scale-110 transition-all shrink-0 cursor-pointer ml-1"
+            className="h-9 w-6 flex items-center justify-center text-muted-foreground hover:text-foreground hover:scale-110 transition-all shrink-0 cursor-pointer ml-1"
             title="Scroll categories right"
           >
-            <ChevronRight className="w-5 h-5" />
+            <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
@@ -871,13 +905,13 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin pb-4">
             {filteredProducts.length === 0 ? (
               <div className={`p-12 text-center border border-dashed rounded-3xl ${
-                isDarkMode ? "border-[#3A3A3A] text-slate-500" : "border-[#E8E4D9] text-slate-400"
+                isDarkMode ? "border-dark-border-lighter text-slate-500" : "border-[#E8E4D9] text-slate-400"
               }`}>
-                <span className="text-4xl block mb-2">🔍</span>
+                <Search className="w-8 h-8 mx-auto text-slate-400 mb-2 stroke-[2]" />
                 <p className="text-xs font-semibold">Tidak ada produk yang cocok dengan filter</p>
               </div>
             ) : (
-              <div className={`grid grid-cols-1 md:grid-cols-2 ${gridColsClass} gap-4`}>
+              <div className={`grid grid-cols-2 sm:grid-cols-3 ${gridColsClass} gap-2.5 sm:gap-4`}>
                 {filteredProducts.map((p) => {
                   const inStock = p.inventory_mode === "wet_infinite" || p.inventory_mode === "batch_thaw" || p.current_stock > 0;
                   return (
@@ -890,8 +924,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                         inStock ? "cursor-pointer" : "opacity-45 cursor-not-allowed"
                       } ${
                         isDarkMode
-                          ? "bg-[#292929] border-[#3A3A3A] hover:border-[#E2FF66]/40"
-                          : "bg-[#FFFFFF] border-[#B8B9BE] hover:border-[#9362FC]/40 text-[#2B2B2B]"
+                          ? "bg-dark-card-lighter border-dark-border-lighter hover:border-primary/40"
+                          : "bg-[#FFFFFF] border-light-border hover:border-brand-purple/40 text-neutral-dark"
                       }`}
                     >
                       {/* aspect ratio 4/3 Unsplash image */}
@@ -921,11 +955,11 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-dashed border-[#B8B9BE]/60 dark:border-[#3A3A3A]">
-                          <span className="text-xs font-bold text-[#9362FC] dark:text-[#E2FF66]">
+                        <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-dashed border-light-border/60 dark:border-dark-border-lighter">
+                          <span className="text-xs font-bold text-brand-purple dark:text-primary">
                             Rp {p.sell_price.toLocaleString()}
                           </span>
-                          <span className="w-6 h-6 rounded-lg bg-[#9362FC]/10 flex items-center justify-center text-[#9362FC] text-xs font-bold group-hover:bg-[#9362FC] group-hover:text-white transition-colors dark:group-hover:bg-[#E2FF66] dark:group-hover:text-[#2B2B2B] dark:text-[#E2FF66]">
+                          <span className="w-6 h-6 rounded-lg bg-brand-purple/10 flex items-center justify-center text-brand-purple text-xs font-bold group-hover:bg-brand-purple group-hover:text-white transition-colors dark:group-hover:bg-primary dark:group-hover:text-neutral-dark dark:text-primary">
                             +
                           </span>
                         </div>
@@ -940,16 +974,16 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
       </section>
 
       {/* ================= RIGHT SIDE: BASKET & BILL ================= */}
-      <aside className="w-[400px] flex flex-col justify-between overflow-hidden shrink-0 space-y-4">
+      <aside className="hidden lg:flex w-[380px] xl:w-[420px] flex-col justify-between overflow-hidden shrink-0 space-y-4">
         
         {/* Shopping Basket List Card */}
         <div className={`flex-1 flex flex-col overflow-hidden p-4.5 rounded-3xl border transition-colors ${
-          isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-[#FFFFFF] border-[#B8B9BE] shadow-sm"
+          isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border shadow-sm"
         }`}>
           {/* Header */}
           <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800/40 mb-3.5">
             <div>
-              <h3 className="font-bold text-sm text-[#2B2B2B] dark:text-white">{t.posCartTitle}</h3>
+              <h3 className="font-bold text-sm text-neutral-dark dark:text-white">{t.posCartTitle}</h3>
               <p className="text-[10px] opacity-60">Item: {cart.length}</p>
             </div>
             <div className="flex items-center space-x-2">
@@ -970,7 +1004,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 scrollbar-thin">
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center py-20 text-center text-slate-400">
-                <span className="text-4xl mb-2">🛒</span>
+                <ShoppingCart className="w-8 h-8 mb-2 text-slate-400 stroke-[2]" />
                 <p className="text-xs font-bold">{t.posCartEmptyTitle}</p>
                 <p className="text-[10px] opacity-60 max-w-[200px] mt-1">{t.posCartEmptyDesc}</p>
               </div>
@@ -984,11 +1018,11 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                     className={`p-2.5 rounded-2xl border transition-all duration-150 flex items-center justify-between cursor-pointer ${
                       isSelected
                         ? isDarkMode
-                          ? "border-[#E2FF66] bg-[#E2FF66]/10 text-white"
-                          : "border-[#9362FC] bg-[#9362FC]/5 text-[#2B2B2B]"
+                          ? "border-primary bg-primary/10 text-white"
+                          : "border-brand-purple bg-brand-purple/5 text-neutral-dark"
                         : isDarkMode
-                          ? "border-transparent bg-[#3A3A3A]/30 hover:bg-[#3A3A3A]/60 text-white"
-                          : "border-transparent bg-slate-50/50 hover:bg-slate-50 text-[#2B2B2B]"
+                          ? "border-transparent bg-dark-border-lighter/30 hover:bg-dark-border-lighter/60 text-white"
+                          : "border-transparent bg-slate-50/50 hover:bg-slate-50 text-neutral-dark"
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0 flex-1">
@@ -1002,13 +1036,13 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                         
                         <div className="flex items-center gap-1.5 mt-1">
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                            isDarkMode ? "bg-[#3A3A3A]" : "bg-slate-100"
+                            isDarkMode ? "bg-dark-border-lighter" : "bg-slate-100"
                           }`}>
                             Unit: {item.product.unit_type}
                           </span>
                           
                           {showNumpad ? (
-                            <span className="text-[9px] opacity-75 font-semibold text-[#9362FC] dark:text-[#E2FF66]">
+                            <span className="text-[9px] opacity-75 font-semibold text-brand-purple dark:text-primary">
                               Qty: {item.qty} {item.product.unit_type}
                             </span>
                           ) : (
@@ -1017,7 +1051,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                                 type="button"
                                 onClick={() => updateQty(idx, -1)}
                                 className={`w-4.5 h-4.5 rounded flex items-center justify-center font-bold text-[10px] transition-colors cursor-pointer ${
-                                  isDarkMode ? "bg-[#3A3A3A] hover:bg-[#404040] text-white" : "bg-slate-100 hover:bg-slate-200"
+                                  isDarkMode ? "bg-dark-border-lighter hover:bg-[#404040] text-white" : "bg-slate-100 hover:bg-slate-200"
                                 }`}
                               >
                                 -
@@ -1028,15 +1062,15 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                                 value={transientQty[idx] !== undefined ? transientQty[idx] : item.qty}
                                 onChange={(e) => handleQtyInputChange(idx, e.target.value)}
                                 onBlur={() => handleQtyInputBlur(idx)}
-                                className={`w-10 px-1 py-0 rounded border text-center font-bold text-[9px] focus:outline-none focus:ring-1 focus:ring-[#9362FC] no-spinner ${
-                                  isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-white border-[#B8B9BE]"
+                                className={`w-10 px-1 py-0 rounded border text-center font-bold text-[9px] focus:outline-none focus:ring-1 focus:ring-brand-purple no-spinner ${
+                                  isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-white border-light-border"
                                 }`}
                               />
                               <button
                                 type="button"
                                 onClick={() => updateQty(idx, 1)}
                                 className={`w-4.5 h-4.5 rounded flex items-center justify-center font-bold text-[10px] transition-colors cursor-pointer ${
-                                  isDarkMode ? "bg-[#3A3A3A] hover:bg-[#404040] text-white" : "bg-slate-100 hover:bg-slate-200"
+                                  isDarkMode ? "bg-dark-border-lighter hover:bg-[#404040] text-white" : "bg-slate-100 hover:bg-slate-200"
                                 }`}
                               >
                                 +
@@ -1071,10 +1105,10 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
         {/* Subtotal, Numpad & Payment Actions Card */}
         <div className={`p-4 rounded-3xl border space-y-3.5 shrink-0 transition-colors ${
-          isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-[#FFFFFF] border-[#B8B9BE] shadow-sm"
+          isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border shadow-sm"
         }`}>
           {/* Pricing breakdown */}
-          <div className="space-y-1.5 py-3 border-t border-[#B8B9BE]/60 dark:border-[#3A3A3A] text-xs">
+          <div className="space-y-1.5 py-3 border-t border-light-border/60 dark:border-dark-border-lighter text-xs">
             {(enableTax || enableDiscount) && (
               <div className="flex justify-between opacity-75">
                 <span>{t.posSubtotal}</span>
@@ -1083,7 +1117,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
             )}
 
             {enableDiscount && (
-              <div className="flex justify-between text-emerald-600 dark:text-[#E2FF66]">
+              <div className="flex justify-between text-emerald-600 dark:text-primary">
                 <div className="flex items-center gap-1.5">
                   <span>{t.posDiscount}</span>
                   <input
@@ -1093,7 +1127,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                     value={discountRate}
                     onChange={(e) => setDiscountRate(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
                     className={`w-11 px-1 py-0.5 rounded text-center font-bold text-[10px] border focus:outline-none focus:ring-1 focus:ring-emerald-500 no-spinner ${
-                      isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-white border-[#B8B9BE]"
+                      isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-white border-light-border"
                     }`}
                   />
                   <span>%</span>
@@ -1113,7 +1147,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                     value={taxRate}
                     onChange={(e) => setTaxRate(Math.max(0, Math.min(50, Number(e.target.value) || 0)))}
                     className={`w-11 px-1 py-0.5 rounded text-center font-bold text-[10px] border focus:outline-none focus:ring-1 focus:ring-amber-500 no-spinner ${
-                      isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-white border-[#B8B9BE]"
+                      isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-white border-light-border"
                     }`}
                   />
                   <span>%</span>
@@ -1123,8 +1157,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
             )}
 
             <div className={`flex justify-between items-center text-sm font-bold ${
-              enableDiscount || enableTax ? "pt-1.5 border-t border-dashed border-[#B8B9BE]" : ""
-            } text-[#9362FC] dark:text-[#E2FF66]`}>
+              enableDiscount || enableTax ? "pt-1.5 border-t border-dashed border-light-border" : ""
+            } text-brand-purple dark:text-primary`}>
               <span>{t.posTotalPayment}</span>
               <span>Rp {Math.round(totalAmount).toLocaleString("id-ID")}</span>
             </div>
@@ -1147,8 +1181,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                       onClick={() => setNumpadMode(mode.id as any)}
                       className={`flex-1 py-1.5 text-[10px] font-bold rounded-full transition-all cursor-pointer ${
                         numpadMode === mode.id
-                          ? "bg-[#9362FC] text-white shadow-sm"
-                          : "text-muted-foreground hover:text-[#2B2B2B] dark:hover:text-white"
+                          ? "bg-brand-purple text-white shadow-sm"
+                          : "text-muted-foreground hover:text-neutral-dark dark:hover:text-white"
                       }`}
                     >
                       {mode.label}
@@ -1167,10 +1201,10 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                       val === "C"
                         ? "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20"
                         : val === "+" || val === "-"
-                        ? "bg-[#9362FC]/10 dark:bg-[#E2FF66]/10 text-[#9362FC] dark:text-[#E2FF66] border-[#9362FC]/20 dark:border-[#E2FF66]/20 font-extrabold"
+                        ? "bg-brand-purple/10 dark:bg-primary/10 text-brand-purple dark:text-primary border-brand-purple/20 dark:border-primary/20 font-extrabold"
                         : isDarkMode
-                        ? "bg-[#3A3A3A]/40 border-transparent text-white hover:bg-[#3A3A3A]"
-                        : "bg-slate-50 border-slate-200 text-[#2B2B2B] hover:bg-slate-100"
+                        ? "bg-dark-border-lighter/40 border-transparent text-white hover:bg-dark-border-lighter"
+                        : "bg-slate-50 border-slate-200 text-neutral-dark hover:bg-slate-100"
                     }`}
                   >
                     {val}
@@ -1181,7 +1215,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                   type="button"
                   onClick={() => setShowPaymentModal(true)}
                   disabled={cart.length === 0 || loading}
-                  className="col-span-2 row-span-1 p-2.5 bg-[#9362FC] hover:bg-[#7D4BE3] disabled:bg-[#3A3A3A]/40 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center text-xs"
+                  className="col-span-2 row-span-1 p-2.5 bg-brand-purple hover:bg-brand-purple-hover disabled:bg-dark-border-lighter/40 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center text-xs"
                 >
                   {t.posPayButton}
                 </button>
@@ -1192,7 +1226,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
               type="button"
               onClick={() => setShowPaymentModal(true)}
               disabled={cart.length === 0 || loading}
-              className="w-full py-3.5 bg-[#9362FC] hover:bg-[#7D4BE3] disabled:bg-[#3A3A3A]/40 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold rounded-2xl shadow-md transition-all cursor-pointer flex items-center justify-center text-xs"
+              className="w-full py-3.5 bg-brand-purple hover:bg-brand-purple-hover disabled:bg-dark-border-lighter/40 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold rounded-2xl shadow-md transition-all cursor-pointer flex items-center justify-center text-xs"
             >
               {t.posPayButton}
             </button>
@@ -1202,10 +1236,10 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           <button
             type="button"
             onClick={() => setShowHistoryDrawer(true)}
-            className="w-full pt-1 pb-0.5 text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-[#E2FF66] flex items-center justify-between px-1.5 transition-colors cursor-pointer group"
+            className="w-full pt-1 pb-0.5 text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-primary flex items-center justify-between px-1.5 transition-colors cursor-pointer group"
           >
             <div className="flex items-center gap-1.5">
-              <History className="w-3.5 h-3.5 text-[#9362FC] dark:text-[#E2FF66]" />
+              <History className="w-3.5 h-3.5 text-brand-purple dark:text-primary" />
               <span>{t.posHistoryLink}</span>
             </div>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
@@ -1219,9 +1253,9 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
       {/* 1. Close Shift Modal */}
       {showCloseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-[#2B2B2B]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-neutral-dark">
           <div className={`w-full max-w-md border rounded-3xl p-6 shadow-2xl transition-all ${
-            isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-[#FFFFFF] border-[#B8B9BE]"
+            isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border"
           }`}>
             <h3 className="text-lg font-bold mb-1 dark:text-white">{t.posCloseShift}</h3>
             <p className="opacity-70 text-xs font-semibold leading-relaxed mb-5">
@@ -1231,8 +1265,9 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
             </p>
 
             {error && (
-              <div className="mb-4 p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20 text-left">
-                ⚠️ {error}
+              <div className="mb-4 p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20 text-left flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <span>{error}</span>
               </div>
             )}
 
@@ -1246,8 +1281,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                   value={closingCashActual}
                   onChange={(e) => setClosingCashActual(e.target.value)}
                   placeholder="150000"
-                  className={`w-full text-center text-xl font-bold px-4 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-[#9362FC]/40 focus:border-[#9362FC] transition-all ${
-                    isDarkMode ? "bg-[#1E1E1E] border-[#3A3A3A] text-white" : "bg-slate-50 border-[#B8B9BE]"
+                  className={`w-full text-center text-xl font-bold px-4 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-brand-purple/40 focus:border-brand-purple transition-all ${
+                    isDarkMode ? "bg-[#1E1E1E] border-dark-border-lighter text-white" : "bg-slate-50 border-light-border"
                   }`}
                   style={{ minHeight: "56px" }}
                   required
@@ -1258,14 +1293,14 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                 <button
                   type="button"
                   onClick={() => setShowCloseModal(false)}
-                  className="flex-1 py-3 text-xs font-bold border border-[#B8B9BE] dark:border-[#3A3A3A] hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
+                  className="flex-1 py-3 text-xs font-bold border border-light-border dark:border-dark-border-lighter hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
                 >
                   {t.cancel}
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 py-3 text-xs font-bold bg-[#9362FC] text-white hover:bg-[#7D4BE3] rounded-xl transition-all cursor-pointer shadow-md"
+                  className="flex-1 py-3 text-xs font-bold bg-brand-purple text-white hover:bg-brand-purple-hover rounded-xl transition-all cursor-pointer shadow-md"
                 >
                   {loading ? t.saving : t.posConfirmCloseShift}
                 </button>
@@ -1277,9 +1312,9 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
       {/* 2. Manager Override / Void Transaction Modal */}
       {showVoidModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-[#2B2B2B]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-neutral-dark">
           <div className={`w-full max-w-md border rounded-3xl p-6 shadow-2xl transition-all ${
-            isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-white border-[#B8B9BE]"
+            isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-white border-light-border"
           }`}>
             <h3 className="text-lg font-bold mb-1 text-red-500">{t.posVoidModalTitle}</h3>
             <p className="opacity-70 text-xs font-semibold leading-relaxed mb-5">
@@ -1298,7 +1333,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                   placeholder="••••••"
                   maxLength={6}
                   className={`w-full text-center text-xl font-bold px-4 py-2.5 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500 transition-all ${
-                    isDarkMode ? "bg-[#1E1E1E] border-[#3A3A3A] text-white" : "bg-slate-50 border-[#B8B9BE]"
+                    isDarkMode ? "bg-[#1E1E1E] border-dark-border-lighter text-white" : "bg-slate-50 border-light-border"
                   }`}
                   required
                 />
@@ -1314,7 +1349,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                   onChange={(e) => setVoidReason(e.target.value)}
                   placeholder={t.posVoidPlaceholder}
                   className={`w-full text-xs px-4 py-2.5 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500 transition-all ${
-                    isDarkMode ? "bg-[#1E1E1E] border-[#3A3A3A] text-white" : "bg-slate-50 border-[#B8B9BE]"
+                    isDarkMode ? "bg-[#1E1E1E] border-dark-border-lighter text-white" : "bg-slate-50 border-light-border"
                   }`}
                   required
                 />
@@ -1328,7 +1363,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                     setManagerPin("");
                     setVoidReason("");
                   }}
-                  className="flex-1 py-3 text-xs font-bold border border-[#B8B9BE] dark:border-[#3A3A3A] hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
+                  className="flex-1 py-3 text-xs font-bold border border-light-border dark:border-dark-border-lighter hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
                 >
                   {t.cancel}
                 </button>
@@ -1347,12 +1382,12 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
       {/* 3. Checkout Payment Selection Modal */}
       {showPaymentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-[#2B2B2B]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-neutral-dark">
           <div className={`w-full max-w-md border rounded-3xl p-6 shadow-2xl transition-all ${
-            isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-[#FFFFFF] border-[#B8B9BE]"
+            isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border"
           }`}>
             
-            <div className="pb-4 border-b border-dashed border-[#B8B9BE] dark:border-[#3A3A3A] mb-5">
+            <div className="pb-4 border-b border-dashed border-light-border dark:border-dark-border-lighter mb-5">
               <h3 className="text-lg font-bold dark:text-white">{t.posPaymentModalTitle}</h3>
               <p className="text-xs text-muted-foreground">
                 {language === "id" ? "Tentukan tipe transaksi dan metode pembayaran" : "Specify transaction type and payment method"}
@@ -1371,8 +1406,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                     onClick={() => setIsInternalTake(false)}
                     className={`flex-1 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
                       !isInternalTake
-                        ? "bg-[#9362FC] text-white shadow-sm"
-                        : "text-muted-foreground hover:text-[#2B2B2B] dark:hover:text-white"
+                        ? "bg-brand-purple text-white shadow-sm"
+                        : "text-muted-foreground hover:text-neutral-dark dark:hover:text-white"
                     }`}
                   >
                     {language === "id" ? "Sales (Pelanggan)" : "Customer Sale"}
@@ -1382,8 +1417,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                     onClick={() => setIsInternalTake(true)}
                     className={`flex-1 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
                       isInternalTake
-                        ? "bg-[#9362FC] text-white shadow-sm"
-                        : "text-muted-foreground hover:text-[#2B2B2B] dark:hover:text-white"
+                        ? "bg-brand-purple text-white shadow-sm"
+                        : "text-muted-foreground hover:text-neutral-dark dark:hover:text-white"
                     }`}
                   >
                     {language === "id" ? "Konsumsi Internal" : "Internal Take"}
@@ -1412,11 +1447,11 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                           className={`p-3 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
                             isSelected
                               ? isDarkMode
-                                ? "bg-[#E2FF66]/15 border-[#E2FF66] text-[#E2FF66]"
-                                : "bg-[#9362FC]/10 border-[#9362FC] text-[#9362FC]"
+                                ? "bg-primary/15 border-primary text-primary"
+                                : "bg-brand-purple/10 border-brand-purple text-brand-purple"
                               : isDarkMode
-                                ? "bg-[#3A3A3A] border-transparent text-[#94A3B8] hover:bg-[#404040]"
-                                : "bg-slate-50 border-[#B8B9BE]/60 text-[#2B2B2B] hover:bg-slate-100"
+                                ? "bg-dark-border-lighter border-transparent text-[#94A3B8] hover:bg-[#404040]"
+                                : "bg-slate-50 border-light-border/60 text-neutral-dark hover:bg-slate-100"
                           }`}
                         >
                           <CreditCard className="w-3.5 h-3.5 shrink-0" />
@@ -1430,13 +1465,13 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
               {/* Payment Modal Summary */}
               <div className={`p-4 rounded-2xl text-xs space-y-2 font-semibold ${
-                isDarkMode ? "bg-[#3A3A3A] text-white" : "bg-[#E7DCFD] text-[#2B2B2B]"
+                isDarkMode ? "bg-dark-border-lighter text-white" : "bg-[#E7DCFD] text-neutral-dark"
               }`}>
                 <div className="flex justify-between">
                   <span className="opacity-75">{language === "id" ? "Total Produk:" : "Total Items:"}</span>
                   <span>{cart.reduce((sum, item) => sum + item.qty, 0)} {t.posUnit}</span>
                 </div>
-                <div className="flex justify-between text-sm font-bold pt-2 border-t border-dashed border-[#B8B9BE] text-[#9362FC] dark:text-[#E2FF66]">
+                <div className="flex justify-between text-sm font-bold pt-2 border-t border-dashed border-light-border text-brand-purple dark:text-primary">
                   <span>{t.posTotalPayment}</span>
                   <span>Rp {Math.round(totalAmount).toLocaleString()}</span>
                 </div>
@@ -1448,14 +1483,14 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
               <button
                 type="button"
                 onClick={() => setShowPaymentModal(false)}
-                className="flex-1 py-3 text-xs font-bold border border-[#B8B9BE] dark:border-[#3A3A3A] hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
+                className="flex-1 py-3 text-xs font-bold border border-light-border dark:border-dark-border-lighter hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
               >
                 {t.cancel}
               </button>
               <button
                 type="button"
                 onClick={handleConfirmPayment}
-                className="flex-1 py-3 text-xs font-bold bg-[#9362FC] text-white hover:bg-[#7D4BE3] rounded-xl transition-all cursor-pointer shadow-md"
+                className="flex-1 py-3 text-xs font-bold bg-brand-purple text-white hover:bg-brand-purple-hover rounded-xl transition-all cursor-pointer shadow-md"
               >
                 {t.posProcessPayment}
               </button>
@@ -1467,9 +1502,9 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
       {/* 4. Checkout Success Modal / Print Receipt Overlay */}
       {showReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-[#2B2B2B]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-neutral-dark">
           <div className={`w-full max-w-md border rounded-3xl p-6 shadow-2xl transition-all ${
-            isDarkMode ? "bg-[#292929] border-[#3A3A3A] text-white" : "bg-[#FFFFFF] border-[#B8B9BE]"
+            isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border"
           }`}>
             <div className="text-center space-y-2.5 mb-5">
               <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto animate-bounce" />
@@ -1478,7 +1513,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
             </div>
 
             {/* Receipt Monospace Card */}
-            <div className="space-y-3.5 text-xs font-mono border-t border-b border-dashed border-[#B8B9BE]/60 dark:border-[#3A3A3A] py-3.5 my-3.5 max-h-[250px] overflow-y-auto dark:text-white">
+            <div className="space-y-3.5 text-xs font-mono border-t border-b border-dashed border-light-border/60 dark:border-dark-border-lighter py-3.5 my-3.5 max-h-[250px] overflow-y-auto dark:text-white">
               <div className="flex justify-between opacity-75">
                 <span>{t.posReceiptDate}:</span>
                 <span>{new Date(showReceipt.created_at).toLocaleString(language === "id" ? "id-ID" : "en-US")}</span>
@@ -1489,10 +1524,10 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
               </div>
               <div className="flex justify-between opacity-75">
                 <span>{t.posReceiptPaymentMethod}:</span>
-                <span className="font-bold text-[#9362FC] dark:text-[#E2FF66] uppercase">{showReceipt.payment_method}</span>
+                <span className="font-bold text-brand-purple dark:text-primary uppercase">{showReceipt.payment_method}</span>
               </div>
               
-              <div className="space-y-1.5 pt-2 border-t border-[#B8B9BE]/60 dark:border-[#3A3A3A]">
+              <div className="space-y-1.5 pt-2 border-t border-light-border/60 dark:border-dark-border-lighter">
                 {showReceipt.items?.map((item: any, idx: number) => (
                   <div key={idx} className="flex justify-between text-[11px]">
                     <span className="truncate max-w-[70%]">{item.name} (x{item.qty})</span>
@@ -1501,7 +1536,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                 ))}
               </div>
 
-              <div className="space-y-1.5 pt-2 border-t border-[#B8B9BE]/60 dark:border-[#3A3A3A] font-semibold">
+              <div className="space-y-1.5 pt-2 border-t border-light-border/60 dark:border-dark-border-lighter font-semibold">
                 <div className="flex justify-between">
                   <span>{t.posSubtotal}:</span>
                   <span>Rp {showReceipt.subtotal?.toLocaleString() || "0"}</span>
@@ -1514,7 +1549,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                   <span>{t.posTax} ({showReceipt.taxRate || 0}%):</span>
                   <span>Rp {showReceipt.taxAmount?.toLocaleString() || "0"}</span>
                 </div>
-                <div className="flex justify-between text-sm font-bold pt-2 border-t border-[#B8B9BE]/60 dark:border-[#3A3A3A] text-[#9362FC] dark:text-[#E2FF66]">
+                <div className="flex justify-between text-sm font-bold pt-2 border-t border-light-border/60 dark:border-dark-border-lighter text-brand-purple dark:text-primary">
                   <span>{t.posReceiptTotalBill}:</span>
                   <span>Rp {Math.round(showReceipt.totalAmount || showReceipt.total_amount).toLocaleString()}</span>
                 </div>
@@ -1528,14 +1563,14 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                 onClick={() => {
                   alert(t.posReceiptPrinted);
                 }}
-                className="flex-1 py-3 text-xs font-bold border border-[#B8B9BE] dark:border-[#3A3A3A] hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
+                className="flex-1 py-3 text-xs font-bold border border-light-border dark:border-dark-border-lighter hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
               >
                 {t.posPrintReceipt}
               </button>
               <button
                 type="button"
                 onClick={() => setShowReceipt(null)}
-                className="flex-1 py-3 text-xs font-bold bg-[#9362FC] text-white hover:bg-[#7D4BE3] rounded-xl transition-all cursor-pointer shadow-md"
+                className="flex-1 py-3 text-xs font-bold bg-brand-purple text-white hover:bg-brand-purple-hover rounded-xl transition-all cursor-pointer shadow-md"
               >
                 {t.posNewTransaction}
               </button>
@@ -1551,6 +1586,143 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
         onOpenChange={setShowHistoryDrawer}
         onReprintReceipt={handleReprintReceipt}
       />
+
+      {/* 6. Mobile Cart Bottom Sheet Drawer (Fixed Bottom Anchored with 80% Expand) */}
+      {cart.length > 0 && (
+        <>
+          {/* Backdrop Overlay when expanded */}
+          {isMobileCartExpanded && (
+            <div
+              onClick={() => setIsMobileCartExpanded(false)}
+              className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+            />
+          )}
+
+          {/* Bottom Sheet Drawer Container */}
+          <div
+            onTouchStart={handleCartTouchStart}
+            onTouchEnd={handleCartTouchEnd}
+            className={`lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-[#202024] border-t border-slate-200 dark:border-[#38383C] rounded-t-[28px] shadow-[0_-8px_30px_rgba(0,0,0,0.18)] flex flex-col transition-all duration-300 ease-out overflow-hidden ${
+              isMobileCartExpanded ? "h-[80vh] max-h-[85vh]" : "h-[76px]"
+            }`}
+          >
+            {/* Top Drag Handle Pill */}
+            <div
+              onClick={() => setIsMobileCartExpanded(!isMobileCartExpanded)}
+              className="w-full pt-2.5 pb-1 cursor-pointer flex items-center justify-center shrink-0 touch-none"
+            >
+              <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full" />
+            </div>
+
+            <div className="flex-1 flex flex-col overflow-hidden px-4 pb-4 space-y-3">
+              {/* Peek Header (Visible both when collapsed & expanded) */}
+              <div
+                onClick={() => setIsMobileCartExpanded(!isMobileCartExpanded)}
+                className="flex items-center justify-between cursor-pointer select-none pb-2.5 border-b border-slate-100 dark:border-slate-800/80 shrink-0"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-brand-purple/10 dark:bg-primary/10 flex items-center justify-center font-extrabold text-xs text-brand-purple dark:text-primary shrink-0">
+                    {cart.reduce((sum, item) => sum + item.qty, 0)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-black text-neutral-dark dark:text-white truncate">
+                      Rp {Math.round(totalAmount).toLocaleString("id-ID")}
+                    </div>
+                    <div className="text-[10px] opacity-75 font-semibold text-slate-500 dark:text-slate-400 truncate">
+                      {cart.reduce((sum, item) => sum + item.qty, 0)} {language === "id" ? "Item Belanjaan" : "Items"} ({cart.length} SKU)
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right side: ONLY Reset Cart Button (No Bayar button in peek header!) */}
+                <div className="flex items-center space-x-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCart([]);
+                      setIsMobileCartExpanded(false);
+                    }}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 text-red-500 hover:text-red-600 bg-red-500/10 hover:bg-red-500/20 rounded-xl transition-all cursor-pointer text-xs font-bold"
+                    title={t.posEmptyCartTooltip}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                    <span>Reset</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Expanded Content: Item List & Checkout Action (Only visible when expanded) */}
+              {isMobileCartExpanded && (
+                <>
+                  {/* Item List */}
+                  <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5 py-1 scrollbar-thin">
+                    {cart.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-2xl border transition-all flex items-center justify-between ${
+                          isDarkMode ? "border-dark-border-lighter bg-dark-card-lighter/60 text-white" : "border-slate-200 bg-slate-50 text-neutral-dark"
+                        }`}
+                      >
+                        <div className="flex items-center space-x-3 min-w-0 flex-1">
+                          <img src={getProductImage(item.product)} alt={item.product.name} className="w-10 h-10 rounded-xl object-cover shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-bold text-xs leading-tight truncate">{item.product.name}</h4>
+                            <span className="text-[10px] opacity-75 font-semibold text-brand-purple dark:text-primary">
+                              Rp {item.product.sell_price.toLocaleString("id-ID")} x {item.qty}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-1.5 ml-2">
+                          <button
+                            type="button"
+                            onClick={() => updateQty(idx, -1)}
+                            className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-white/10 font-bold text-xs flex items-center justify-center cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span className="w-6 text-center text-xs font-extrabold">{item.qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateQty(idx, 1)}
+                            className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-white/10 font-bold text-xs flex items-center justify-center cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Sticky Action Footer */}
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5 shrink-0">
+                    <div className="flex items-center justify-between text-sm font-extrabold">
+                      <span>{t.posTotalPayment}</span>
+                      <span className="text-brand-purple dark:text-primary text-base">
+                        Rp {Math.round(totalAmount).toLocaleString("id-ID")}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMobileCartExpanded(false);
+                        setShowPaymentModal(true);
+                      }}
+                      disabled={cart.length === 0}
+                      className="w-full py-3.5 bg-brand-purple hover:bg-brand-purple-hover text-white dark:bg-primary dark:text-neutral-dark font-extrabold text-sm rounded-2xl shadow-md transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <CreditCard className="w-4 h-4 stroke-[2.5]" />
+                      <span>Bayar Sekarang (Rp {Math.round(totalAmount).toLocaleString("id-ID")})</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
     </div>
   );

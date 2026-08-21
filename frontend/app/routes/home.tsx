@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../lib/api";
 import { useAuthStore, useShellStore } from "../lib/store";
-import DesktopShell from "../components/DesktopShell";
-import MobileShell from "../components/MobileShell";
+import DesktopShell from "../shells/desktop-shell";
+import MobileShell from "../shells/mobile-shell";
 
 export default function Home() {
   const navigate = useNavigate();

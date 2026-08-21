@@ -163,14 +163,14 @@ export default function TransactionHistoryDrawer({
 
   return (
     <Drawer direction="right" open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="w-[500px] sm:w-[540px] md:w-[560px] max-w-[95vw] border-l bg-white dark:bg-[#202024] text-[#2B2B2B] dark:text-white">
+      <DrawerContent className="w-[500px] sm:w-[540px] md:w-[560px] max-w-[95vw] border-l bg-white dark:bg-[#202024] text-neutral-dark dark:text-white">
         <div className="flex flex-col h-full w-full p-5 sm:p-6 overflow-hidden">
           
           {/* Header */}
-          <DrawerHeader className="p-0 pb-4 border-b border-slate-200 dark:border-[#38383C]">
+          <DrawerHeader className="p-0 pb-4 border-b border-slate-200 dark:border-dark-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-purple-500/10 dark:bg-[#E2FF66]/10 text-purple-600 dark:text-[#E2FF66] flex items-center justify-center shrink-0 font-bold">
+                <div className="w-10 h-10 rounded-2xl bg-purple-500/10 dark:bg-primary/10 text-purple-600 dark:text-primary flex items-center justify-center shrink-0 font-bold">
                   <Receipt className="w-5 h-5" />
                 </div>
                 <div>
@@ -187,7 +187,7 @@ export default function TransactionHistoryDrawer({
                 type="button"
                 onClick={fetchTransactions}
                 disabled={loading}
-                className="p-2 rounded-xl bg-slate-100 dark:bg-[#2C2C30] hover:bg-slate-200 dark:hover:bg-[#38383C] text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                className="p-2 rounded-xl bg-slate-100 dark:bg-[#2C2C30] hover:bg-slate-200 dark:hover:bg-dark-border text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                 title="Refresh"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -196,19 +196,19 @@ export default function TransactionHistoryDrawer({
 
             {/* Quick Shift Summary Stats */}
             <div className="grid grid-cols-3 gap-2 mt-4">
-              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C]">
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border">
                 <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{t.posShiftRevenue}</p>
-                <p className="text-xs sm:text-sm font-extrabold text-emerald-600 dark:text-[#E2FF66] truncate mt-0.5">
+                <p className="text-xs sm:text-sm font-extrabold text-emerald-600 dark:text-primary truncate mt-0.5">
                   Rp {totalCompletedAmount.toLocaleString("id-ID")}
                 </p>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C]">
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border">
                 <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{t.posTotalInvoices}</p>
                 <p className="text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">
                   {transactions.length} {t.posTransactions}
                 </p>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-[#38383C]">
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border">
                 <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{t.posTotalVoided}</p>
                 <p className="text-xs sm:text-sm font-extrabold text-red-500 mt-0.5">
                   {totalVoidedCount} {t.posCanceled}
@@ -218,7 +218,7 @@ export default function TransactionHistoryDrawer({
           </DrawerHeader>
 
           {/* Filter & Search Bar */}
-          <div className="py-3 space-y-2 border-b border-slate-200/60 dark:border-[#38383C] shrink-0">
+          <div className="py-3 space-y-2 border-b border-slate-200/60 dark:border-dark-border shrink-0">
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -226,7 +226,7 @@ export default function TransactionHistoryDrawer({
                 placeholder={t.posSearchTxPlaceholder}
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-[#26262A] border border-slate-200 dark:border-[#38383C] focus:outline-none focus:ring-1 focus:ring-purple-500 dark:focus:ring-[#E2FF66]"
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-[#26262A] border border-slate-200 dark:border-dark-border focus:outline-none focus:ring-1 focus:ring-purple-500 dark:focus:ring-primary"
               />
             </div>
 
@@ -242,7 +242,7 @@ export default function TransactionHistoryDrawer({
                   onClick={() => setStatusFilter(tab.id as any)}
                   className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
                     statusFilter === tab.id
-                      ? "bg-[#9362FC] dark:bg-[#E2FF66] text-white dark:text-[#1a1a1a] shadow-xs"
+                      ? "bg-brand-purple dark:bg-primary text-white dark:text-[#1a1a1a] shadow-xs"
                       : "bg-slate-100 dark:bg-[#28282D] text-slate-600 dark:text-slate-400 hover:bg-slate-200"
                   }`}
                 >
@@ -285,8 +285,8 @@ export default function TransactionHistoryDrawer({
                     onClick={() => setSelectedTx(isSelected ? null : tx)}
                     className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
                       isSelected
-                        ? "border-[#9362FC] dark:border-[#E2FF66] bg-purple-500/5 dark:bg-[#E2FF66]/5"
-                        : "border-slate-200/80 dark:border-[#38383C] bg-white dark:bg-[#26262A] hover:border-slate-300 dark:hover:border-slate-600"
+                        ? "border-brand-purple dark:border-primary bg-purple-500/5 dark:bg-primary/5"
+                        : "border-slate-200/80 dark:border-dark-border bg-white dark:bg-[#26262A] hover:border-slate-300 dark:hover:border-slate-600"
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -353,7 +353,7 @@ export default function TransactionHistoryDrawer({
 
                     {/* Collapsible Action Drawer Box if selected */}
                     {isSelected && (
-                      <div className="mt-3 pt-3 border-t border-slate-200 dark:border-[#38383C] flex items-center justify-between gap-2">
+                      <div className="mt-3 pt-3 border-t border-slate-200 dark:border-dark-border flex items-center justify-between gap-2">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -362,9 +362,9 @@ export default function TransactionHistoryDrawer({
                               onReprintReceipt(tx);
                             }
                           }}
-                          className="flex-1 py-2 px-3 rounded-xl bg-slate-100 dark:bg-[#1E1E22] hover:bg-slate-200 dark:hover:bg-[#2E2E34] text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                          className="flex-1 py-2 px-3 rounded-xl bg-slate-100 dark:bg-dark-bg hover:bg-slate-200 dark:hover:bg-[#2E2E34] text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                         >
-                          <Printer className="w-3.5 h-3.5 text-purple-600 dark:text-[#E2FF66]" />
+                          <Printer className="w-3.5 h-3.5 text-purple-600 dark:text-primary" />
                           <span>{t.posPrintReceipt}</span>
                         </button>
 
@@ -393,15 +393,15 @@ export default function TransactionHistoryDrawer({
           </div>
 
           {/* Footer info */}
-          <div className="pt-3 border-t border-slate-200 dark:border-[#38383C] text-[10px] text-slate-400 text-center shrink-0">
+          <div className="pt-3 border-t border-slate-200 dark:border-dark-border text-[10px] text-slate-400 text-center shrink-0">
             Andaya Group POS • Real-time Offline Ledger Synchronized
           </div>
         </div>
 
         {/* ================= VOID MODAL OVERLAY ================= */}
         {voidingTxId && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 text-[#2B2B2B]">
-            <div className="w-full max-w-sm border rounded-3xl p-6 bg-white dark:bg-[#292929] border-slate-200 dark:border-[#3A3A3A] text-slate-800 dark:text-white shadow-2xl space-y-4">
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 text-neutral-dark">
+            <div className="w-full max-w-sm border rounded-3xl p-6 bg-white dark:bg-dark-card-lighter border-slate-200 dark:border-dark-border-lighter text-slate-800 dark:text-white shadow-2xl space-y-4">
               <div className="flex items-center gap-2.5 text-red-500">
                 <div className="w-9 h-9 rounded-xl bg-red-500/10 flex items-center justify-center">
                   <ShieldCheck className="w-5 h-5" />
@@ -432,7 +432,7 @@ export default function TransactionHistoryDrawer({
                     value={managerPin}
                     onChange={(e) => setManagerPin(e.target.value)}
                     placeholder="••••••"
-                    className="w-full text-center tracking-widest text-lg font-bold px-3 py-2 rounded-xl border bg-slate-50 dark:bg-[#1E1E22] border-slate-200 dark:border-[#3A3A3A] focus:outline-none focus:ring-2 focus:ring-red-500/40"
+                    className="w-full text-center tracking-widest text-lg font-bold px-3 py-2 rounded-xl border bg-slate-50 dark:bg-dark-bg border-slate-200 dark:border-dark-border-lighter focus:outline-none focus:ring-2 focus:ring-red-500/40"
                     required
                     autoFocus
                   />
@@ -447,7 +447,7 @@ export default function TransactionHistoryDrawer({
                     value={voidReason}
                     onChange={(e) => setVoidReason(e.target.value)}
                     placeholder={t.posVoidPlaceholder}
-                    className="w-full px-3 py-2 text-xs rounded-xl border bg-slate-50 dark:bg-[#1E1E22] border-slate-200 dark:border-[#3A3A3A] focus:outline-none focus:ring-1 focus:ring-red-500/40"
+                    className="w-full px-3 py-2 text-xs rounded-xl border bg-slate-50 dark:bg-dark-bg border-slate-200 dark:border-dark-border-lighter focus:outline-none focus:ring-1 focus:ring-red-500/40"
                   />
                 </div>
 
@@ -460,7 +460,7 @@ export default function TransactionHistoryDrawer({
                       setVoidReason("");
                       setVoidError("");
                     }}
-                    className="flex-1 py-2.5 text-xs font-bold border border-slate-200 dark:border-[#3A3A3A] rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                    className="flex-1 py-2.5 text-xs font-bold border border-slate-200 dark:border-dark-border-lighter rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
                   >
                     {t.cancel}
                   </button>
