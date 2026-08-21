@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ErpDataTable } from "../../components/ErpDataTable";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import {
@@ -27,10 +28,18 @@ import {
   DialogFooter,
   DialogClose,
 } from "../../components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+} from "../../components/ui/sheet";
 import { 
-  ArrowLeft, Barcode, CheckCircle2, AlertCircle, 
-  Info, Sparkles, Tag, DollarSign, Package, Plus, Edit3,
-  Upload, X, MoreHorizontal, Search, SlidersHorizontal, 
+  ArrowLeft, Barcode, CheckCircle2, AlertCircle, AlertTriangle,
+  Info, Sparkles, Tag, DollarSign, Package, Plus, Edit3, Menu,
+  Upload, X, MoreHorizontal, Search, SlidersHorizontal, ChevronDown, ArrowUpDown,
   Eye, Filter, Copy, Check, ChevronLeft, ChevronRight, LayoutGrid,
   Globe, RotateCcw, Archive, Layers
 } from "lucide-react";
@@ -47,6 +56,7 @@ interface Product {
   current_stock: number;
   min_stock_alert?: number;
   image_url?: string;
+  created_at?: string;
   status: "active" | "inactive" | "discontinued";
 }
 
@@ -79,6 +89,42 @@ export default function InventoryModule({
 
   const isManagerOrOwner = activeContext?.role === "manager" || activeContext?.role === "owner";
 
+  // Internal Navigation View & Selection States
+  const [internalView, setInternalView] = useState<"master" | "new" | "edit" | "discontinued">(view || "master");
+  const [internalProduct, setInternalProduct] = useState<Product | null>(product);
+
+  useEffect(() => {
+    setInternalView(view || "master");
+    setInternalProduct(product || null);
+  }, [view, product]);
+
+  const activeView = internalView;
+  const activeProduct = internalProduct;
+
+  const handleTriggerAdd = () => {
+    if (onAddNew) onAddNew();
+    else if (onNavigate) onNavigate("inventory-add");
+    else {
+      setInternalProduct(null);
+      setInternalView("new");
+    }
+  };
+
+  const handleTriggerEdit = (targetProd: Product) => {
+    if (onEditProduct) onEditProduct(targetProd);
+    else {
+      setInternalProduct(targetProd);
+      setInternalView("edit");
+    }
+  };
+
+  const handleFormBack = () => {
+    if (onCancel) onCancel();
+    setInternalView("master");
+    setInternalProduct(null);
+    fetchData();
+  };
+
   // Search & Rich Multi-Filter States
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -94,6 +140,10 @@ export default function InventoryModule({
   });
   const [filterMode, setFilterMode] = useState<string>("all");
   const [filterStock, setFilterStock] = useState<string>("all");
+
+  // Sorting State (A-Z, Z-A, Price, Stock, Newest)
+  type SortOption = "name_asc" | "name_desc" | "price_asc" | "price_desc" | "stock_desc" | "stock_asc" | "newest";
+  const [sortBy, setSortBy] = useState<SortOption>("name_asc");
 
   // Global Keyboard Shortcut: Press '/' to focus search field
   useEffect(() => {
@@ -116,26 +166,28 @@ export default function InventoryModule({
 
   // Calculate active filters count (excluding category and search)
   const isCustomStatus = !statusFilter.active || !statusFilter.inactive || statusFilter.discontinued;
+  const isCustomSort = sortBy !== "name_asc";
   const activeFiltersCount = 
     (isCustomStatus ? 1 : 0) + 
     (filterMode !== "all" ? 1 : 0) + 
-    (filterStock !== "all" ? 1 : 0);
+    (filterStock !== "all" ? 1 : 0) +
+    (isCustomSort ? 1 : 0);
 
   const handleResetFilters = () => {
     setStatusFilter({ active: true, inactive: true, discontinued: false });
     setFilterMode("all");
     setFilterStock("all");
-    setCurrentPage(1);
+    setSortBy("name_asc");
   };
 
-  // Column Visibility State (Shadcn Data Table pattern)
+  // Column Visibility State (Shadcn Data Table pattern with smart defaults for user-friendliness)
   const [visibleColumns, setVisibleColumns] = useState({
     image: true,
     name: true,
     sku: true,
     category: true,
-    mode: true,
-    buyPrice: true,
+    mode: false,
+    buyPrice: false,
     sellPrice: true,
     stock: true,
     status: true,
@@ -155,14 +207,43 @@ export default function InventoryModule({
     y: number;
   } | null>(null);
 
-  // Detail Dialog State
-  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  // Accordion Expand State (Replaces separate detail sub-page)
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+
+  // Dynamic Floating Action Header States (3 Conditions)
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
   // Category Dialog & Scroll States
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const categoryScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const mainContainer = document.querySelector("main");
+      const scrollPos = mainContainer ? mainContainer.scrollTop : window.scrollY;
+      if (scrollPos > 40) {
+        setIsScrolled(true);
+      } else {
+        setIsScrolled(false);
+        setIsSearchExpanded(false);
+      }
+    };
+
+    const mainContainer = document.querySelector("main");
+    if (mainContainer) {
+      mainContainer.addEventListener("scroll", handleScroll);
+    }
+    window.addEventListener("scroll", handleScroll);
+
+    return () => {
+      if (mainContainer) {
+        mainContainer.removeEventListener("scroll", handleScroll);
+      }
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
 
   const handleScrollCategory = (direction: "left" | "right") => {
     if (categoryScrollRef.current) {
@@ -173,10 +254,6 @@ export default function InventoryModule({
       });
     }
   };
-
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 10;
 
   // Data States
   const [products, setProducts] = useState<Product[]>([]);
@@ -244,14 +321,14 @@ export default function InventoryModule({
         console.error("Failed to load categories:", err);
       }
     };
-    if (view === "new" || view === "edit") {
+    if (activeView === "new" || activeView === "edit") {
       fetchCategories();
     }
-  }, [view, activeContext]);
+  }, [activeView, activeContext]);
 
   useEffect(() => {
-    if (view === "edit" && product && existingCategories.length > 0) {
-      const catName = product.category || "General";
+    if (activeView === "edit" && activeProduct && existingCategories.length > 0) {
+      const catName = activeProduct.category || "General";
       const hasCat = existingCategories.some(c => c.name.toLowerCase() === catName.toLowerCase());
       if (catName !== "General" && !hasCat) {
         setIsCustomCat(true);
@@ -259,10 +336,10 @@ export default function InventoryModule({
         setIsCustomCat(false);
       }
     }
-  }, [view, product, existingCategories]);
+  }, [activeView, activeProduct, existingCategories]);
 
   const fetchData = async () => {
-    if (view === "new" || view === "edit") {
+    if (activeView === "new" || activeView === "edit") {
       setLoading(false);
       return;
     }
@@ -281,8 +358,8 @@ export default function InventoryModule({
 
   useEffect(() => {
     fetchData();
-    setCurrentPage(1);
-  }, [activeContext, view]);
+    setExpandedProductId(null);
+  }, [activeContext, activeView]);
 
   // Pre-fill form when entering edit mode or new mode
   useEffect(() => {
@@ -292,27 +369,27 @@ export default function InventoryModule({
     setPendingImageFile(null);
     setPreviewImageUrl("");
 
-    if (view === "edit" && product) {
-      setProdName(product.name);
-      setProdSku(product.sku || "");
-      setProdCat(product.category || "General");
-      setProdUnit(product.unit_type);
+    if (activeView === "edit" && activeProduct) {
+      setProdName(activeProduct.name);
+      setProdSku(activeProduct.sku || "");
+      setProdCat(activeProduct.category || "General");
+      setProdUnit(activeProduct.unit_type);
       
       const standardUnitVals = unitTypes.map((u) => u.val.toLowerCase());
-      if (product.unit_type && !standardUnitVals.includes(product.unit_type.toLowerCase())) {
+      if (activeProduct.unit_type && !standardUnitVals.includes(activeProduct.unit_type.toLowerCase())) {
         setIsCustomUnit(true);
       } else {
         setIsCustomUnit(false);
       }
 
-      setProdMode(product.inventory_mode);
-      setProdBuy(formatNumberInput(product.purchase_price));
-      setProdSell(formatNumberInput(product.sell_price));
-      setProdStock(product.current_stock.toString());
-      setProdMinAlert(product.min_stock_alert?.toString() || "");
-      setProdStatus(product.status || "active");
-      setProdImage(product.image_url || "");
-    } else if (view === "new") {
+      setProdMode(activeProduct.inventory_mode);
+      setProdBuy(formatNumberInput(activeProduct.purchase_price));
+      setProdSell(formatNumberInput(activeProduct.sell_price));
+      setProdStock(activeProduct.current_stock.toString());
+      setProdMinAlert(activeProduct.min_stock_alert?.toString() || "");
+      setProdStatus(activeProduct.status || "active");
+      setProdImage(activeProduct.image_url || "");
+    } else if (activeView === "new") {
       setProdName("");
       setProdSku("");
       setProdCat("General");
@@ -326,7 +403,7 @@ export default function InventoryModule({
       setProdStatus("active");
       setProdImage("");
     }
-  }, [view, product]);
+  }, [activeView, activeProduct]);
 
   // Get full image url helper
   const getFullImageUrl = (url: string) => {
@@ -478,18 +555,16 @@ export default function InventoryModule({
     };
 
     try {
-      if (view === "new") {
+      if (activeView === "new") {
         await api.post("/products", payload);
         toast.success(t.successAddProduct);
-        if (onSuccess) {
-          setTimeout(() => onSuccess(), 500);
-        }
-      } else if (view === "edit" && product) {
-        await api.put(`/products/${product.id}`, payload);
+        if (onSuccess) onSuccess();
+        handleFormBack();
+      } else if (activeView === "edit" && activeProduct) {
+        await api.put(`/products/${activeProduct.id}`, payload);
         toast.success(t.successEditProduct);
-        if (onSuccess) {
-          setTimeout(() => onSuccess(), 500);
-        }
+        if (onSuccess) onSuccess();
+        handleFormBack();
       }
     } catch (err: any) {
       toast.error(err.response?.data?.message || t.errorSaveProduct);
@@ -547,7 +622,7 @@ export default function InventoryModule({
   };
 
   // Render Form Page (For New & Edit)
-  if (view === "new" || view === "edit") {
+  if (activeView === "new" || activeView === "edit") {
     const labelClass = "block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 text-left";
     
     // Icon-prefixed input (with padding left)
@@ -590,24 +665,22 @@ export default function InventoryModule({
         
         {/* ── HEADER TITLE BAR ── */}
         <div className="flex items-center space-x-3.5 pb-4 border-b border-slate-200/80 dark:border-slate-800">
-          {onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className={`p-2.5 rounded-full border transition-all cursor-pointer ${
-                isDarkMode ? "bg-dark-card border-dark-border text-white hover:bg-white/5" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-              }`}
-              title={t.cancel}
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleFormBack}
+            className={`p-2.5 rounded-full border transition-all cursor-pointer ${
+              isDarkMode ? "bg-dark-card border-dark-border text-white hover:bg-white/5" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+            }`}
+            title={t.cancel}
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
           <div>
             <span className="text-[10px] uppercase font-bold tracking-widest opacity-60 flex items-center gap-1.5 text-slate-500">
-              <Package className="w-3 h-3 text-slate-700 dark:text-primary" /> {t.inventoryBreadcrumb} / {view === "new" ? t.addNewProduct : t.edit}
+              <Package className="w-3 h-3 text-slate-700 dark:text-primary" /> {t.inventoryBreadcrumb} / {activeView === "new" ? t.addNewProduct : t.edit}
             </span>
             <h3 className="text-xl font-bold tracking-tight mt-0.5 text-slate-900 dark:text-slate-100">
-              {view === "new" ? t.addNewProduct : t.editProductTitle}
+              {activeView === "new" ? t.addNewProduct : t.editProductTitle}
             </h3>
           </div>
         </div>
@@ -1193,58 +1266,163 @@ export default function InventoryModule({
     return matchesSearch && matchesCategory && matchesStatus && matchesMode && matchesStock;
   });
 
+  // Sort filtered products based on sortBy option
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    switch (sortBy) {
+      case "name_asc":
+        return a.name.localeCompare(b.name, "id", { sensitivity: "base" });
+      case "name_desc":
+        return b.name.localeCompare(a.name, "id", { sensitivity: "base" });
+      case "price_asc":
+        return a.sell_price - b.sell_price;
+      case "price_desc":
+        return b.sell_price - a.sell_price;
+      case "stock_desc":
+        return b.current_stock - a.current_stock;
+      case "stock_asc":
+        return a.current_stock - b.current_stock;
+      case "newest":
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      default:
+        return 0;
+    }
+  });
+
+  // Synchronized search active state (open floating search if searchQuery has text OR explicitly expanded)
+  const isSearchActive = isSearchExpanded || searchQuery.trim().length > 0;
+
   // Extract unique categories for category pills
   const categoriesList = [
     "all",
     ...Array.from(new Set(products.map((p) => p.category || "General"))).filter(Boolean),
   ];
 
-  // Pagination computed values
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / ITEMS_PER_PAGE));
-  const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
-
-  // Build page number list (show max 5 around current)
-  const getPageNumbers = () => {
-    const pages: (number | "...")[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (currentPage > 3) pages.push("...");
-      const start = Math.max(2, currentPage - 1);
-      const end = Math.min(totalPages - 1, currentPage + 1);
-      for (let i = start; i <= end; i++) pages.push(i);
-      if (currentPage < totalPages - 2) pages.push("...");
-      pages.push(totalPages);
-    }
-    return pages;
+  // KPI summary metrics calculated from total products list
+  const kpiMetrics = {
+    total: products.length,
+    lowStock: products.filter(
+      (p) => p.min_stock_alert !== undefined && p.current_stock <= p.min_stock_alert && p.current_stock > 0
+    ).length,
+    outOfStock: products.filter((p) => p.current_stock <= 0).length,
+    inactive: products.filter((p) => p.status !== "active").length,
   };
 
   return (
-    <div className="space-y-6 text-left text-slate-900 dark:text-slate-100">
+    <div className="space-y-6 text-left transition-all relative">
       
+      {/* ── DYNAMIC FLOATING HEADER BAR (SYNCHRONIZED SEARCH) ── */}
+      {/* Kondisi 1: Unscrolled (isScrolled === false) -> Menu icon ONLY at top-right with NO background */}
+      {!isScrolled && (
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
+          className="fixed top-3 right-3 z-40 p-2 text-slate-800 dark:text-slate-100 drop-shadow-md hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+          title="Menu Navigasi"
+          aria-label="Open Navigation Menu"
+        >
+          <Menu className="w-6 h-6 stroke-[2.5]" />
+        </button>
+      )}
+
+      {/* Kondisi 2: Scrolled Down & Search Inactive (isScrolled === true & !isSearchActive) */}
+      {isScrolled && !isSearchActive && (
+        <>
+          {/* Search Trigger Button slides in from Left */}
+          <button
+            type="button"
+            onClick={() => setIsSearchExpanded(true)}
+            className="fixed top-3 left-3 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer animate-in slide-in-from-left-4 duration-300"
+            title="Cari Produk"
+            aria-label="Open Floating Search"
+          >
+            <Search className="w-5 h-5 stroke-[2.5]" />
+          </button>
+
+          {/* Combined Plus + Menu Glass Pill at Top Right */}
+          <div className="fixed top-3 right-3 z-40 backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white rounded-full p-1.5 px-2.5 border border-white/20 shadow-xl flex items-center gap-1.5 transition-all duration-300 animate-in fade-in zoom-in-95">
+            {isManagerOrOwner && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleTriggerAdd}
+                  className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
+                  title="Tambah Produk Baru"
+                  aria-label="Add Product"
+                >
+                  <Plus className="w-5 h-5 stroke-[2.5]" />
+                </button>
+                <div className="w-px h-4 bg-white/25" />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
+              className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
+              title="Menu Navigasi"
+              aria-label="Open Navigation Menu"
+            >
+              <Menu className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Kondisi 3: Scrolled Down & Search Active (isScrolled === true & isSearchActive) */}
+      {isScrolled && isSearchActive && (
+        <>
+          {/* Full Width Floating Search Bar Pill from Left to Right */}
+          <div className="fixed top-3 left-3 right-16 z-50 backdrop-blur-xl bg-white/95 dark:bg-[#202024]/95 text-slate-900 dark:text-slate-100 rounded-full border border-slate-300/80 dark:border-[#38383C] shadow-2xl px-3.5 py-1.5 flex items-center gap-2.5 transition-all duration-300 animate-in fade-in slide-in-from-left-2">
+            <Search className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.5]" />
+            <input
+              autoFocus
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari produk, SKU, kategori..."
+              className="w-full bg-transparent text-xs font-semibold focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setIsSearchExpanded(false);
+              }}
+              className="p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer shrink-0"
+              title="Tutup & Reset Pencarian"
+            >
+              <X className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          </div>
+
+          {/* Top Right Floating Menu Button ONLY (Plus icon hidden) */}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
+            className="fixed top-3 right-3 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer"
+            title="Menu Navigasi"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="w-5 h-5 stroke-[2.5]" />
+          </button>
+        </>
+      )}
+
       {/* ── PAGE HEADER ── */}
       <div className="border-b border-slate-200/80 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h3 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 capitalize">
-            {view === "master" ? t.masterInventoryTitle : t.discontinuedTitle}
+            {activeView === "master" ? t.masterInventoryTitle : t.discontinuedTitle}
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
-            {view === "master" ? t.masterInventoryDesc : t.discontinuedDesc}
+            {activeView === "master" ? t.masterInventoryDesc : t.discontinuedDesc}
           </p>
         </div>
 
         {/* Action Button: Add New Product */}
-        {view === "master" && (
+        {activeView === "master" && (
           <button
             type="button"
-            onClick={() => {
-              if (onAddNew) onAddNew();
-              else if (onNavigate) onNavigate("inventory-add");
-            }}
+            onClick={handleTriggerAdd}
             className="px-4 py-2.5 rounded-full font-bold text-xs bg-primary dark:bg-primary text-slate-900 shadow-sm hover:brightness-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer self-start sm:self-auto shrink-0"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -1252,6 +1430,115 @@ export default function InventoryModule({
           </button>
         )}
       </div>
+
+      {/* ── TOP KPI QUICK-FILTER CARDS STRIP (OPSI A: BEST PRACTICE UX FOR USER-FRIENDLINESS) ── */}
+      {view === "master" && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* Card 1: Semua Produk */}
+          <button
+            type="button"
+            onClick={() => {
+              setFilterStock("all");
+              setStatusFilter({ active: true, inactive: true, discontinued: false });
+            }}
+            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between group ${
+              filterStock === "all" && statusFilter.active && statusFilter.inactive && !statusFilter.discontinued
+                ? "bg-slate-900 dark:bg-[#2A2A30] border-slate-900 dark:border-primary text-white ring-2 ring-slate-900/10 dark:ring-primary/20 shadow-sm"
+                : "bg-white dark:bg-dark-card border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700"
+            }`}
+          >
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
+                {t.kpiAllProducts}
+              </span>
+              <span className="text-xl font-extrabold font-mono text-slate-900 dark:text-slate-100 group-hover:scale-105 transition-transform inline-block">
+                {kpiMetrics.total}
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-[#252528] flex items-center justify-center text-slate-600 dark:text-slate-300">
+              <Package className="w-4 h-4" />
+            </div>
+          </button>
+
+          {/* Card 2: Stok Menipis */}
+          <button
+            type="button"
+            onClick={() => {
+              setFilterStock("low_stock");
+              setStatusFilter({ active: true, inactive: true, discontinued: true });
+            }}
+            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between group ${
+              filterStock === "low_stock"
+                ? "bg-amber-500/10 dark:bg-amber-500/20 border-amber-500 text-amber-900 dark:text-amber-300 ring-2 ring-amber-500/20 shadow-sm"
+                : "bg-white dark:bg-dark-card border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 hover:border-amber-300"
+            }`}
+          >
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-400 block mb-0.5">
+                {t.kpiLowStock}
+              </span>
+              <span className="text-xl font-extrabold font-mono text-amber-700 dark:text-amber-400 group-hover:scale-105 transition-transform inline-block">
+                {kpiMetrics.lowStock}
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-amber-500/15 dark:bg-amber-500/20 flex items-center justify-center text-amber-700 dark:text-amber-400">
+              <AlertCircle className="w-4 h-4" />
+            </div>
+          </button>
+
+          {/* Card 3: Stok Habis */}
+          <button
+            type="button"
+            onClick={() => {
+              setFilterStock("out_of_stock");
+              setStatusFilter({ active: true, inactive: true, discontinued: true });
+            }}
+            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between group ${
+              filterStock === "out_of_stock"
+                ? "bg-red-500/10 dark:bg-red-500/20 border-red-500 text-red-900 dark:text-red-300 ring-2 ring-red-500/20 shadow-sm"
+                : "bg-white dark:bg-dark-card border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 hover:border-red-300"
+            }`}
+          >
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400 block mb-0.5">
+                {t.kpiOutOfStock}
+              </span>
+              <span className="text-xl font-extrabold font-mono text-red-600 dark:text-red-400 group-hover:scale-105 transition-transform inline-block">
+                {kpiMetrics.outOfStock}
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-red-500/15 dark:bg-red-500/20 flex items-center justify-center text-red-600 dark:text-red-400">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+          </button>
+
+          {/* Card 4: Non-Aktif / Arsip */}
+          <button
+            type="button"
+            onClick={() => {
+              setFilterStock("all");
+              setStatusFilter({ active: false, inactive: true, discontinued: true });
+            }}
+            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between group ${
+              !statusFilter.active && (statusFilter.inactive || statusFilter.discontinued)
+                ? "bg-slate-700 dark:bg-[#333339] border-slate-700 dark:border-slate-500 text-white ring-2 ring-slate-700/20 shadow-sm"
+                : "bg-white dark:bg-dark-card border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 hover:border-slate-300"
+            }`}
+          >
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
+                {t.kpiInactive}
+              </span>
+              <span className="text-xl font-extrabold font-mono text-slate-600 dark:text-slate-400 group-hover:scale-105 transition-transform inline-block">
+                {kpiMetrics.inactive}
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-[#252528] flex items-center justify-center text-slate-500 dark:text-slate-400">
+              <Archive className="w-4 h-4" />
+            </div>
+          </button>
+        </div>
+      )}
 
       {/* ── SEARCH BAR & RICH HORIZONTAL MULTI-FILTER TOOLBAR ── */}
       <div className="space-y-4">
@@ -1266,7 +1553,6 @@ export default function InventoryModule({
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setCurrentPage(1);
               }}
               placeholder={t.searchPlaceholder}
               className={`w-full pl-12 pr-16 py-3 rounded-full border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-400/20 transition-all ${
@@ -1296,9 +1582,58 @@ export default function InventoryModule({
             </div>
           </div>
 
-          {/* Controls: Rich Horizontal Multi-Filter Menu */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          {/* Controls: Rich Horizontal Multi-Filter & Sort Menu */}
+          <div className="flex items-center gap-2 shrink-0">
             
+            {/* Sort Dropdown Button (Shadcn UI) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger className={`flex items-center gap-1.5 px-3.5 py-3 rounded-full border text-xs font-bold cursor-pointer transition-all ${
+                sortBy !== "name_asc"
+                  ? "bg-slate-900 text-white border-slate-900 dark:bg-primary dark:border-primary dark:text-slate-900 shadow-sm"
+                  : isDarkMode
+                  ? "bg-dark-card border-dark-border text-slate-200 hover:bg-white/5"
+                  : "bg-white border-light-border/60 text-slate-700 hover:bg-slate-50"
+              }`}>
+                <ArrowUpDown className="w-3.5 h-3.5" />
+                <span className="font-semibold text-[11px]">
+                  {sortBy === "name_asc"
+                    ? "A-Z"
+                    : sortBy === "name_desc"
+                    ? "Z-A"
+                    : sortBy === "price_asc"
+                    ? "Harga Terendah"
+                    : sortBy === "price_desc"
+                    ? "Harga Tertinggi"
+                    : sortBy === "stock_desc"
+                    ? "Stok Terbanyak"
+                    : sortBy === "stock_asc"
+                    ? "Stok Tersedikit"
+                    : "Terbaru"}
+                </span>
+                <ChevronDown className="w-3 h-3 opacity-60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-2xl rounded-2xl p-1.5 min-w-[210px]">
+                {[
+                  { key: "name_asc", label: "Nama (A - Z)" },
+                  { key: "name_desc", label: "Nama (Z - A)" },
+                  { key: "price_asc", label: "Harga: Terendah → Tertinggi" },
+                  { key: "price_desc", label: "Harga: Tertinggi → Terendah" },
+                  { key: "stock_desc", label: "Stok: Terbanyak → Tersedikit" },
+                  { key: "stock_asc", label: "Stok: Tersedikit → Terbanyak" },
+                  { key: "newest", label: "Produk Terbaru" },
+                ].map((s) => (
+                  <DropdownMenuItem
+                    key={s.key}
+                    onClick={() => setSortBy(s.key as any)}
+                    className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl flex items-center justify-between"
+                  >
+                    <span>{s.label}</span>
+                    {sortBy === s.key && <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[3]" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             {/* Multi-Filter Dropdown Button */}
             <DropdownMenu>
               <DropdownMenuTrigger className={`flex items-center gap-2 px-4 py-3 rounded-full border text-xs font-bold cursor-pointer transition-all ${
@@ -1319,7 +1654,7 @@ export default function InventoryModule({
                 )}
                 <span className="text-[10px] opacity-60">▼</span>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-2xl rounded-2xl p-5 w-[660px] max-w-[95vw] space-y-4">
+              <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-2xl rounded-2xl p-5 w-[760px] max-w-[95vw] space-y-4">
                 
                 {/* Header of Filter Dropdown */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-[#333338]">
@@ -1337,10 +1672,10 @@ export default function InventoryModule({
                   )}
                 </div>
 
-                {/* Horizontal 3-Column Layout for Desktop */}
-                <div className="grid grid-cols-3 gap-5 divide-x divide-slate-100 dark:divide-[#333338]">
+                {/* Horizontal 4-Column Layout */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 dark:divide-[#333338]">
                   
-                  {/* Column 1: Filter Status (Shadcn Checkbox multi-select) */}
+                  {/* Column 1: Filter Status */}
                   <div className="space-y-2 pr-2">
                     <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                       {t.filterStatusLabel}
@@ -1364,7 +1699,6 @@ export default function InventoryModule({
                                   ...prev,
                                   [s.key]: Boolean(checked),
                                 }));
-                                setCurrentPage(1);
                               }}
                             />
                             <span className={`truncate font-semibold ${isChecked ? "text-slate-900 dark:text-slate-100" : "text-slate-400"}`}>
@@ -1376,8 +1710,8 @@ export default function InventoryModule({
                     </div>
                   </div>
 
-                  {/* Column 2: Filter Inventory Mode (Shadcn Radio style with check icon, no box) */}
-                  <div className="space-y-2 pl-4 pr-2">
+                  {/* Column 2: Filter Inventory Mode */}
+                  <div className="space-y-2 pl-0 sm:pl-4 pr-2 pt-3 sm:pt-0">
                     <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                       {t.filterModeLabel}
                     </label>
@@ -1386,7 +1720,6 @@ export default function InventoryModule({
                         type="button"
                         onClick={() => {
                           setFilterMode("all");
-                          setCurrentPage(1);
                         }}
                         className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer text-left ${
                           filterMode === "all"
@@ -1407,7 +1740,6 @@ export default function InventoryModule({
                             type="button"
                             onClick={() => {
                               setFilterMode(m.val);
-                              setCurrentPage(1);
                             }}
                             className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer text-left ${
                               isSelected
@@ -1425,8 +1757,8 @@ export default function InventoryModule({
                     </div>
                   </div>
 
-                  {/* Column 3: Filter Stock Availability (Shadcn Radio style with check icon, no box) */}
-                  <div className="space-y-2 pl-4">
+                  {/* Column 3: Filter Stock Availability */}
+                  <div className="space-y-2 pl-0 sm:pl-4 pr-2 pt-3 sm:pt-0">
                     <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                       {t.filterStockLabel}
                     </label>
@@ -1444,7 +1776,6 @@ export default function InventoryModule({
                             type="button"
                             onClick={() => {
                               setFilterStock(stk.val);
-                              setCurrentPage(1);
                             }}
                             className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer text-left ${
                               isSelected
@@ -1456,6 +1787,43 @@ export default function InventoryModule({
                               {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] text-slate-900 dark:text-primary" />}
                             </div>
                             <span className="truncate">{stk.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Column 4: Urutkan (Sorting) */}
+                  <div className="space-y-2 pl-0 sm:pl-4 pt-3 sm:pt-0">
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Urutkan Produk
+                    </label>
+                    <div className="space-y-1 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
+                      {[
+                        { key: "name_asc", label: "Nama (A - Z)" },
+                        { key: "name_desc", label: "Nama (Z - A)" },
+                        { key: "price_asc", label: "Harga: Terendah → Tertinggi" },
+                        { key: "price_desc", label: "Harga: Tertinggi → Terendah" },
+                        { key: "stock_desc", label: "Stok: Terbanyak → Tersedikit" },
+                        { key: "stock_asc", label: "Stok: Tersedikit → Terbanyak" },
+                        { key: "newest", label: "Produk Terbaru" },
+                      ].map((s) => {
+                        const isSelected = sortBy === s.key;
+                        return (
+                          <button
+                            key={s.key}
+                            type="button"
+                            onClick={() => setSortBy(s.key as any)}
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer text-left ${
+                              isSelected
+                                ? "text-slate-900 dark:text-primary font-bold bg-slate-100 dark:bg-white/5"
+                                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.02]"
+                            }`}
+                          >
+                            <div className="w-4 h-4 flex items-center justify-center shrink-0">
+                              {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] text-slate-900 dark:text-primary" />}
+                            </div>
+                            <span className="truncate">{s.label}</span>
                           </button>
                         );
                       })}
@@ -1498,7 +1866,6 @@ export default function InventoryModule({
                   type="button"
                   onClick={() => {
                     setSelectedCategory(cat);
-                    setCurrentPage(1);
                   }}
                   className={`relative px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer whitespace-nowrap capitalize shrink-0 ${
                     isCatActive
@@ -1551,8 +1918,7 @@ export default function InventoryModule({
           </div>
         </div>
       </div>
-
-      {/* Loading state */}
+{/* Loading state */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-dark-card border border-slate-200/80 dark:border-slate-800 rounded-[28px] shadow-sm">
           <div className="w-10 h-10 border-4 border-slate-700 dark:border-primary border-t-transparent rounded-full animate-spin mb-3" />
@@ -1560,472 +1926,338 @@ export default function InventoryModule({
         </div>
       ) : (
         <>
-          {/* ── TABLE CARD ── */}
-          <div
-            className="bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border rounded-[28px] shadow-sm p-4 sm:p-6"
-            style={{ boxShadow: isDarkMode ? "0 4px 24px 0 rgba(0,0,0,0.35)" : "0 4px 20px 0 rgba(0,0,0,0.06)" }}
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-separate" style={{ borderSpacing: 0 }}>
-                {/* ── HEADER (PILL SHAPED WITH DEPTH GRAY BACKGROUND, COLUMN SETTINGS ICON & RIGHT-CLICK TO MANAGE) ── */}
-                <thead
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setHeaderContextMenu({
-                      x: e.clientX,
-                      y: e.clientY,
-                    });
-                  }}
-                  title="Klik kanan di header untuk mengatur kolom"
-                >
-                  <tr className="text-slate-600 dark:text-slate-300 select-none">
-                    {visibleColumns.image && (
-                      <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34] rounded-l-full">
-                        {t.colImage}
-                      </th>
+          {/* ── REUSABLE UNIFIED ERP DATA TABLE (DESKTOP TABLE + MOBILE ACCORDION) ── */}
+          <ErpDataTable<Product>
+        data={sortedProducts}
+        keyExtractor={(p) => p.id}
+        loading={loading}
+        emptyText={t.noData}
+        onRowClick={(p) => handleTriggerEdit(p)}
+        onRowContextMenu={(e, p) => {
+          setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            product: p,
+          });
+        }}
+        renderMobileItem={(p) => {
+          const isExpanded = expandedProductId === p.id;
+          const profitNominal = p.sell_price - p.purchase_price;
+          const marginPercent = p.purchase_price > 0 ? Math.round((profitNominal / p.purchase_price) * 100) : 100;
+
+          return (
+            <div className="transition-colors">
+              <div
+                onClick={() => setExpandedProductId(isExpanded ? null : p.id)}
+                className="flex items-center justify-between py-3 px-1 hover:bg-slate-100/50 dark:hover:bg-white/[0.03] active:bg-slate-200/40 dark:active:bg-white/5 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 dark:bg-dark-bg flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-dark-border">
+                    {p.image_url ? (
+                      <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <Package className="w-5 h-5 text-slate-400 dark:text-slate-500" />
                     )}
-                    {visibleColumns.name && (
-                      <th className={`py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34] ${
-                        !visibleColumns.image ? "rounded-l-full" : ""
-                      }`}>
-                        {t.colName}
-                      </th>
-                    )}
-                    {visibleColumns.sku && (
-                      <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                        {t.colSku}
-                      </th>
-                    )}
-                    {visibleColumns.category && (
-                      <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                        {t.colCategory}
-                      </th>
-                    )}
-                    {visibleColumns.mode && (
-                      <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                        {t.colMode}
-                      </th>
-                    )}
-                    {visibleColumns.buyPrice && (
-                      <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider text-right whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                        {t.colBuyPrice}
-                      </th>
-                    )}
-                    {visibleColumns.sellPrice && (
-                      <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider text-right whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                        {t.colSellPrice}
-                      </th>
-                    )}
-                    {visibleColumns.stock && (
-                      <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider text-center whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                        {t.colStock}
-                      </th>
-                    )}
-                    {visibleColumns.status && (
-                      <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider text-center whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                        {t.colStatus}
-                      </th>
-                    )}
-                    
-                    {/* Action Column + Column Settings Icon Trigger Button in Table Header */}
-                    <th className="py-3 px-4 text-[11px] font-bold uppercase tracking-wider text-right whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34] rounded-r-full">
-                      <div className="flex items-center justify-end gap-2">
-                        {visibleColumns.action && isManagerOrOwner && (
-                          <span className="hidden sm:inline">{t.colAction}</span>
-                        )}
-                        {/* Icon-only Column Config Trigger in Table Header */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/70 dark:bg-black/20 hover:bg-white dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 border border-slate-300/60 dark:border-white/10 shadow-xs transition-all cursor-pointer focus:outline-none"
-                            title={t.configureColumns}
-                            aria-label={t.configureColumns}
-                          >
-                            <SlidersHorizontal className="w-3.5 h-3.5" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-2xl rounded-2xl p-2 min-w-[200px] space-y-1">
-                            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between border-b border-slate-100 dark:border-[#333338] mb-1">
-                              <span>{t.showColumns}</span>
-                              <SlidersHorizontal className="w-3 h-3 text-slate-400" />
-                            </div>
-                            {[
-                              { key: "image", label: t.colImage },
-                              { key: "name", label: t.colName },
-                              { key: "sku", label: t.colSku },
-                              { key: "category", label: t.colCategory },
-                              { key: "mode", label: t.colMode },
-                              { key: "buyPrice", label: t.colBuyPrice },
-                              { key: "sellPrice", label: t.colSellPrice },
-                              { key: "stock", label: t.colStock },
-                              { key: "status", label: t.colStatus },
-                              { key: "action", label: t.colAction },
-                            ].map((col) => {
-                              const isChecked = visibleColumns[col.key as keyof typeof visibleColumns];
-                              return (
-                                <div
-                                  key={col.key}
-                                  onClick={() =>
-                                    setVisibleColumns((prev) => ({
-                                      ...prev,
-                                      [col.key]: !prev[col.key as keyof typeof prev],
-                                    }))
-                                  }
-                                  className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg cursor-pointer transition-colors"
-                                >
-                                  <span>{col.label}</span>
-                                  <Checkbox
-                                    checked={isChecked}
-                                    onCheckedChange={(checked) =>
-                                      setVisibleColumns((prev) => ({
-                                        ...prev,
-                                        [col.key]: Boolean(checked),
-                                      }))
-                                    }
-                                  />
-                                </div>
-                              );
-                            })}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate group-hover:text-slate-700 dark:group-hover:text-primary transition-colors">
+                      {p.name}
+                    </h4>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 text-right">
+                  <div>
+                    <div className="font-mono font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                      Rp {p.sell_price.toLocaleString("id-ID")}
+                    </div>
+                    <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                      <span className="text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400">
+                        {p.current_stock} {p.unit_type}
+                      </span>
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          p.status === "active" ? "bg-emerald-500" : p.status === "inactive" ? "bg-slate-400" : "bg-red-500"
+                        }`}
+                        title={`Status: ${p.status}`}
+                      />
+                    </div>
+                  </div>
+                  <ChevronRight className={`w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
+                    isExpanded ? "rotate-90 text-slate-900 dark:text-slate-100" : ""
+                  }`} />
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div className="px-3 pb-4 pt-2 bg-slate-50/70 dark:bg-[#1A1A1E]/80 rounded-2xl mb-2 border border-slate-200/50 dark:border-[#25252A] space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center gap-2 text-xs flex-wrap pb-1 border-b border-slate-200/40 dark:border-[#2A2A30]">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
+                      {t.colCategory}: <strong className="font-bold">{p.category || "General"}</strong>
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
+                      SKU: <strong className="font-bold">{p.sku || "-"}</strong>
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
+                      Satuan: <strong className="font-bold">{p.unit_type}</strong>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-3 bg-white dark:bg-[#222226] rounded-xl border border-slate-200/60 dark:border-[#303035] space-y-1">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">Matriks Keuangan</span>
+                      <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                        <span>Harga Modal (HPP):</span>
+                        <span className="font-mono font-bold text-slate-900 dark:text-slate-100">Rp {p.purchase_price.toLocaleString("id-ID")}</span>
                       </div>
-                    </th>
-                  </tr>
-                </thead>
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-[#2F2F34]">
+                        <span>Margin Profit:</span>
+                        <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">+Rp {profitNominal.toLocaleString("id-ID")} ({marginPercent}%)</span>
+                      </div>
+                    </div>
 
-                {/* ── BODY WITH CRISP BOTTOM BORDERS ON EVERY TD ── */}
-                <tbody>
-                  {paginatedProducts.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={10}
-                        className="text-center py-14 text-slate-400 dark:text-slate-500 text-sm font-semibold"
-                      >
-                        {t.noData}
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedProducts.map((p) => (
-                      <tr
-                        key={p.id}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setContextMenu({
-                            x: e.clientX,
-                            y: e.clientY,
-                            product: p,
-                          });
-                        }}
-                        onClick={() => {
-                          setDetailProduct(p);
-                          setIsDetailOpen(true);
-                        }}
-                        className="group transition-colors duration-150 cursor-pointer"
-                        onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLTableRowElement).style.background = isDarkMode
-                            ? "rgba(255,255,255,0.03)"
-                            : "#f9fafb";
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLTableRowElement).style.background = "transparent";
-                        }}
-                      >
-                        {/* Gambar Produk */}
-                        {visibleColumns.image && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border">
-                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 dark:bg-[#1C1C1F] flex items-center justify-center border border-slate-200/60 dark:border-dark-border shrink-0">
-                              {p.image_url ? (
-                                <img
-                                  src={getFullImageUrl(p.image_url)}
-                                  alt={p.name}
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <Package className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-                              )}
+                    <div className="p-3 bg-white dark:bg-[#222226] rounded-xl border border-slate-200/60 dark:border-[#303035] space-y-1">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">Aturan Mode Inventori</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Mode:</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100 capitalize">{p.inventory_mode === "dry_strict" ? "Dry Strict" : p.inventory_mode === "wet_batch_thaw" ? "Wet Batch Thaw" : "Infinite"}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-[#2F2F34]">
+                        <span>Limit Peringatan Stok:</span>
+                        <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{p.min_stock_alert} {p.unit_type}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleTriggerEdit(p)}
+                      className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 dark:bg-primary text-white dark:text-slate-900 font-bold text-xs cursor-pointer transition-all active:scale-95 shadow-2xs"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit Detail</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (p.sku) {
+                          navigator.clipboard.writeText(p.sku);
+                          toast.success(t.skuCopied);
+                        }
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#222226] border border-slate-200/80 dark:border-[#333338] hover:bg-slate-100 dark:hover:bg-white/10 font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Salin SKU</span>
+                    </button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#222226] border border-slate-200/80 dark:border-[#333338] hover:bg-slate-100 dark:hover:bg-white/10 font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer transition-all">
+                        <span className={`w-2 h-2 rounded-full ${p.status === "active" ? "bg-emerald-500" : p.status === "inactive" ? "bg-slate-400" : "bg-red-500"}`} />
+                        <span className="capitalize">{p.status}</span>
+                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-xl p-1 min-w-[140px]">
+                        {[
+                          { val: "active", label: "Aktif", color: "bg-emerald-500" },
+                          { val: "inactive", label: "Non-Aktif", color: "bg-slate-400" },
+                          { val: "discontinued", label: "Dihentikan", color: "bg-red-500" },
+                        ].map((st) => (
+                          <DropdownMenuItem
+                            key={st.val}
+                            onClick={() => handleQuickStatusChange(p, st.val as any)}
+                            className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full ${st.color}`} />
+                              <span>{st.label}</span>
                             </div>
-                          </td>
-                        )}
+                            {p.status === st.val && <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[3]" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
-                        {/* Nama Produk */}
-                        {visibleColumns.name && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
-                            {p.name}
-                          </td>
-                        )}
-
-                        {/* SKU */}
-                        {visibleColumns.sku && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border font-mono text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                            {p.sku || "—"}
-                          </td>
-                        )}
-
-                        {/* Kategori */}
-                        {visibleColumns.category && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border">
-                            <span
-                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide"
-                              style={{
-                                background: isDarkMode ? "rgba(255,255,255,0.06)" : "#f1f2f5",
-                                color: isDarkMode ? "#94a3b8" : "#64748b",
-                              }}
-                            >
-                              {p.category || "General"}
-                            </span>
-                          </td>
-                        )}
-
-                        {/* Inventory Mode */}
-                        {visibleColumns.mode && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-xs text-slate-600 dark:text-slate-400 capitalize whitespace-nowrap">
-                            {p.inventory_mode.replace(/_/g, " ")}
-                          </td>
-                        )}
-
-                        {/* Harga Modal */}
-                        {visibleColumns.buyPrice && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-right font-mono text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                            Rp {p.purchase_price.toLocaleString("id-ID")}
-                          </td>
-                        )}
-
-                        {/* Harga Jual */}
-                        {visibleColumns.sellPrice && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-right font-mono text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
-                            Rp {p.sell_price.toLocaleString("id-ID")}
-                          </td>
-                        )}
-
-                        {/* Stok */}
-                        {visibleColumns.stock && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-center whitespace-nowrap">
-                            <span
-                              className={`font-bold text-sm font-mono ${
-                                p.current_stock <= 0
-                                  ? "text-red-500"
-                                  : p.min_stock_alert && p.current_stock <= p.min_stock_alert
-                                  ? "text-amber-500"
-                                  : "text-slate-700 dark:text-slate-300"
-                              }`}
-                            >
-                              {p.current_stock}
-                            </span>
-                            <span className="ml-1 text-[10px] text-slate-400 dark:text-slate-500 capitalize">
-                              {p.unit_type}
-                            </span>
-                          </td>
-                        )}
-
-                        {/* Status */}
-                        {visibleColumns.status && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-center whitespace-nowrap">
-                            <span
-                              className={`text-sm font-semibold ${
-                                p.status === "active"
-                                  ? "text-emerald-500"
-                                  : p.status === "discontinued"
-                                  ? "text-amber-500"
-                                  : "text-slate-400 dark:text-slate-500"
-                              }`}
-                            >
-                              {p.status === "active"
-                                ? t.statusActive
-                                : p.status === "discontinued"
-                                ? t.statusDiscontinued
-                                : t.statusInactive}
-                            </span>
-                          </td>
-                        )}
-
-                        {/* Aksi — three-dot menu */}
-                        <td 
-                          className="px-6 py-3.5 border-b border-slate-200/80 dark:border-dark-border text-right"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              className="inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer focus:outline-none"
-                              title={t.options}
-                            >
-                              <MoreHorizontal className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-xl p-1 min-w-[170px]">
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setDetailProduct(p);
-                                  setIsDetailOpen(true);
-                                }}
-                                className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-primary" />
-                                {t.viewDetails}
-                              </DropdownMenuItem>
-                              {onEditProduct && (
-                                <DropdownMenuItem
-                                  onClick={() => onEditProduct(p)}
-                                  className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5 text-slate-400" />
-                                  {t.editProduct}
-                                </DropdownMenuItem>
-                              )}
-                              {p.sku && (
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(p.sku || "");
-                                    toast.success(t.skuCopied);
-                                  }}
-                                  className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
-                                >
-                                  <Copy className="w-3.5 h-3.5 text-slate-400" />
-                                  {t.copySku}
-                                </DropdownMenuItem>
-                              )}
-
-                              {/* Quick Status Submenu */}
-                              {isManagerOrOwner && (
-                                <>
-                                  <div className="border-t border-slate-100 dark:border-[#333338] my-1" />
-                                  <div className="px-3 py-1 text-[9px] font-extrabold uppercase tracking-wider text-slate-400">
-                                    {t.changeStatus}
-                                  </div>
-                                  <DropdownMenuItem
-                                    onClick={() => handleQuickStatusChange(p, "active")}
-                                    className="cursor-pointer px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <div className={`w-2 h-2 rounded-full ${p.status === "active" ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"}`} />
-                                      <span>{t.setStatusActive}</span>
-                                    </div>
-                                    {p.status === "active" && <Check className="w-3 h-3 text-emerald-500 stroke-[3]" />}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleQuickStatusChange(p, "inactive")}
-                                    className="cursor-pointer px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <div className={`w-2 h-2 rounded-full ${p.status === "inactive" ? "bg-slate-400" : "bg-slate-300 dark:bg-slate-600"}`} />
-                                      <span>{t.setStatusInactive}</span>
-                                    </div>
-                                    {p.status === "inactive" && <Check className="w-3 h-3 text-slate-400 stroke-[3]" />}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleQuickStatusChange(p, "discontinued")}
-                                    className="cursor-pointer px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <div className={`w-2 h-2 rounded-full ${p.status === "discontinued" ? "bg-amber-500" : "bg-slate-300 dark:bg-slate-600"}`} />
-                                      <span>{t.setStatusDiscontinued}</span>
-                                    </div>
-                                    {p.status === "discontinued" && <Check className="w-3 h-3 text-amber-500 stroke-[3]" />}
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-
-                              {p.status === "active" && (
-                                <>
-                                  <div className="border-t border-slate-100 dark:border-[#333338] my-1" />
-                                  <DropdownMenuItem
-                                    onClick={() => handleDeleteProduct(p.id)}
-                                    className="cursor-pointer px-3 py-2 text-xs font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg flex items-center gap-2"
-                                  >
-                                    <Archive className="w-3.5 h-3.5 text-red-500" />
-                                    {t.archive}
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* ── PAGINATION (MATCHING REFERENCE) ── */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-start gap-1.5 pt-1">
-              {/* Prev Arrow */}
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-9 h-9 rounded-full flex items-center justify-center border text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                style={{
-                  background: isDarkMode ? "#232326" : "white",
-                  borderColor: isDarkMode ? "#38383C" : "#e2e4ea",
-                  color: isDarkMode ? "#94a3b8" : "#64748b",
-                }}
-                aria-label={t.prevPage}
-              >
-                ‹
-              </button>
-
-              {/* Page Numbers */}
-              {getPageNumbers().map((page, idx) =>
-                page === "..." ? (
-                  <span
-                    key={`ellipsis-${idx}`}
-                    className="w-9 h-9 flex items-center justify-center text-sm text-slate-400"
-                  >
-                    …
-                  </span>
-                ) : (
-                  <button
-                    key={page}
-                    type="button"
-                    onClick={() => setCurrentPage(page as number)}
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-150 cursor-pointer"
-                    style={
-                      currentPage === page
-                        ? {
-                            background: isDarkMode ? "#E2FF66" : "#c5ff00",
-                            color: "#1a1a1a",
-                            border: "none",
-                            fontWeight: 700,
-                          }
-                        : {
-                            background: isDarkMode ? "#232326" : "white",
-                            border: isDarkMode ? "1px solid #38383C" : "1px solid #e2e4ea",
-                            color: isDarkMode ? "#94a3b8" : "#64748b",
-                          }
-                    }
-                    aria-label={`Halaman ${page}`}
-                    aria-current={currentPage === page ? "page" : undefined}
-                  >
-                    {page}
-                  </button>
-                )
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteProduct(p.id)}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200/60 dark:border-red-900/40 text-red-600 dark:text-red-400 font-bold text-xs cursor-pointer transition-all active:scale-95 hover:bg-red-100"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                      <span>{t.archive}</span>
+                    </button>
+                  </div>
+                </div>
               )}
-
-              {/* Next Arrow */}
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="w-9 h-9 rounded-full flex items-center justify-center border text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                style={{
-                  background: isDarkMode ? "#232326" : "white",
-                  borderColor: isDarkMode ? "#38383C" : "#e2e4ea",
-                  color: isDarkMode ? "#94a3b8" : "#64748b",
-                }}
-                aria-label={t.nextPage}
-              >
-                ›
-              </button>
-
-              {/* Page info */}
-              <span className="ml-2 text-xs text-slate-400 dark:text-slate-500 font-medium">
-                {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filteredProducts.length)} {t.pageOf} {filteredProducts.length} {t.products}
-              </span>
             </div>
-          )}
-        </>
-      )}
+          );
+        }}
+        columns={[
+          {
+            key: "image",
+            label: t.colImage,
+            width: "w-14",
+            renderCell: (p) => (
+              <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 dark:bg-dark-bg flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-dark-border">
+                {p.image_url ? (
+                  <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                ) : (
+                  <Package className="w-5 h-5 text-slate-400 dark:text-slate-500" />
+                )}
+              </div>
+            ),
+          },
+          {
+            key: "name",
+            label: t.colName,
+            renderCell: (p) => (
+              <span className="truncate block font-bold text-sm text-slate-900 dark:text-slate-100">{p.name}</span>
+            ),
+          },
+          {
+            key: "sku",
+            label: t.colSku,
+            renderCell: (p) => (
+              <span className="font-mono text-xs text-slate-600 dark:text-slate-300">{p.sku || "-"}</span>
+            ),
+          },
+          {
+            key: "category",
+            label: t.colCategory,
+            renderCell: (p) => (
+              <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-[#2A2A2E] text-slate-700 dark:text-slate-300 font-semibold text-xs">
+                {p.category || "General"}
+              </span>
+            ),
+          },
+          {
+            key: "mode",
+            label: t.colMode,
+            align: "center",
+            renderCell: (p) => (
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase ${
+                p.inventory_mode === "dry_strict"
+                  ? "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                  : p.inventory_mode === "wet_batch_thaw"
+                  ? "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
+                  : "bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300"
+              }`}>
+                {p.inventory_mode === "dry_strict" ? "Dry Strict" : p.inventory_mode === "wet_batch_thaw" ? "Wet Thaw" : "Infinite"}
+              </span>
+            ),
+          },
+          {
+            key: "buyPrice",
+            label: t.colBuyPrice,
+            align: "right",
+            renderCell: (p) => (
+              <span className="font-mono text-slate-600 dark:text-slate-300 text-xs">
+                Rp {p.purchase_price.toLocaleString("id-ID")}
+              </span>
+            ),
+          },
+          {
+            key: "sellPrice",
+            label: t.colSellPrice,
+            align: "right",
+            renderCell: (p) => (
+              <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">
+                Rp {p.sell_price.toLocaleString("id-ID")}
+              </span>
+            ),
+          },
+          {
+            key: "stock",
+            label: t.colStock,
+            align: "right",
+            renderCell: (p) => {
+              const isLowStock = p.inventory_mode === "dry_strict" && p.current_stock <= (p.min_stock_alert || 0);
+              return (
+                <span className={`font-mono font-bold text-xs ${isLowStock ? "text-red-500 font-extrabold" : "text-slate-900 dark:text-slate-100"}`}>
+                  {p.current_stock} {p.unit_type}
+                </span>
+              );
+            },
+          },
+          {
+            key: "status",
+            label: t.colStatus,
+            align: "center",
+            renderCell: (p) => (
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase ${
+                p.status === "active"
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400"
+                  : p.status === "inactive"
+                  ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                  : "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400"
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${
+                  p.status === "active" ? "bg-emerald-500" : p.status === "inactive" ? "bg-slate-400" : "bg-red-500"
+                }`} />
+                <span>{p.status}</span>
+              </span>
+            ),
+          },
+          {
+            key: "action",
+            label: t.colAction,
+            align: "center",
+            renderCell: (p) => (
+              <div className="flex items-center justify-center gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTriggerEdit(p);
+                  }}
+                  className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 transition-colors"
+                  title="Edit Produk"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    onClick={(e) => e.stopPropagation()}
+                    className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 cursor-pointer transition-colors"
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-xl p-1 min-w-[150px]">
+                    <DropdownMenuItem
+                      onClick={() => handleTriggerEdit(p)}
+                      className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Edit Produk</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (p.sku) {
+                          navigator.clipboard.writeText(p.sku);
+                          toast.success(t.skuCopied);
+                        }
+                      }}
+                      className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Salin SKU</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleDeleteProduct(p.id)}
+                      className="cursor-pointer px-3 py-2 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg flex items-center gap-2"
+                    >
+                      <Archive className="w-3.5 h-3.5 text-red-500" />
+                      <span>{t.archive}</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ),
+          },
+        ]}
+      />
 
       {/* ── HEADER CONTEXT MENU ON RIGHT CLICK (MANAGE COLUMNS WITH SHADCN CHECKBOX) ── */}
       {headerContextMenu && (
@@ -2097,8 +2329,7 @@ export default function InventoryModule({
           <button
             type="button"
             onClick={() => {
-              setDetailProduct(contextMenu.product);
-              setIsDetailOpen(true);
+              setExpandedProductId(contextMenu.product.id);
               setContextMenu(null);
             }}
             className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg flex items-center gap-2 cursor-pointer transition-colors"
@@ -2204,6 +2435,7 @@ export default function InventoryModule({
           )}
         </div>
       )}
+      </>)}
 
       {/* ── ALL CATEGORIES MODAL DIALOG ── */}
       <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
@@ -2264,7 +2496,6 @@ export default function InventoryModule({
                     type="button"
                     onClick={() => {
                       setSelectedCategory(cat);
-                      setCurrentPage(1);
                       setIsCategoryDialogOpen(false);
                     }}
                     className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
@@ -2298,122 +2529,6 @@ export default function InventoryModule({
               {t.close}
             </DialogClose>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── PRODUCT DETAIL DIALOG ── */}
-      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-xl p-6 bg-white dark:bg-[#202024] border-slate-200 dark:border-dark-border">
-          {detailProduct && (
-            <div className="space-y-5">
-              <DialogHeader>
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-[#1C1C1F] flex items-center justify-center overflow-hidden border border-slate-200/80 dark:border-dark-border shrink-0">
-                    {detailProduct.image_url ? (
-                      <img
-                        src={getFullImageUrl(detailProduct.image_url)}
-                        alt={detailProduct.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <Package className="w-7 h-7 text-slate-400" />
-                    )}
-                  </div>
-                  <div>
-                    <DialogTitle className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                      {detailProduct.name}
-                    </DialogTitle>
-                    <DialogDescription className="mt-1 text-slate-500 dark:text-slate-400">
-                      {t.skuLabel}: <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{detailProduct.sku || "—"}</span> • {t.categoryLabel}: <span className="font-semibold text-slate-700 dark:text-slate-300">{detailProduct.category || "General"}</span>
-                    </DialogDescription>
-                  </div>
-                </div>
-              </DialogHeader>
-
-              {/* Detailed Financial & Inventory Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 p-4 bg-slate-50 dark:bg-[#1B1B1E] rounded-2xl border border-slate-200/60 dark:border-[#303035] text-xs">
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.costPriceHpp}</span>
-                  <span className="font-mono font-bold text-sm text-slate-800 dark:text-slate-200">
-                    Rp {detailProduct.purchase_price.toLocaleString("id-ID")}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.sellingPrice}</span>
-                  <span className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                    Rp {detailProduct.sell_price.toLocaleString("id-ID")}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.estimatedMargin}</span>
-                  <span className="font-mono font-bold text-sm text-slate-700 dark:text-slate-300">
-                    Rp {(detailProduct.sell_price - detailProduct.purchase_price).toLocaleString("id-ID")}{" "}
-                    {detailProduct.purchase_price > 0 && (
-                      <span className="text-[10px] text-emerald-500 font-semibold block">
-                        (+{Math.round(((detailProduct.sell_price - detailProduct.purchase_price) / detailProduct.purchase_price) * 100)}%)
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.currentStock}</span>
-                  <span className="font-mono font-bold text-sm text-slate-800 dark:text-slate-200">
-                    {detailProduct.current_stock} <span className="text-[10px] font-normal uppercase text-slate-400">{detailProduct.unit_type}</span>
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.minStockAlert}</span>
-                  <span className="font-mono font-bold text-sm text-slate-800 dark:text-slate-200">
-                    {detailProduct.min_stock_alert !== undefined ? `${detailProduct.min_stock_alert} ${detailProduct.unit_type}` : t.notSet}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.operationalStatus}</span>
-                  <span className={`inline-flex items-center px-2 py-0.5 mt-0.5 rounded-full text-[10px] font-bold uppercase ${
-                    detailProduct.status === "active"
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                      : detailProduct.status === "discontinued"
-                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-                  }`}>
-                    {detailProduct.status === "active" ? t.statusActive : detailProduct.status === "discontinued" ? t.statusDiscontinued : t.statusInactive}
-                  </span>
-                </div>
-              </div>
-
-              {/* Mode Rule Explanation (Depth Gray palette) */}
-              <div className="p-3.5 bg-slate-100/90 dark:bg-[#1B1B1E] rounded-2xl border border-slate-200/80 dark:border-[#303035] text-xs flex items-start gap-3">
-                <Info className="w-4 h-4 text-slate-600 dark:text-primary shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">
-                    {t.inventoryModeLabel}: {detailProduct.inventory_mode.replace(/_/g, " ")}
-                  </span>
-                  <p className="text-slate-600 dark:text-slate-400 text-[11px] mt-0.5 leading-relaxed">
-                    {inventoryModes.find(m => m.val === detailProduct.inventory_mode)?.desc || t.modeExplanation}
-                  </p>
-                </div>
-              </div>
-
-              <DialogFooter className="flex flex-row justify-between items-center w-full pt-2">
-                {isManagerOrOwner && onEditProduct ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsDetailOpen(false);
-                      onEditProduct(detailProduct);
-                    }}
-                    className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-primary dark:hover:bg-primary/85 text-white dark:text-slate-900 text-xs font-bold rounded-full transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    {t.editThisProduct}
-                  </button>
-                ) : <div />}
-                <DialogClose className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-[#2B2B30] dark:hover:bg-[#34343A] text-slate-700 dark:text-slate-200 text-xs font-bold rounded-full transition-all cursor-pointer">
-                  {t.close}
-                </DialogClose>
-              </DialogFooter>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
 

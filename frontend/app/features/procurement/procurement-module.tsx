@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ErpDataTable } from "../../components/ErpDataTable";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import {
@@ -28,7 +29,8 @@ import {
   FileSpreadsheet, Plus, Search, Filter, Eye, Copy, Check,
   ChevronLeft, ChevronRight, SlidersHorizontal, ArrowLeft,
   DollarSign, Package, Calendar, Clock, AlertCircle, CheckCircle2,
-  Trash2, X, MoreHorizontal, Layers, Sparkles, Building2, CreditCard
+  Trash2, X, MoreHorizontal, Layers, Sparkles, Building2, CreditCard,
+  Menu, ArrowUpDown, ChevronDown, RotateCcw
 } from "lucide-react";
 
 interface Product {
@@ -117,11 +119,53 @@ export default function ProcurementModule({
   const [itemWeight, setItemWeight] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
+  // Internal Navigation View & Accordion Expansion States
+  const [internalView, setInternalView] = useState<"history" | "new">(view || "history");
+  const [expandedProcurementId, setExpandedProcurementId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setInternalView(view || "history");
+  }, [view]);
+
+  const activeView = internalView;
+  const isManagerOrOwner = activeContext?.role === "manager" || activeContext?.role === "owner";
+
+  // Scroll & Floating Header States
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 80) {
+        setIsScrolled(true);
+      } else {
+        setIsScrolled(false);
+        setIsSearchExpanded(false);
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Sorting State (Date, Cost, Supplier)
+  type SortOption = "date_desc" | "date_asc" | "cost_desc" | "cost_asc" | "supplier_asc";
+  const [sortBy, setSortBy] = useState<SortOption>("date_desc");
+
+  const handleTriggerAdd = () => {
+    if (onNavigate) onNavigate("procurement-new");
+    else setInternalView("new");
+  };
+
+  const handleFormBack = () => {
+    if (onCancel) onCancel();
+    setInternalView("history");
+    fetchData();
+  };
+
   // Filter & Search States
   const [searchQuery, setSearchQuery] = useState("");
   const [filterPayment, setFilterPayment] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
-  const [currentPage, setCurrentPage] = useState(1);
 
   // Detail Modal State
   const [detailProcurement, setDetailProcurement] = useState<ProcurementDetail | null>(null);
@@ -218,8 +262,7 @@ export default function ProcurementModule({
 
   useEffect(() => {
     fetchData();
-    setCurrentPage(1);
-  }, [activeContext, view]);
+  }, [activeContext, activeView]);
 
   // When product is selected in item builder, pre-fill its purchase price
   const handleProductSelect = (productId: string) => {
@@ -310,10 +353,8 @@ export default function ProcurementModule({
       setDueDate("");
       setPaymentStatus("paid");
       
-      fetchData();
-      if (onSuccess) {
-        setTimeout(() => onSuccess(), 500);
-      }
+      if (onSuccess) onSuccess();
+      handleFormBack();
     } catch (err: any) {
       toast.error(err.response?.data?.message || t.errorAddProcurement);
     } finally {
@@ -388,34 +429,30 @@ export default function ProcurementModule({
     return matchesSearch && matchesPayment && matchesSupplier;
   });
 
+  // Sorted procurements
+  const sortedProcurements = [...filteredProcurements].sort((a, b) => {
+    switch (sortBy) {
+      case "date_desc":
+        return new Date(b.procurement_date || b.created_at || 0).getTime() - new Date(a.procurement_date || a.created_at || 0).getTime();
+      case "date_asc":
+        return new Date(a.procurement_date || a.created_at || 0).getTime() - new Date(b.procurement_date || b.created_at || 0).getTime();
+      case "cost_desc":
+        return b.total_cost - a.total_cost;
+      case "cost_asc":
+        return a.total_cost - b.total_cost;
+      case "supplier_asc":
+        return a.supplier_name.localeCompare(b.supplier_name, "id", { sensitivity: "base" });
+      default:
+        return 0;
+    }
+  });
+
+  const isSearchActive = isSearchExpanded || searchQuery.trim().length > 0;
+
   // Extract unique supplier list
   const uniqueSuppliers = Array.from(
     new Set(procurements.map((p) => p.supplier_name).filter(Boolean))
   );
-
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredProcurements.length / ITEMS_PER_PAGE));
-  const paginatedProcurements = filteredProcurements.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
-
-  // Build page number list
-  const getPageNumbers = () => {
-    const pages: (number | "...")[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (currentPage > 3) pages.push("...");
-      const start = Math.max(2, currentPage - 1);
-      const end = Math.min(totalPages - 1, currentPage + 1);
-      for (let i = start; i <= end; i++) pages.push(i);
-      if (currentPage < totalPages - 2) pages.push("...");
-      pages.push(totalPages);
-    }
-    return pages;
-  };
 
   // Styles
   const labelClass = "block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 text-left";
@@ -434,22 +471,20 @@ export default function ProcurementModule({
   // =========================================================================
   // VIEW: NEW PROCUREMENT FORM
   // =========================================================================
-  if (view === "new") {
+  if (activeView === "new") {
     return (
       <div className="space-y-6 text-left w-full text-slate-900 dark:text-slate-100">
         
         {/* Top Header */}
         <div className="flex items-center gap-3 border-b border-slate-200/80 dark:border-slate-800 pb-4">
-          {onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="p-2 rounded-full border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-all"
-              title={t.cancel}
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleFormBack}
+            className="p-2 rounded-full border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-all"
+            title={t.cancel}
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
           <div>
             <h3 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
               {t.procurementNewTitle}
@@ -789,11 +824,101 @@ export default function ProcurementModule({
   }
 
   // =========================================================================
-  // VIEW: PROCUREMENT LIST / HISTORY & DEBT
+  // VIEW: PROCUREMENT LIST / HISTORY & DEBT (FRAMELESS ACCORDION MOBILE LIST)
   // =========================================================================
   return (
-    <div className="space-y-6 text-left text-slate-900 dark:text-slate-100">
+    <div className="space-y-6 text-left relative">
       
+      {/* ── DYNAMIC FLOATING HEADER BAR (SYNCHRONIZED SEARCH) ── */}
+      {!isScrolled && (
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
+          className="fixed top-3 right-3 z-40 p-2 text-slate-800 dark:text-slate-100 drop-shadow-md hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+          title="Menu Navigasi"
+          aria-label="Open Navigation Menu"
+        >
+          <Menu className="w-6 h-6 stroke-[2.5]" />
+        </button>
+      )}
+
+      {isScrolled && !isSearchActive && (
+        <>
+          <button
+            type="button"
+            onClick={() => setIsSearchExpanded(true)}
+            className="fixed top-3 left-3 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer animate-in slide-in-from-left-4 duration-300"
+            title="Cari Faktur Pengadaan"
+            aria-label="Open Floating Search"
+          >
+            <Search className="w-5 h-5 stroke-[2.5]" />
+          </button>
+
+          <div className="fixed top-3 right-3 z-40 backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white rounded-full p-1.5 px-2.5 border border-white/20 shadow-xl flex items-center gap-1.5 transition-all duration-300 animate-in fade-in zoom-in-95">
+            {isManagerOrOwner && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleTriggerAdd}
+                  className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
+                  title="Tambah Pengadaan Baru"
+                  aria-label="New Procurement"
+                >
+                  <Plus className="w-5 h-5 stroke-[2.5]" />
+                </button>
+                <div className="w-px h-4 bg-white/25" />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
+              className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
+              title="Menu Navigasi"
+              aria-label="Open Navigation Menu"
+            >
+              <Menu className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          </div>
+        </>
+      )}
+
+      {isScrolled && isSearchActive && (
+        <>
+          <div className="fixed top-3 left-3 right-16 z-50 backdrop-blur-xl bg-white/95 dark:bg-[#202024]/95 text-slate-900 dark:text-slate-100 rounded-full border border-slate-300/80 dark:border-[#38383C] shadow-2xl px-3.5 py-1.5 flex items-center gap-2.5 transition-all duration-300 animate-in fade-in slide-in-from-left-2">
+            <Search className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.5]" />
+            <input
+              autoFocus
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari nama supplier, ID faktur..."
+              className="w-full bg-transparent text-xs font-semibold focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setIsSearchExpanded(false);
+              }}
+              className="p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer shrink-0"
+              title="Tutup & Reset Pencarian"
+            >
+              <X className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
+            className="fixed top-3 right-3 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer"
+            title="Menu Navigasi"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="w-5 h-5 stroke-[2.5]" />
+          </button>
+        </>
+      )}
+
       {/* ── HEADER TITLE & ACTIONS ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800 pb-4">
         <div>
@@ -805,11 +930,11 @@ export default function ProcurementModule({
           </p>
         </div>
 
-        {onNavigate && (
+        {isManagerOrOwner && (
           <button
             type="button"
-            onClick={() => onNavigate("procurement-new")}
-            className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-primary dark:hover:bg-primary/85 text-white dark:text-slate-900 text-xs font-extrabold rounded-full shadow-sm transition-all cursor-pointer self-start sm:self-auto"
+            onClick={handleTriggerAdd}
+            className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-primary dark:hover:bg-primary/85 text-white dark:text-slate-900 text-xs font-extrabold rounded-full shadow-sm transition-all cursor-pointer self-start sm:self-auto shrink-0"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>{t.procurementNewTitle}</span>
@@ -817,512 +942,552 @@ export default function ProcurementModule({
         )}
       </div>
 
-      {/* ── KPI METRICS SUMMARY CARDS ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Spend */}
-        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-[#2A2A2E] flex items-center justify-center text-slate-800 dark:text-primary shrink-0">
-            <DollarSign className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block truncate">
-              {t.totalProcurementSpend}
+      {/* ── KPI METRICS SUMMARY CARDS (CLICKABLE QUICK FILTERS) ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Card 1: Total Pengadaan */}
+        <button
+          type="button"
+          onClick={() => setFilterPayment("all")}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between group ${
+            filterPayment === "all"
+              ? "bg-slate-900 dark:bg-[#2A2A30] border-slate-900 dark:border-primary text-white shadow-sm"
+              : "bg-white dark:bg-dark-card border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 hover:border-slate-300"
+          }`}
+        >
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-0.5">
+              Total Pengadaan
             </span>
-            <span className="text-sm font-mono font-black text-slate-900 dark:text-slate-100 truncate block">
+            <span className="text-base font-extrabold font-mono text-slate-900 dark:text-slate-100">
               Rp {totalSpend.toLocaleString("id-ID")}
             </span>
           </div>
-        </div>
+          <DollarSign className="w-5 h-5 opacity-40 shrink-0" />
+        </button>
 
-        {/* Total Debt */}
-        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-red-50 dark:bg-red-950/30 flex items-center justify-center text-red-500 shrink-0">
-            <CreditCard className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block truncate">
-              {t.totalProcurementDebt}
+        {/* Card 2: Hutang / Belum Lunas */}
+        <button
+          type="button"
+          onClick={() => setFilterPayment("unpaid")}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between group ${
+            filterPayment === "unpaid"
+              ? "bg-red-950/80 border-red-500 text-white shadow-sm"
+              : "bg-white dark:bg-dark-card border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 hover:border-slate-300"
+          }`}
+        >
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-0.5">
+              Total Utang
             </span>
-            <span className="text-sm font-mono font-black text-red-600 dark:text-red-400 truncate block">
+            <span className="text-base font-extrabold font-mono text-red-500">
               Rp {totalDebt.toLocaleString("id-ID")}
             </span>
           </div>
-        </div>
+          <CreditCard className="w-5 h-5 text-red-500 opacity-60 shrink-0" />
+        </button>
 
-        {/* Total Invoices */}
-        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-[#2A2A2E] flex items-center justify-center text-slate-800 dark:text-slate-200 shrink-0">
-            <FileSpreadsheet className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block truncate">
-              {t.totalProcurementCount}
+        {/* Card 3: Faktur Lunas */}
+        <button
+          type="button"
+          onClick={() => setFilterPayment("paid")}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between group ${
+            filterPayment === "paid"
+              ? "bg-emerald-950/80 border-emerald-500 text-white shadow-sm"
+              : "bg-white dark:bg-dark-card border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 hover:border-slate-300"
+          }`}
+        >
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-0.5">
+              Lunas
             </span>
-            <span className="text-sm font-mono font-black text-slate-900 dark:text-slate-100 truncate block">
+            <span className="text-base font-extrabold font-mono text-emerald-500">
+              {paidCount} Faktur
+            </span>
+          </div>
+          <CheckCircle2 className="w-5 h-5 text-emerald-500 opacity-60 shrink-0" />
+        </button>
+
+        {/* Card 4: Total Transaksi */}
+        <button
+          type="button"
+          onClick={() => setFilterPayment("all")}
+          className="p-3.5 rounded-2xl border bg-white dark:bg-dark-card border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 text-left cursor-pointer flex items-center justify-between"
+        >
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-0.5">
+              Total PO
+            </span>
+            <span className="text-base font-extrabold font-mono text-slate-900 dark:text-slate-100">
               {procurements.length} Transaksi
             </span>
           </div>
-        </div>
-
-        {/* Paid / Unpaid Status Counter */}
-        <div className="bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-500 shrink-0">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block truncate">
-              Status Faktur
-            </span>
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate block">
-              <span className="text-emerald-600 dark:text-emerald-400 font-mono font-bold">{paidCount} {t.statusPaid.split(" ")[0]}</span> • <span className="text-red-500 font-mono font-bold">{unpaidCount} {t.statusUnpaid.split(" ")[0]}</span>
-            </span>
-          </div>
-        </div>
+          <FileSpreadsheet className="w-5 h-5 text-slate-400 opacity-60 shrink-0" />
+        </button>
       </div>
 
-      {/* ── SEARCH & HORIZONTAL MULTI-FILTER TOOLBAR ── */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-          
-          {/* Search Bar with / shortcut */}
-          <div className="relative flex-1">
-            <Search className="absolute left-5 top-3.5 w-4 h-4 text-slate-400" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              placeholder="Cari nama supplier atau ID faktur..."
-              className="w-full pl-12 pr-12 py-3 rounded-full bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border text-slate-800 dark:text-slate-100 placeholder-slate-400 text-xs font-semibold shadow-xs focus:outline-none focus:ring-2 focus:ring-slate-400/20 dark:focus:ring-primary/20 transition-all"
-            />
-            <div className="absolute right-4 top-3 flex items-center gap-1.5 pointer-events-none">
-              <kbd className="px-2 py-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-[#2E2E34] rounded-md border border-slate-200 dark:border-[#3A3A3E]">
-                /
-              </kbd>
-            </div>
-          </div>
+      {/* ── SEARCH & RICH TOOLBAR CONTROLS ── */}
+      <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+        {/* Search Input Bar */}
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-4 top-3 w-4 h-4 text-slate-400" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cari nama supplier atau ID faktur..."
+            className="w-full pl-10 pr-10 py-2.5 rounded-full bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border text-slate-800 dark:text-slate-100 placeholder-slate-400 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-slate-400/20 transition-all shadow-xs"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3.5 top-3 p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <kbd className="absolute right-3.5 top-3 hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-md pointer-events-none">
+              /
+            </kbd>
+          )}
+        </div>
 
-          {/* Supplier Filter Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 rounded-full text-xs font-bold shadow-xs hover:border-slate-400 dark:hover:border-slate-500 cursor-pointer outline-none transition-all">
-              <Building2 className="w-3.5 h-3.5 text-slate-400" />
-              <span>{filterSupplier === "all" ? "Semua Supplier" : filterSupplier}</span>
-              <span className="text-[10px] text-slate-400">▼</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border shadow-xl rounded-2xl p-1.5 min-w-[200px] max-h-[260px] overflow-y-auto">
-              <DropdownMenuItem
-                onClick={() => {
-                  setFilterSupplier("all");
-                  setCurrentPage(1);
-                }}
-                className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
-              >
-                <span>Semua Supplier</span>
-                {filterSupplier === "all" && <Check className="w-3.5 h-3.5 text-emerald-500" />}
-              </DropdownMenuItem>
-              {uniqueSuppliers.map((sup) => (
-                <DropdownMenuItem
-                  key={sup}
-                  onClick={() => {
-                    setFilterSupplier(sup);
-                    setCurrentPage(1);
-                  }}
-                  className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
-                >
-                  <span className="truncate">{sup}</span>
-                  {filterSupplier.toLowerCase() === sup.toLowerCase() && (
-                    <Check className="w-3.5 h-3.5 text-emerald-500" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Payment Status Filter (Pill Group) */}
-          <div className="flex items-center gap-1.5 p-1 bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border rounded-full shadow-xs overflow-x-auto scrollbar-none">
+        {/* Sort Dropdown Button (Shadcn UI) */}
+        <DropdownMenu>
+          <DropdownMenuTrigger className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
+            sortBy !== "date_desc"
+              ? "bg-slate-900 text-white border-slate-900 dark:bg-primary dark:border-primary dark:text-slate-900 shadow-sm"
+              : isDarkMode
+              ? "bg-dark-card border-dark-border text-slate-200 hover:bg-white/5"
+              : "bg-white border-light-border/60 text-slate-700 hover:bg-slate-50"
+          }`}>
+            <ArrowUpDown className="w-3.5 h-3.5" />
+            <span className="font-semibold text-[11px]">
+              {sortBy === "date_desc"
+                ? "Terbaru"
+                : sortBy === "date_asc"
+                ? "Terlama"
+                : sortBy === "cost_desc"
+                ? "Nominal Terbesar"
+                : sortBy === "cost_asc"
+                ? "Nominal Terkecil"
+                : "Supplier (A-Z)"}
+            </span>
+            <ChevronDown className="w-3 h-3 opacity-60" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-2xl rounded-2xl p-1.5 min-w-[200px]">
             {[
-              { val: "all", label: "Semua" },
-              { val: "paid", label: "Lunas" },
-              { val: "unpaid", label: "Belum Lunas" },
-              { val: "partial", label: "Sebagian" },
-            ].map((st) => {
-              const isActive = filterPayment === st.val;
-              return (
-                <button
-                  key={st.val}
-                  type="button"
-                  onClick={() => {
-                    setFilterPayment(st.val);
-                    setCurrentPage(1);
-                  }}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    isActive
-                      ? "bg-slate-900 text-white dark:bg-primary dark:text-slate-900 shadow-xs"
-                      : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5"
-                  }`}
-                >
-                  {st.label}
-                </button>
-              );
-            })}
-          </div>
+              { key: "date_desc", label: "Tanggal: Terbaru → Terlama" },
+              { key: "date_asc", label: "Tanggal: Terlama → Terbaru" },
+              { key: "cost_desc", label: "Nominal: Terbesar → Terkecil" },
+              { key: "cost_asc", label: "Nominal: Terkecil → Terbesar" },
+              { key: "supplier_asc", label: "Nama Supplier (A - Z)" },
+            ].map((s) => (
+              <DropdownMenuItem
+                key={s.key}
+                onClick={() => setSortBy(s.key as any)}
+                className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl flex items-center justify-between"
+              >
+                <span>{s.label}</span>
+                {sortBy === s.key && <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[3]" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
+        {/* Supplier Filter Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
+            filterSupplier !== "all"
+              ? "bg-slate-900 text-white border-slate-900 dark:bg-primary dark:border-primary dark:text-slate-900 shadow-sm"
+              : isDarkMode
+              ? "bg-dark-card border-dark-border text-slate-200 hover:bg-white/5"
+              : "bg-white border-light-border/60 text-slate-700 hover:bg-slate-50"
+          }`}>
+            <Building2 className="w-3.5 h-3.5" />
+            <span className="truncate max-w-[120px]">
+              {filterSupplier === "all" ? "Semua Supplier" : filterSupplier}
+            </span>
+            <ChevronDown className="w-3 h-3 opacity-60" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-2xl rounded-2xl p-1.5 min-w-[200px] max-h-[260px] overflow-y-auto">
+            <DropdownMenuItem
+              onClick={() => setFilterSupplier("all")}
+              className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl flex items-center justify-between"
+            >
+              <span>Semua Supplier</span>
+              {filterSupplier === "all" && <Check className="w-3.5 h-3.5 text-emerald-500" />}
+            </DropdownMenuItem>
+            {uniqueSuppliers.map((sup) => (
+              <DropdownMenuItem
+                key={sup}
+                onClick={() => setFilterSupplier(sup)}
+                className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl flex items-center justify-between"
+              >
+                <span className="truncate">{sup}</span>
+                {filterSupplier.toLowerCase() === sup.toLowerCase() && (
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                )}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Quick Payment Status Filter Pills */}
+        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-[#202023] border border-slate-200/70 dark:border-[#35353A] rounded-full shadow-2xs">
+          {[
+            { val: "all", label: "Semua" },
+            { val: "paid", label: "Lunas" },
+            { val: "unpaid", label: "Belum Lunas" },
+            { val: "partial", label: "Sebagian" },
+          ].map((st) => {
+            const isActive = filterPayment === st.val;
+            return (
+              <button
+                key={st.val}
+                type="button"
+                onClick={() => setFilterPayment(st.val)}
+                className={`px-3 py-1 text-xs font-bold rounded-full transition-all cursor-pointer whitespace-nowrap ${
+                  isActive
+                    ? "bg-slate-900 text-white dark:bg-primary dark:text-slate-900 shadow-2xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                {st.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* ── PROCUREMENT TABLE CONTAINER CARD (ROUNDED-28PX) ── */}
-      <div
-        className="bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border rounded-[28px] shadow-sm p-4 sm:p-6"
-        style={{ boxShadow: isDarkMode ? "0 4px 24px 0 rgba(0,0,0,0.35)" : "0 4px 20px 0 rgba(0,0,0,0.06)" }}
-      >
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-24">
-            <div className="w-10 h-10 border-4 border-slate-700 dark:border-primary border-t-transparent rounded-full animate-spin mb-3" />
-            <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">{t.loading}</span>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-separate" style={{ borderSpacing: 0 }}>
-              
-              {/* ── HEADER (PILL SHAPED WITH DEPTH GRAY BACKGROUND & COLUMN CONFIG TRIGGER) ── */}
-              <thead>
-                <tr className="text-slate-600 dark:text-slate-300 select-none">
-                  {columnVisibility.supplier && (
-                    <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34] rounded-l-full">
-                      {t.supplierLabel.split("/")[0]}
-                    </th>
-                  )}
-                  {columnVisibility.date && (
-                    <th className={`py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider text-center whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34] ${
-                      !columnVisibility.supplier ? "rounded-l-full" : ""
-                    }`}>
-                      {t.procurementDateLabel}
-                    </th>
-                  )}
-                  {columnVisibility.totalCost && (
-                    <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider text-right whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                      {t.totalProcurementCost}
-                    </th>
-                  )}
-                  {columnVisibility.paymentStatus && (
-                    <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider text-center whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                      {t.paymentStatusLabel}
-                    </th>
-                  )}
-                  {columnVisibility.amountOwed && (
-                    <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider text-right whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                      {t.totalProcurementDebt}
-                    </th>
-                  )}
-                  {columnVisibility.dueDate && (
-                    <th className="py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider text-center whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34]">
-                      {t.dueDateLabel}
-                    </th>
-                  )}
-                  
-                  {/* Action Column + Column Settings Trigger */}
-                  <th className="py-3 px-4 text-[11px] font-bold uppercase tracking-wider text-right whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34] rounded-r-full">
-                    <div className="flex items-center justify-end gap-2">
-                      {columnVisibility.actions && (
-                        <span className="hidden sm:inline">{t.actions}</span>
-                      )}
+      {/* ── REUSABLE UNIFIED ERP DATA TABLE (DESKTOP TABLE + MOBILE ACCORDION) ── */}
+      <ErpDataTable<Procurement>
+        data={sortedProcurements}
+        keyExtractor={(proc) => proc.id}
+        loading={loading}
+        emptyText="Tidak ada faktur pengadaan yang cocok"
+        onRowClick={(proc) => handleOpenDetail(proc)}
+        onRowContextMenu={(e, proc) => {
+          setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            procurement: proc,
+          });
+        }}
+        renderMobileItem={(proc) => {
+          const isExpanded = expandedProcurementId === proc.id;
+          const isDueExpired = proc.due_date && new Date(proc.due_date) < new Date() && proc.payment_status !== "paid";
+
+          return (
+            <div className="transition-colors">
+              <div
+                onClick={() => setExpandedProcurementId(isExpanded ? null : proc.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    procurement: proc,
+                  });
+                }}
+                className="flex items-center justify-between py-3.5 px-1 hover:bg-slate-100/50 dark:hover:bg-white/[0.03] active:bg-slate-200/40 dark:active:bg-white/5 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-[#1C1C1F] flex items-center justify-center text-slate-700 dark:text-primary font-bold text-xs shrink-0 border border-slate-200/60 dark:border-dark-border">
+                    <Building2 className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate group-hover:text-slate-700 dark:group-hover:text-primary transition-colors">
+                      {proc.supplier_name}
+                    </h4>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                      {new Date(proc.procurement_date).toLocaleDateString("id-ID", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0 text-right">
+                  <div>
+                    <div className="font-mono font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                      Rp {proc.total_cost.toLocaleString("id-ID")}
+                    </div>
+                    <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[9px] font-extrabold uppercase ${
+                        proc.payment_status === "paid"
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400"
+                          : proc.payment_status === "partial"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400"
+                          : "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400"
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          proc.payment_status === "paid" ? "bg-emerald-500" : proc.payment_status === "partial" ? "bg-amber-500" : "bg-red-500"
+                        }`} />
+                        <span>{proc.payment_status}</span>
+                      </span>
+
+                      {proc.amount_owed && proc.amount_owed > 0 ? (
+                        <span className="font-mono font-bold text-red-500 text-[10px]">
+                          (Utang Rp {proc.amount_owed.toLocaleString("id-ID")})
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <ChevronRight className={`w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
+                    isExpanded ? "rotate-90 text-slate-900 dark:text-slate-100" : ""
+                  }`} />
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div className="px-3 pb-4 pt-2 bg-slate-50/70 dark:bg-[#1A1A1E]/80 rounded-2xl mb-2 border border-slate-200/50 dark:border-[#25252A] space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center gap-2 text-xs flex-wrap pb-1 border-b border-slate-200/40 dark:border-[#2A2A30]">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
+                      ID: {proc.id}
+                    </span>
+                    {proc.due_date && (
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        isDueExpired
+                          ? "bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+                          : "bg-slate-200/60 dark:bg-[#25252A] text-slate-600 dark:text-slate-400"
+                      }`}>
+                        Jatuh Tempo: {new Date(proc.due_date).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                        {isDueExpired && " (Lewat Tempo)"}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDetail(proc)}
+                      className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 dark:bg-primary text-white dark:text-slate-900 font-bold text-xs cursor-pointer transition-all active:scale-95 shadow-2xs"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Rincian Item / PO</span>
+                    </button>
+
+                    {isManagerOrOwner && (
                       <DropdownMenu>
-                        <DropdownMenuTrigger
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/70 dark:bg-black/20 hover:bg-white dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 border border-slate-300/60 dark:border-white/10 shadow-xs transition-all cursor-pointer focus:outline-none"
-                          title={t.configureColumns}
-                          aria-label={t.configureColumns}
-                        >
-                          <SlidersHorizontal className="w-3.5 h-3.5" />
+                        <DropdownMenuTrigger className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#222226] border border-slate-200/80 dark:border-[#333338] hover:bg-slate-100 dark:hover:bg-white/10 font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer transition-all">
+                          <CreditCard className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Ubah Pembayaran</span>
+                          <ChevronDown className="w-3 h-3 text-slate-400" />
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-2xl rounded-2xl p-2 min-w-[200px] space-y-1">
-                          <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between border-b border-slate-100 dark:border-[#333338] mb-1">
-                            <span>{t.showColumns}</span>
-                            <SlidersHorizontal className="w-3 h-3 text-slate-400" />
-                          </div>
-                          {[
-                            { key: "supplier", label: t.supplierLabel.split("/")[0] },
-                            { key: "date", label: t.procurementDateLabel },
-                            { key: "totalCost", label: t.totalProcurementCost },
-                            { key: "paymentStatus", label: t.paymentStatusLabel },
-                            { key: "amountOwed", label: t.totalProcurementDebt },
-                            { key: "dueDate", label: t.dueDateLabel },
-                            { key: "actions", label: t.actions },
-                          ].map((col) => {
-                            const isChecked = columnVisibility[col.key as keyof typeof columnVisibility];
-                            return (
-                              <div
-                                key={col.key}
-                                onClick={() =>
-                                  setColumnVisibility((prev) => ({
-                                    ...prev,
-                                    [col.key]: !prev[col.key as keyof typeof prev],
-                                  }))
-                                }
-                                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg cursor-pointer transition-colors"
-                              >
-                                <span>{col.label}</span>
-                                <Checkbox
-                                  checked={isChecked}
-                                  onCheckedChange={(checked) =>
-                                    setColumnVisibility((prev) => ({
-                                      ...prev,
-                                      [col.key]: Boolean(checked),
-                                    }))
-                                  }
-                                />
-                              </div>
-                            );
-                          })}
+                        <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-xl p-1 min-w-[170px]">
+                          <DropdownMenuItem
+                            onClick={() => handleUpdatePaymentStatus(proc.id, "paid")}
+                            className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                              <span>Tandai Lunas</span>
+                            </div>
+                            {proc.payment_status === "paid" && <Check className="w-3 h-3 text-emerald-500 stroke-[3]" />}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleUpdatePaymentStatus(proc.id, "unpaid", proc.total_cost)}
+                            className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-red-500" />
+                              <span>Belum Lunas</span>
+                            </div>
+                            {proc.payment_status === "unpaid" && <Check className="w-3 h-3 text-red-500 stroke-[3]" />}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleUpdatePaymentStatus(proc.id, "partial", Math.round(proc.total_cost / 2))}
+                            className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-amber-500" />
+                              <span>Bayar Sebagian</span>
+                            </div>
+                            {proc.payment_status === "partial" && <Check className="w-3 h-3 text-amber-500 stroke-[3]" />}
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
+                    )}
 
-              {/* ── TABLE BODY WITH CRISP BOTTOM BORDERS ON EVERY TD ── */}
-              <tbody>
-                {filteredProcurements.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-16 text-slate-400 dark:text-slate-500 font-bold border-b border-slate-200/80 dark:border-dark-border">
-                      Tidak ada faktur pengadaan yang cocok
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedProcurements.map((proc) => {
-                    const isDueExpired = proc.due_date && new Date(proc.due_date) < new Date() && proc.payment_status !== "paid";
-                    return (
-                      <tr
-                        key={proc.id}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setContextMenu({
-                            x: e.clientX,
-                            y: e.clientY,
-                            procurement: proc,
-                          });
-                        }}
-                        onClick={() => handleOpenDetail(proc)}
-                        className="group transition-colors duration-150 cursor-pointer hover:bg-slate-50/70 dark:hover:bg-white/[0.03]"
-                      >
-                        {/* Supplier */}
-                        {columnVisibility.supplier && (
-                          <td className="px-5 py-3.5 font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-dark-border">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-[#2E2E34] flex items-center justify-center text-slate-700 dark:text-primary font-bold text-[11px] shrink-0">
-                                {proc.supplier_name.charAt(0).toUpperCase()}
-                              </div>
-                              <div className="min-w-0">
-                                <span className="block truncate font-bold">{proc.supplier_name}</span>
-                                <span className="text-[10px] font-mono text-slate-400 truncate block">ID: {proc.id.substring(0, 8)}...</span>
-                              </div>
-                            </div>
-                          </td>
-                        )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(proc.id);
+                        toast.success(t.invoiceIdCopied);
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#222226] border border-slate-200/80 dark:border-[#333338] hover:bg-slate-100 dark:hover:bg-white/10 font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Salin ID</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }}
+        columns={[
+          {
+            key: "supplier",
+            label: t.supplierLabel.split("/")[0],
+            renderCell: (proc) => (
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-[#2E2E34] flex items-center justify-center text-slate-700 dark:text-primary font-bold text-[11px] shrink-0">
+                  {proc.supplier_name.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <span className="block truncate font-bold text-slate-900 dark:text-slate-100">{proc.supplier_name}</span>
+                  <span className="text-[10px] font-mono text-slate-400 truncate block">ID: {proc.id.substring(0, 8)}...</span>
+                </div>
+              </div>
+            ),
+          },
+          {
+            key: "date",
+            label: t.procurementDateLabel,
+            align: "center",
+            renderCell: (proc) => (
+              <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
+                {new Date(proc.procurement_date).toLocaleDateString("id-ID", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </span>
+            ),
+          },
+          {
+            key: "totalCost",
+            label: t.totalProcurementCost,
+            align: "right",
+            renderCell: (proc) => (
+              <span className="font-mono font-black text-slate-900 dark:text-slate-100">
+                Rp {proc.total_cost.toLocaleString("id-ID")}
+              </span>
+            ),
+          },
+          {
+            key: "paymentStatus",
+            label: t.paymentStatusLabel,
+            align: "center",
+            renderCell: (proc) => (
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wide ${
+                  proc.payment_status === "paid"
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50"
+                    : proc.payment_status === "partial"
+                    ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50"
+                    : "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 border border-red-200 dark:border-red-900/50"
+                }`}
+              >
+                <div
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    proc.payment_status === "paid"
+                      ? "bg-emerald-500"
+                      : proc.payment_status === "partial"
+                      ? "bg-amber-500"
+                      : "bg-red-500"
+                  }`}
+                />
+                <span>{proc.payment_status}</span>
+              </span>
+            ),
+          },
+          {
+            key: "amountOwed",
+            label: t.totalProcurementDebt,
+            align: "right",
+            renderCell: (proc) => (
+              <span
+                className={`font-mono font-bold ${
+                  proc.amount_owed && proc.amount_owed > 0
+                    ? "text-red-500 dark:text-red-400 font-extrabold"
+                    : "text-slate-400"
+                }`}
+              >
+                Rp {proc.amount_owed ? proc.amount_owed.toLocaleString("id-ID") : 0}
+              </span>
+            ),
+          },
+          {
+            key: "dueDate",
+            label: t.dueDateLabel,
+            align: "center",
+            renderCell: (proc) => {
+              const isDueExpired =
+                proc.due_date &&
+                new Date(proc.due_date) < new Date() &&
+                proc.payment_status !== "paid";
 
-                        {/* Date */}
-                        {columnVisibility.date && (
-                          <td className="px-5 py-3.5 text-center font-mono text-slate-600 dark:text-slate-300 border-b border-slate-200/80 dark:border-dark-border">
-                            {new Date(proc.procurement_date).toLocaleDateString("id-ID", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })}
-                          </td>
-                        )}
-
-                        {/* Total Cost */}
-                        {columnVisibility.totalCost && (
-                          <td className="px-5 py-3.5 text-right font-mono font-black text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-dark-border">
-                            Rp {proc.total_cost.toLocaleString("id-ID")}
-                          </td>
-                        )}
-
-                        {/* Payment Status Badge */}
-                        {columnVisibility.paymentStatus && (
-                          <td className="px-5 py-3.5 text-center border-b border-slate-200/80 dark:border-dark-border">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wide ${
-                              proc.payment_status === "paid"
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50"
-                                : proc.payment_status === "partial"
-                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50"
-                                : "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 border border-red-200 dark:border-red-900/50"
-                            }`}>
-                              <div className={`w-1.5 h-1.5 rounded-full ${
-                                proc.payment_status === "paid" ? "bg-emerald-500" : proc.payment_status === "partial" ? "bg-amber-500" : "bg-red-500"
-                              }`} />
-                              <span>{proc.payment_status}</span>
-                            </span>
-                          </td>
-                        )}
-
-                        {/* Amount Owed */}
-                        {columnVisibility.amountOwed && (
-                          <td className={`px-5 py-3.5 text-right font-mono font-bold border-b border-slate-200/80 dark:border-dark-border ${
-                            proc.amount_owed && proc.amount_owed > 0 ? "text-red-500 dark:text-red-400 font-extrabold" : "text-slate-400"
-                          }`}>
-                            Rp {proc.amount_owed ? proc.amount_owed.toLocaleString("id-ID") : 0}
-                          </td>
-                        )}
-
-                        {/* Due Date */}
-                        {columnVisibility.dueDate && (
-                          <td className="px-5 py-3.5 text-center font-mono text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-dark-border">
-                            {proc.due_date ? (
-                              <div className="flex items-center justify-center gap-1">
-                                {isDueExpired && <AlertCircle className="w-3 h-3 text-red-500" />}
-                                <span className={isDueExpired ? "text-red-500 font-bold" : ""}>
-                                  {new Date(proc.due_date).toLocaleDateString("id-ID", {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "numeric",
-                                  })}
-                                </span>
-                              </div>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                        )}
-
-                        {/* Actions (3-dots dropdown) */}
-                        {columnVisibility.actions && (
-                          <td className="px-5 py-3.5 text-center border-b border-slate-200/80 dark:border-dark-border">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                onClick={(e) => e.stopPropagation()}
-                                className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 dark:text-slate-500 cursor-pointer transition-colors"
-                              >
-                                <MoreHorizontal className="w-4 h-4" />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-xl p-1 min-w-[170px]">
-                                <DropdownMenuItem
-                                  onClick={() => handleOpenDetail(proc)}
-                                  className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-primary" />
-                                  <span>{t.viewDetails}</span>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(proc.id);
-                                    toast.success(t.invoiceIdCopied);
-                                  }}
-                                  className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
-                                >
-                                  <Copy className="w-3.5 h-3.5 text-slate-400" />
-                                  <span>{t.copyInvoiceId}</span>
-                                </DropdownMenuItem>
-
-                                {/* Quick Status Action */}
-                                {proc.payment_status !== "paid" && (
-                                  <>
-                                    <div className="border-t border-slate-100 dark:border-[#333338] my-1" />
-                                    <DropdownMenuItem
-                                      onClick={() => handleUpdatePaymentStatus(proc.id, "paid", 0)}
-                                      className="cursor-pointer px-3 py-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-lg flex items-center gap-2"
-                                    >
-                                      <CheckCircle2 className="w-3.5 h-3.5" />
-                                      <span>{t.markAsPaid}</span>
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ── PAGINATION CONTROLS (MATCHING MASTER TABLE STANDARD) ── */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-start gap-1.5 pt-4 mt-2 border-t border-slate-100 dark:border-[#2E2E34]">
-            {/* Prev Arrow */}
-            <button
-              type="button"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="w-9 h-9 rounded-full flex items-center justify-center border text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              style={{
-                background: isDarkMode ? "#232326" : "white",
-                borderColor: isDarkMode ? "#38383C" : "#e2e4ea",
-                color: isDarkMode ? "#94a3b8" : "#64748b",
-              }}
-              aria-label={t.prevPage}
-            >
-              ‹
-            </button>
-
-            {/* Page Numbers */}
-            {getPageNumbers().map((page, idx) =>
-              page === "..." ? (
-                <span
-                  key={`ellipsis-${idx}`}
-                  className="w-9 h-9 flex items-center justify-center text-sm text-slate-400"
-                >
-                  …
-                </span>
+              return proc.due_date ? (
+                <div className="flex items-center justify-center gap-1 font-mono text-xs text-slate-500 dark:text-slate-400">
+                  {isDueExpired && <AlertCircle className="w-3 h-3 text-red-500" />}
+                  <span className={isDueExpired ? "text-red-500 font-bold" : ""}>
+                    {new Date(proc.due_date).toLocaleDateString("id-ID", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                </div>
               ) : (
-                <button
-                  key={page}
-                  type="button"
-                  onClick={() => setCurrentPage(page as number)}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-150 cursor-pointer"
-                  style={
-                    currentPage === page
-                      ? {
-                          background: isDarkMode ? "#E2FF66" : "#c5ff00",
-                          color: "#1a1a1a",
-                          border: "none",
-                          fontWeight: 700,
-                        }
-                      : {
-                          background: isDarkMode ? "#232326" : "white",
-                          border: isDarkMode ? "1px solid #38383C" : "1px solid #e2e4ea",
-                          color: isDarkMode ? "#94a3b8" : "#64748b",
-                        }
-                  }
-                  aria-label={`Halaman ${page}`}
-                  aria-current={currentPage === page ? "page" : undefined}
+                <span className="text-slate-400">-</span>
+              );
+            },
+          },
+          {
+            key: "actions",
+            label: t.actions,
+            align: "center",
+            renderCell: (proc) => (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 dark:text-slate-500 cursor-pointer transition-colors"
                 >
-                  {page}
-                </button>
-              )
-            )}
+                  <MoreHorizontal className="w-4 h-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-xl p-1 min-w-[170px]">
+                  <DropdownMenuItem
+                    onClick={() => handleOpenDetail(proc)}
+                    className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-slate-700 dark:text-primary" />
+                    <span>{t.viewDetails}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      navigator.clipboard.writeText(proc.id);
+                      toast.success(t.invoiceIdCopied);
+                    }}
+                    className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{t.copyInvoiceId}</span>
+                  </DropdownMenuItem>
 
-            {/* Next Arrow */}
-            <button
-              type="button"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="w-9 h-9 rounded-full flex items-center justify-center border text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              style={{
-                background: isDarkMode ? "#232326" : "white",
-                borderColor: isDarkMode ? "#38383C" : "#e2e4ea",
-                color: isDarkMode ? "#94a3b8" : "#64748b",
-              }}
-              aria-label={t.nextPage}
-            >
-              ›
-            </button>
-
-            {/* Page info */}
-            <span className="ml-2 text-xs text-slate-400 dark:text-slate-500 font-medium">
-              {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filteredProcurements.length)} {t.pageOf} {filteredProcurements.length} Faktur
-            </span>
-          </div>
-        )}
-
-      </div>
+                  {proc.payment_status !== "paid" && (
+                    <>
+                      <div className="border-t border-slate-100 dark:border-[#333338] my-1" />
+                      <DropdownMenuItem
+                        onClick={() => handleUpdatePaymentStatus(proc.id, "paid", 0)}
+                        className="cursor-pointer px-3 py-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-lg flex items-center gap-2"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{t.markAsPaid}</span>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ),
+          },
+        ]}
+      />
 
       {/* ── ROW CONTEXT MENU ON RIGHT CLICK ── */}
       {contextMenu && (

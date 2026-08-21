@@ -100,6 +100,12 @@ export const translations = {
     discontinuedTitle: "Produk Dihentikan (Discontinued)",
     discontinuedDesc: "Daftar produk yang telah dihentikan penjualannya secara permanen.",
 
+    // KPI Quick Filter Strips
+    kpiAllProducts: "Semua Produk",
+    kpiLowStock: "Stok Menipis",
+    kpiOutOfStock: "Stok Habis",
+    kpiInactive: "Non-Aktif / Arsip",
+
     // Search & Filters
     searchPlaceholder: "Cari nama produk, SKU, atau barcode...",
     filterStatusLabel: "Status Produk",
@@ -407,6 +413,12 @@ export const translations = {
     colStock: "Stock",
     colStatus: "Status",
     colAction: "Action",
+
+    // KPI Quick Filter Strips
+    kpiAllProducts: "All Products",
+    kpiLowStock: "Low Stock",
+    kpiOutOfStock: "Out of Stock",
+    kpiInactive: "Inactive / Archive",
 
     // Detail Dialog
     productDetailTitle: "Product Details",
