@@ -258,10 +258,152 @@ func UpdateUserAssignments(ctx context.Context, userID uuid.UUID, assignments []
 	return tx.Commit(ctx)
 }
 
+type OwnerBusinessSummary struct {
+	ID               uuid.UUID `json:"id"`
+	Name             string    `json:"name"`
+	Type             string    `json:"type"`
+	Phone            *string   `json:"phone,omitempty"`
+	Email            *string   `json:"email,omitempty"`
+	TaxID            *string   `json:"tax_id,omitempty"`
+	TaxRatePct       float64   `json:"tax_rate_pct"`
+	HasPos           bool      `json:"has_pos"`
+	HasManufacturing bool      `json:"has_manufacturing"`
+	HasLogisticsHub  bool      `json:"has_logistics_hub"`
+	HasEodUsage      bool      `json:"has_eod_usage"`
+	OutletCount      int       `json:"outlet_count"`
+	StaffCount       int       `json:"staff_count"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+type OwnerHierarchyDetail struct {
+	ID           uuid.UUID              `json:"id"`
+	Name         string                 `json:"name"`
+	PhoneOrEmail *string                `json:"phone_or_email,omitempty"`
+	Status       string                 `json:"status"`
+	CreatedAt    time.Time              `json:"created_at"`
+	Businesses   []OwnerBusinessSummary `json:"businesses"`
+}
+
+// GetOwnersWithBusinesses retrieves all Owner users along with their businesses
+func GetOwnersWithBusinesses(ctx context.Context) ([]*OwnerHierarchyDetail, error) {
+	db := config.DB
+
+	// Fetch users who are business owners or newly registered owners without staff assignments
+	rows, err := db.Query(ctx, `
+		SELECT DISTINCT u.id, u.name, u.phone_or_email, u.status, u.created_at
+		FROM users u
+		LEFT JOIN business_owners bo ON bo.user_id = u.id
+		LEFT JOIN outlet_staff os ON os.user_id = u.id
+		WHERE (u.phone_or_email IS NULL OR u.phone_or_email NOT IN ('superadmin@andaya.com', 'admin@andaya.com'))
+		  AND (bo.id IS NOT NULL OR os.id IS NULL)
+		ORDER BY u.name ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var owners []*OwnerHierarchyDetail
+	for rows.Next() {
+		var o OwnerHierarchyDetail
+		if err := rows.Scan(&o.ID, &o.Name, &o.PhoneOrEmail, &o.Status, &o.CreatedAt); err != nil {
+			return nil, err
+		}
+		o.Businesses = []OwnerBusinessSummary{}
+		owners = append(owners, &o)
+	}
+
+	for _, owner := range owners {
+		bRows, err := db.Query(ctx, `
+			SELECT DISTINCT b.id, b.name, b.type, b.phone, b.email, b.tax_id, COALESCE(b.tax_rate_pct, 0), b.has_pos, b.has_manufacturing, b.has_logistics_hub, b.has_eod_usage, b.created_at,
+			       (SELECT COUNT(*) FROM outlets o WHERE o.business_id = b.id) as outlet_count,
+			       (SELECT COUNT(*) FROM outlet_staff os JOIN outlets o ON os.outlet_id = o.id WHERE o.business_id = b.id) as staff_count
+			FROM businesses b
+			JOIN business_owners bo ON bo.business_id = b.id
+			WHERE bo.user_id = $1
+			ORDER BY b.name ASC
+		`, owner.ID)
+		if err == nil {
+			for bRows.Next() {
+				var b OwnerBusinessSummary
+				if err := bRows.Scan(&b.ID, &b.Name, &b.Type, &b.Phone, &b.Email, &b.TaxID, &b.TaxRatePct, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.CreatedAt, &b.OutletCount, &b.StaffCount); err == nil {
+					owner.Businesses = append(owner.Businesses, b)
+				}
+			}
+			bRows.Close()
+		}
+	}
+
+	return owners, nil
+}
+
+// CreateBusinessForOwner creates a new business entity and assigns it to an Owner user
+func CreateBusinessForOwner(ctx context.Context, ownerID uuid.UUID, name string, bType string, hasPos, hasMfg, hasHub, hasEod bool, initialOutletName *string) (*models.Business, error) {
+	db := config.DB
+
+	if bType == "" || bType == "custom" {
+		bType = "retail"
+	}
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	bizID := uuid.New()
+	now := time.Now()
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO businesses (id, name, type, has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, bizID, name, bType, hasPos, hasMfg, hasHub, hasEod, now, now)
+	if err != nil {
+		return nil, err
+	}
+
+	// Assign owner
+	_, err = tx.Exec(ctx, `
+		INSERT INTO business_owners (id, user_id, business_id, created_at)
+		VALUES ($1, $2, $3, NOW())
+	`, uuid.New(), ownerID, bizID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create initial default branch if requested
+	if initialOutletName != nil && *initialOutletName != "" {
+		outletID := uuid.New()
+		_, err = tx.Exec(ctx, `
+			INSERT INTO outlets (id, business_id, name, created_at, updated_at)
+			VALUES ($1, $2, $3, NOW(), NOW())
+		`, outletID, bizID, *initialOutletName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return &models.Business{
+		ID:               bizID,
+		Name:             name,
+		Type:             models.BusinessType(bType),
+		HasPos:           hasPos,
+		HasManufacturing: hasMfg,
+		HasLogisticsHub:  hasHub,
+		HasEodUsage:      hasEod,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}, nil
+}
+
 // ListAllBusinesses fetches all businesses in the system
 func ListAllBusinesses(ctx context.Context) ([]*models.Business, error) {
 	db := config.DB
-	rows, err := db.Query(ctx, "SELECT id, name, type, created_at, updated_at FROM businesses ORDER BY name ASC")
+	rows, err := db.Query(ctx, "SELECT id, name, type, has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, created_at, updated_at FROM businesses ORDER BY name ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +412,7 @@ func ListAllBusinesses(ctx context.Context) ([]*models.Business, error) {
 	var list []*models.Business
 	for rows.Next() {
 		var b models.Business
-		err = rows.Scan(&b.ID, &b.Name, &b.Type, &b.CreatedAt, &b.UpdatedAt)
+		err = rows.Scan(&b.ID, &b.Name, &b.Type, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.CreatedAt, &b.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -299,3 +441,44 @@ func ListAllOutlets(ctx context.Context) ([]*models.Outlet, error) {
 	}
 	return list, nil
 }
+
+// LogSecurityEvent records a sensitive security or authorization event
+func LogSecurityEvent(ctx context.Context, actorID *uuid.UUID, actorName, actorRole, action, targetType string, targetID *string, details map[string]interface{}, ipAddress, userAgent *string) error {
+	db := config.DB
+	if db == nil {
+		return nil
+	}
+
+	_, err := db.Exec(ctx, `
+		INSERT INTO security_audit_logs (id, actor_id, actor_name, actor_role, action, target_type, target_id, details, ip_address, user_agent, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+	`, uuid.New(), actorID, actorName, actorRole, action, targetType, targetID, details, ipAddress, userAgent)
+	return err
+}
+
+// ListSecurityAuditLogs retrieves recent security and system audit logs
+func ListSecurityAuditLogs(ctx context.Context) ([]*models.SecurityAuditLog, error) {
+	db := config.DB
+	rows, err := db.Query(ctx, `
+		SELECT id, actor_id, actor_name, actor_role, action, target_type, target_id, details, ip_address, user_agent, created_at
+		FROM security_audit_logs
+		ORDER BY created_at DESC
+		LIMIT 200
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []*models.SecurityAuditLog
+	for rows.Next() {
+		var l models.SecurityAuditLog
+		err := rows.Scan(&l.ID, &l.ActorID, &l.ActorName, &l.ActorRole, &l.Action, &l.TargetType, &l.TargetID, &l.Details, &l.IPAddress, &l.UserAgent, &l.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, &l)
+	}
+	return logs, nil
+}
+

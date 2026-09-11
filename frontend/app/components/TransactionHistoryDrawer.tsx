@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { api } from "../lib/api";
 import { useAuthStore } from "../lib/store";
 import { useLanguageStore, translations } from "../lib/i18n";
+import { ErpSearchBar } from "./ErpSearchBar";
 import {
   Drawer,
   DrawerContent,
@@ -219,16 +220,12 @@ export default function TransactionHistoryDrawer({
 
           {/* Filter & Search Bar */}
           <div className="py-3 space-y-2 border-b border-slate-200/60 dark:border-dark-border shrink-0">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder={t.posSearchTxPlaceholder}
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-[#26262A] border border-slate-200 dark:border-dark-border focus:outline-none focus:ring-1 focus:ring-purple-500 dark:focus:ring-primary"
-              />
-            </div>
+            <ErpSearchBar
+              value={searchFilter}
+              onChange={setSearchFilter}
+              placeholder={t.posSearchTxPlaceholder}
+              size="sm"
+            />
 
             <div className="flex gap-1.5">
               {[

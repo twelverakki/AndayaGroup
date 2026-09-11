@@ -36,13 +36,15 @@ export default function Home() {
   }, [isAuthenticated, setSession, navigate]);
 
   if (checkingAuth) {
-    // Premium loading splash screen (One UI smooth design)
+    // Premium loading splash screen
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center text-foreground">
-        <div className="w-16 h-16 rounded-pill bg-primary animate-pulse flex items-center justify-center mb-4 shadow-md text-primary-foreground">
-          <span className="font-semibold text-xl">A</span>
-        </div>
-        <p className="text-sm font-semibold text-muted-foreground tracking-wide animate-pulse">
+        <img
+          src="/icon-192.png"
+          alt="Andaya"
+          className="w-16 h-16 object-contain rounded-2xl shadow-lg mb-4 animate-pulse"
+        />
+        <p className="text-xs font-semibold text-muted-foreground tracking-wide animate-pulse">
           Memuat Workspace Anda...
         </p>
       </div>

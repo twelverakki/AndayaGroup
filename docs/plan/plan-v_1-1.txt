@@ -1,0 +1,109 @@
+================================================================================
+REFACTORING PLAN V-1.1: UNIFIED ITEM MASTER & DOMAIN MODULARIZATION
+Target: Andaya Group Multi-Tenant Lean ERP
+Lead TPM: Jems | Executing Agent: Antigravity
+Timestamp: 2026-09-01 WITA
+================================================================================
+
+PRINSIP EKSEKUSI:
+1. Strangler Fig Pattern: Refactoring dilakukan secara bertahap tanpa merusak 
+   route dan handler eksisting.
+2. Direct 3NF Normalization: Migrasi stok dari `products` & `ingredients` ke 
+   `item_stocks` (`qty_sealed` & `qty_loose`) + `stock_movements`.
+3. Strict GEMINI.md Compliance: Struktur folder frontend WAJIB murni berbasis 
+   Domain Capability (Rule #9) & No Sugarcoating (Rule #11).
+
+--------------------------------------------------------------------------------
+PHASE 0: DATABASE MIGRATION EXECUTION (PRASYARAT UTAMA)
+--------------------------------------------------------------------------------
+Eksekusi berkas migrasi SQL [plan_database.txt](file:///D:/laragon/www/Andaya-Group/AndayaGroup/plan_database.txt) ke PostgreSQL database `andaya_group`:
+
+1. Eksekusi Skema Tabel Baru:
+   - Master Unified Items: `items` (Tipe: `finished_good`, `raw_material`, `consumable`, `fixed_tool`).
+   - Saldo Stok Ternormalisasi: `item_stocks` (`qty_sealed`, `qty_loose`, `held_by_user_id`).
+   - Ledger Audit Trail: `stock_movements`.
+   - Header-Detail Rekonsiliasi Kas: `daily_settlements` (Header) & `daily_settlement_items` (Detail).
+   - Partial Indexes: `unique_outlet_general_stock` & `unique_outlet_user_stock`.
+
+2. Migrasi Data Eksisting:
+   - Map `products` & `ingredients` lama ke `items`.
+   - Map `current_stock` & `stock_batches` lama ke `item_stocks`.
+   - Map transaction detail FKs.
+
+--------------------------------------------------------------------------------
+PHASE 1: BACKEND REFACTORING (GO FIBER V2)
+--------------------------------------------------------------------------------
+Memecah monolit backend Go `modules/bakso/` menjadi modul-modul domain agnostik bisnis:
+
+1. Update Struct DTO di `internal/models/models.go`:
+   - Tambahkan struct `Item`, `ItemStock`, `StockMovement`.
+   - Tambahkan struct `DailySettlement` (Header) & `DailySettlementItem` (Detail).
+   - Tambahkan `ClientUUID` di seluruh struct transaksi/settlement.
+
+2. Modul Produksi (`internal/modules/production/`):
+   - Endpoint `POST /api/v1/productions` (Mencatat batch hasil produksi pack beku + snapshot HPP `total_material_cost` & `hpp_per_unit`).
+   - Database transaction atomic insert `productions`, `production_expenses`, dan `stock_movements` (`movement_type = 'production_in'`).
+
+3. Modul Logistik (`internal/modules/logistics/`):
+PHASE 0: DATABASE SCHEMA & SEED MIGRATION (✅ SELESAI DIEKSEKUSI)
+--------------------------------------------------------------------------------
+Eksekusi DDL plan_database.txt ke PostgreSQL database andaya_group.
+
+--------------------------------------------------------------------------------
+PHASE 1: BACKEND REFACTORING (GO + FIBER) (✅ SELESAI DIEKSEKUSI)
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+PHASE 2: FRONTEND REFACTORING (REACT + VITE + TAILWIND) (✅ SELESAI DIEKSEKUSI)
+--------------------------------------------------------------------------------
+Membongkar monolit 1.494 baris `fnb-module.tsx` ke dalam struktur Domain Capability modular 
+di `frontend/app/features/` (Aturan Mutlak #9 GEMINI.md):
+
+Struktur Modular Baru:
+frontend/app/features/
+├── items/                             <-- Master Catalog Domain
+│   ├── item-list-module.tsx
+│   └── item-form-modal.tsx            (Multi-UOM Box & Base Unit Converter)
+│
+├── inventory/                         <-- Stock Balance & Unpacking Domain
+│   ├── inventory-list-module.tsx      (Format Dual-Unit: 9 Dus + 25 Pcs)
+│   ├── unpack-modal.tsx               (Tombol [ Buka 1 Kardus ke Etalase ])
+│   └── stock-movement-ledger.tsx      (Tabel Audit Trail Log)
+│
+├── procurement/                       <-- Purchasing & Debt Domain
+│   ├── procurement-list-module.tsx
+│   └── procurement-form-module.tsx   (Auto Purchase UOM Converter: Input Kardus @ Rp)
+│
+├── pos/                               <-- Retail & F&B Checkout Domain
+│   ├── pos-retail-module.tsx
+│   └── pos-cart-bottom-sheet.tsx
+│
+├── distribution/                      <-- Logistics & Thawing Domain
+│   ├── logistics-shipment-module.tsx  (Outbound/Return & Handshake [ Terima Barang ])
+│   ├── thaw-action-modal.tsx          (Konversi Pack Beku -> Pcs Matang)
+│   └── morning-qc-modal.tsx           (Input Status QC Pagi)
+│
+└── settlement/                        <-- Daily Closing & Revenue Settlement Domain
+    ├── settlement-list-module.tsx     (Rekap Setoran Gerobak & Variance Kas)
+    ├── settlement-form-modal.tsx      (Header-Detail Input Closing Malam)
+    └── direct-sale-modal.tsx          (Penjualan Direct Frozen Pack Gudang)
+
+--------------------------------------------------------------------------------
+PHASE 3: VERIFIKASI BACKWARD COMPATIBILITY & CROSS-TENANT ISOLATION (✅ SELESAI DIEKSEKUSI)
+--------------------------------------------------------------------------------
+1. Automated Test Suite Domain Modular (Lolos 100%):
+   - `items_test.go`: Tenant isolation, categories & wastage log scoping (PASS).
+   - `production_test.go`: Tenant isolation, atomic raw material deduction, HPP snapshot (PASS).
+   - `logistics_test.go`: Warehouse outbound shipment, handshake receive, thawing conversion (PASS).
+   - `settlements_test.go`: Daily closing variance, idempotency client_uuid, unified direct sales (PASS).
+   - `integration_test.go`: POS checkout dry vs wet, manager PIN void override, blind count opname (PASS).
+2. Uji Isolasi Cross-Tenant (`TESTING_STANDARDS.md`):
+   - Query `items`, `item_stocks`, `stock_movements`, `productions`, `distributions`, dan `daily_settlements`
+     terisolasi ketat via `business_id` / `outlet_id` dari JWT Context (Exit Code 0).
+3. Kompilasi & Penjaminan Kualitas:
+   - Go Test Suite: `go test -count=1 -v ./internal/modules/...` (Lolos 100%, Exit Code 0).
+   - Go Vet: `go vet ./...` (Lolos 100%, Exit Code 0).
+   - TypeScript Engine: `npx tsc --noEmit` (Lolos 100%, Exit Code 0).
+
+================================================================================
+Dokumen plan-v_1-1.txt resmi diperbarui — Seluruh Fase 0 s/d Fase 3 Selesai & Terverifikasi.

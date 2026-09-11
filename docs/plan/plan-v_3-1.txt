@@ -1,0 +1,93 @@
+﻿================================================================================
+MASTER EXECUTION PLAN V-3.1: SUPERADMIN DOMAIN & SUBMENU MODULARIZATION
+Target: Andaya Group Multi-Tenant Lean ERP
+Lead Architect: Kennan | Executing Agent: Antigravity
+Timestamp: 11 September 2026 (WITA)
+================================================================================
+
+PRINSIP ARSITEKTUR:
+1. Pure Submenu Modularization: Memekarkan modul organization menjadi 4 rute/halaman
+   mandiri di Sidebar untuk mengisolasi query database, paginasi, dan state DOM.
+2. Shadcn-First Everywhere: Seluruh elemen form (Input, Label, Button, Dropdown Select, 
+   Card, Dialog, Badge, dan InputOTP 6-digit) menggunakan komponen Shadcn UI resmi.
+3. Strict Multi-Tenant Scoping & Immutability: Superadmin dapat mengelola lintas 4 bisnis 
+   holding secara holistik tanpa pernah menghapus data transaksi/user (soft status only).
+4. Bilingual & Line Icons Only: Seluruh teks UI terdaftar di i18n.ts (ID/EN) dan 
+   sepenuhnya menggunakan Lucide icons.
+
+--------------------------------------------------------------------------------
+SUBMENU BREAKDOWN FOR SUPERADMIN & OWNER
+--------------------------------------------------------------------------------
+
+Menu Induk: Organisasi & Pengguna (organization)
+
+1. Submenu 1: Pengguna & Staff (/organization/staff)
+   - Target DB: users, outlet_staff, business_owners, manager_pins
+   - Fitur:
+     * Master tabel pengguna: Nama, Email Gmail (@gmail.com), Role, Unit Bisnis, Outlet, Status.
+     * Floating capsule header & tombol pagination bulat.
+     * Filter: Berdasarkan Unit Bisnis (Holding filter) & Role (Owner, Manager, Staff, Admin Gudang).
+     * Modal Tambah Pengguna Baru (Password mode & PIN Kasir mode).
+     * Modal Fast Reset PIN Kasir 6-digit via <InputOTP>.
+     * Quick Action: Ubah status (Active / Inactive / Suspended).
+
+2. Submenu 2: Unit Bisnis & Capability (/organization/businesses)
+   - Target DB: businesses
+   - Fitur:
+     * Master kartu/tabel 4 unit bisnis (JnA Mart, Bakso Kang Gemoy, Yasaka, Gorengan).
+     * Modal Tambah / Edit Unit Bisnis.
+     * Toggle Capability Flags (The Lean Odoo Way):
+       - has_pos (Aktivasi POS Barcode / Fast Grid)
+       - has_manufacturing (Aktivasi BOM Resep & Batch Dapur)
+       - has_logistics_hub (Aktivasi Pengiriman Antar-Gudang)
+       - has_eod_usage (Aktivasi Lembar EOD Kasir)
+
+3. Submenu 3: Cabang & Outlet (/organization/outlets)
+   - Target DB: outlets, businesses
+   - Fitur:
+     * Master daftar cabang/outlet fisik seluruh unit bisnis holding.
+     * Informasi: Nama Outlet, Unit Bisnis Induk, Alamat, Jumlah Staff Terdaftar.
+     * Modal Tambah Outlet Baru & Edit Outlet.
+     * Penugasan Penanggung Jawab Outlet (Manager Assignment).
+
+4. Submenu 4: Jejak Audit & Otorisasi (/organization/audit-logs)
+   - Target DB: override_logs, audit_logs
+   - Fitur:
+     * Riwayat otorisasi Manager PIN Override (Void transaksi kasir, approval opname/wastage).
+     * Filter rentang tanggal, cabang outlet, dan jenis otorisasi.
+     * Informasi audit trail lengkap untuk investigasi anti-fraud.
+
+--------------------------------------------------------------------------------
+TAHAPAN EKSEKUSI (STEP-BY-STEP)
+--------------------------------------------------------------------------------
+
+LANGKAH 1: NAVIGASI & ROUTING FRONTEND
+1. Update frontend/app/config/navigation.ts:
+   - Konfigurasi organization dengan 4 sub-item:
+     * organization-staff -> Pengguna & Staff
+     * organization-businesses -> Unit Bisnis & Modul
+     * organization-outlets -> Cabang & Outlet
+     * organization-audit-logs -> Jejak Audit Otorisasi
+2. Update frontend/app/lib/i18n.ts dengan key terjemahan bilingual baru.
+
+LANGKAH 2: IMPLEMENTASI FITUR MODULAR FRONTEND
+1. Pecah features/organization/ menjadi sub-modul terstruktur:
+   - features/organization/staff-management-view.tsx
+   - features/organization/business-capabilities-view.tsx
+   - features/organization/outlet-management-view.tsx
+   - features/organization/audit-logs-view.tsx
+2. Update features/organization/organization-module.tsx sebagai modular router/container.
+3. Hubungkan pemanggilan sub-modul ke desktop-shell.tsx dan mobile-shell.tsx.
+
+LANGKAH 3: BACKEND API ENDPOINTS & LOGIC (GO FIBER V2)
+1. Periksa dan lengkapi endpoint backend di internal/modules/organization/:
+   - GET /api/v1/organization/staff & POST /api/v1/organization/staff
+   - PUT /api/v1/organization/staff/:id & POST /api/v1/organization/staff/:id/reset-pin
+   - GET /api/v1/organization/businesses & PUT /api/v1/organization/businesses/:id/capabilities
+   - GET /api/v1/organization/outlets & POST /api/v1/organization/outlets
+   - GET /api/v1/organization/audit-logs (Override logs query)
+
+LANGKAH 4: QUALITY ASSURANCE & VERIFIKASI
+1. go vet ./... dan go test ./internal/modules/...
+2. npx tsc --noEmit (Zero TypeScript errors)
+3. Verifikasi interaksi visual: pencarian keyboard shortcut /, validasi Gmail, input OTP PIN kasir, dan dark/light mode toggle.

@@ -114,10 +114,13 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 	db := config.DB
 	workspaces := []*Workspace{}
 
-	// Check if user is superadmin
+	// Check if user is superadmin (Strict check by email)
 	var email string
 	err := db.QueryRow(ctx, "SELECT phone_or_email FROM users WHERE id = $1", userID).Scan(&email)
-	if err == nil && email == "superadmin@andaya.com" {
+
+	isSuperAdmin := err == nil && (email == "superadmin@andaya.com" || email == "admin@andaya.com")
+
+	if isSuperAdmin {
 		workspaces = append(workspaces, &Workspace{
 			BusinessName: "Superadmin Control Center",
 			Role:         "superadmin",
@@ -143,7 +146,7 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 			bRows.Close()
 		}
 
-		// Fetch all outlets as manager role
+		// Fetch all outlets with manager, staff, and admin_gudang roles for Superadmin impersonation
 		oRows, err := db.Query(ctx, `
 			SELECT o.id, o.name, o.business_id, b.name, b.type 
 			FROM outlets o
@@ -151,24 +154,45 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 		`)
 		if err == nil {
 			for oRows.Next() {
-				var ws Workspace
 				var oID uuid.UUID
 				var oName string
 				var bID uuid.UUID
 				var bName string
 				var bType models.BusinessType
 				if err := oRows.Scan(&oID, &oName, &bID, &bName, &bType); err == nil {
-					ws.OutletID = &oID
-					ws.OutletName = oName
-					ws.BusinessID = &bID
-					ws.BusinessName = bName
-					ws.Role = "manager"
-					ws.BusinessType = bType
-					workspaces = append(workspaces, &ws)
+					workspaces = append(workspaces, &Workspace{
+						OutletID:     &oID,
+						OutletName:   oName,
+						BusinessID:   &bID,
+						BusinessName: bName,
+						Role:         "manager",
+						BusinessType: bType,
+					})
+					workspaces = append(workspaces, &Workspace{
+						OutletID:     &oID,
+						OutletName:   oName,
+						BusinessID:   &bID,
+						BusinessName: bName,
+						Role:         "staff",
+						BusinessType: bType,
+					})
+					if bType == "fnb_production" {
+						workspaces = append(workspaces, &Workspace{
+							OutletID:     &oID,
+							OutletName:   oName,
+							BusinessID:   &bID,
+							BusinessName: bName,
+							Role:         "admin_gudang",
+							BusinessType: bType,
+						})
+					}
 				}
 			}
 			oRows.Close()
 		}
+
+		// Return superadmin workspaces list directly to avoid duplicate owner queries
+		return workspaces, nil
 	}
 
 	// 1. Fetch Owner businesses (many-to-many business_owners)
@@ -233,7 +257,7 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 		FROM outlet_staff os
 		JOIN outlets o ON os.outlet_id = o.id
 		JOIN businesses b ON o.business_id = b.id
-		WHERE os.user_id = $1 AND os.status = 'active'
+		WHERE os.user_id = $1 AND (os.status = 'active' OR os.status IS NULL)
 	`, userID)
 	if err != nil {
 		return nil, err

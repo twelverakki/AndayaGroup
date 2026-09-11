@@ -1,0 +1,3 @@
+@echo off
+echo Starting Andaya ERP Go Backend with Air (Live Hot-Reload)...
+"C:\Users\MyBook Z Series\go\bin\air.exe"

@@ -191,6 +191,31 @@ body {
 	}
 }
 
+/* ================= GLOBAL SEMANTIC TYPOGRAPHY UTILITIES ================= */
+@utility font-page-title {
+	font-weight: 500;
+	font-size: 1.5rem;
+	line-height: 2rem;
+}
+@utility font-section-title {
+	font-weight: 500;
+	font-size: 1.125rem;
+	line-height: 1.75rem;
+}
+@utility font-body-text {
+	font-weight: 400;
+	font-size: 0.875rem;
+	line-height: 1.25rem;
+}
+@utility font-meta-label {
+	font-weight: 600;
+	font-size: 0.6875rem;
+	line-height: 1rem;
+}
+@utility font-highlight {
+	font-weight: 600;
+}
+
 /* ================= SHADCN SONNER TOAST STYLING ================= */
 [data-sonner-toaster] {
 	font-family: inherit;

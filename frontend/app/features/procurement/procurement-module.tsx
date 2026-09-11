@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { ErpDataTable } from "../../components/ErpDataTable";
+import { ErpSearchBar } from "../../components/ErpSearchBar";
+import { DatePicker } from "../../components/ui/date-picker";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import {
@@ -156,6 +158,14 @@ export default function ProcurementModule({
     else setInternalView("new");
   };
 
+  useEffect(() => {
+    const handleMobileAdd = () => {
+      handleTriggerAdd();
+    };
+    window.addEventListener("trigger_mobile_add", handleMobileAdd);
+    return () => window.removeEventListener("trigger_mobile_add", handleMobileAdd);
+  }, [onNavigate]);
+
   const handleFormBack = () => {
     if (onCancel) onCancel();
     setInternalView("history");
@@ -251,8 +261,10 @@ export default function ProcurementModule({
         api.get("/procurements"),
         api.get("/products"),
       ]);
-      setProcurements(procRes.data || []);
-      setProducts(prodRes.data || []);
+      const procList = Array.isArray(procRes.data) ? procRes.data : (procRes.data?.data || []);
+      const prodList = Array.isArray(prodRes.data) ? prodRes.data : (prodRes.data?.data || []);
+      setProcurements(Array.isArray(procList) ? procList : []);
+      setProducts(Array.isArray(prodList) ? prodList : []);
     } catch (err: any) {
       toast.error(t.errorFetchProcurements);
     } finally {
@@ -526,24 +538,20 @@ export default function ProcurementModule({
                   {/* Tanggal Pengadaan */}
                   <div>
                     <label className={labelClass}>{t.procurementDateLabel} *</label>
-                    <input
-                      type="date"
+                    <DatePicker
                       value={procurementDate}
-                      onChange={(e) => setProcurementDate(e.target.value)}
-                      className={inputClass}
-                      required
+                      onChange={(val) => setProcurementDate(val)}
+                      className="w-full h-11 px-4 text-xs font-semibold rounded-2xl"
                     />
                   </div>
 
                   {/* Tanggal Jatuh Tempo */}
                   <div>
                     <label className={labelClass}>{t.dueDateLabel} {paymentStatus !== "paid" ? "*" : "(Opsional)"}</label>
-                    <input
-                      type="date"
+                    <DatePicker
                       value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
-                      className={inputClass}
-                      required={paymentStatus !== "paid"}
+                      onChange={(val) => setDueDate(val)}
+                      className="w-full h-11 px-4 text-xs font-semibold rounded-2xl"
                     />
                   </div>
                 </div>
@@ -828,96 +836,6 @@ export default function ProcurementModule({
   // =========================================================================
   return (
     <div className="space-y-6 text-left relative">
-      
-      {/* ── DYNAMIC FLOATING HEADER BAR (SYNCHRONIZED SEARCH) ── */}
-      {!isScrolled && (
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
-          className="fixed top-3 right-3 z-40 p-2 text-slate-800 dark:text-slate-100 drop-shadow-md hover:opacity-80 active:scale-95 transition-all cursor-pointer"
-          title="Menu Navigasi"
-          aria-label="Open Navigation Menu"
-        >
-          <Menu className="w-6 h-6 stroke-[2.5]" />
-        </button>
-      )}
-
-      {isScrolled && !isSearchActive && (
-        <>
-          <button
-            type="button"
-            onClick={() => setIsSearchExpanded(true)}
-            className="fixed top-3 left-3 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer animate-in slide-in-from-left-4 duration-300"
-            title="Cari Faktur Pengadaan"
-            aria-label="Open Floating Search"
-          >
-            <Search className="w-5 h-5 stroke-[2.5]" />
-          </button>
-
-          <div className="fixed top-3 right-3 z-40 backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white rounded-full p-1.5 px-2.5 border border-white/20 shadow-xl flex items-center gap-1.5 transition-all duration-300 animate-in fade-in zoom-in-95">
-            {isManagerOrOwner && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleTriggerAdd}
-                  className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
-                  title="Tambah Pengadaan Baru"
-                  aria-label="New Procurement"
-                >
-                  <Plus className="w-5 h-5 stroke-[2.5]" />
-                </button>
-                <div className="w-px h-4 bg-white/25" />
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
-              className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
-              title="Menu Navigasi"
-              aria-label="Open Navigation Menu"
-            >
-              <Menu className="w-5 h-5 stroke-[2.5]" />
-            </button>
-          </div>
-        </>
-      )}
-
-      {isScrolled && isSearchActive && (
-        <>
-          <div className="fixed top-3 left-3 right-16 z-50 backdrop-blur-xl bg-white/95 dark:bg-[#202024]/95 text-slate-900 dark:text-slate-100 rounded-full border border-slate-300/80 dark:border-[#38383C] shadow-2xl px-3.5 py-1.5 flex items-center gap-2.5 transition-all duration-300 animate-in fade-in slide-in-from-left-2">
-            <Search className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.5]" />
-            <input
-              autoFocus
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari nama supplier, ID faktur..."
-              className="w-full bg-transparent text-xs font-semibold focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery("");
-                setIsSearchExpanded(false);
-              }}
-              className="p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer shrink-0"
-              title="Tutup & Reset Pencarian"
-            >
-              <X className="w-4 h-4 stroke-[2.5]" />
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
-            className="fixed top-3 right-3 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer"
-            title="Menu Navigasi"
-            aria-label="Open Navigation Menu"
-          >
-            <Menu className="w-5 h-5 stroke-[2.5]" />
-          </button>
-        </>
-      )}
 
       {/* ── HEADER TITLE & ACTIONS ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800 pb-4">
@@ -1027,31 +945,14 @@ export default function ProcurementModule({
 
       {/* ── SEARCH & RICH TOOLBAR CONTROLS ── */}
       <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
-        {/* Search Input Bar */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-4 top-3 w-4 h-4 text-slate-400" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari nama supplier atau ID faktur..."
-            className="w-full pl-10 pr-10 py-2.5 rounded-full bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-dark-border text-slate-800 dark:text-slate-100 placeholder-slate-400 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-slate-400/20 transition-all shadow-xs"
-          />
-          {searchQuery ? (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3.5 top-3 p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            <kbd className="absolute right-3.5 top-3 hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-md pointer-events-none">
-              /
-            </kbd>
-          )}
-        </div>
+        {/* Unified ErpSearchBar */}
+        <ErpSearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Cari nama supplier atau ID faktur..."
+          inputRef={searchInputRef}
+          className="flex-1 min-w-[200px]"
+        />
 
         {/* Sort Dropdown Button (Shadcn UI) */}
         <DropdownMenu>

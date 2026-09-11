@@ -11,24 +11,39 @@ Multi-tenant lean ERP (POS + Inventory + Procurement + Opname + Analytics) untuk
 3. **Yasaka Fried Chicken** (F&B franchise, multi-cabang, Fast Grid & Retail hybrid)
 4. **Gorengan Andalan** (F&B personal brand, Fast Grid sederhana)
 
+### 🏆 Benchmarking ke Odoo (The Lean Odoo Way)
+Di Odoo, seluruh jenis bisnis (Retail, Restoran Dine-In, Fast Food, Takeaway, Bengkel, Pabrik) menggunakan **1 Core App / Framework yang SAMA**. Odoo tidak pernah membuat aplikasi berbeda untuk tiap industri. 
+Dalam lingkup Retail, F&B, dan Fast Food / Takeaway, 1 aplikasi menangani seluruh variasi tersebut dengan prinsip:
+1. **Single Master Engine**: 1 Master Item (`items`), 1 Double-Entry Inventory Ledger (`stock_movements`), 1 Transaction Sales Ledger (`transactions`).
+2. **Dynamic Capability & Layout Flags**:
+   * **Retail (JnA Mart)**: Mode POS Scan Barcode, Dual-UOM (Dus + Pcs), harga beli supplier sebagai HPP modal dasar.
+   * **F&B Restoran / Dine-In**: Mengaktifkan table management, kitchen routing, dan split bill.
+   * **Fast Food / Street Cart / Takeaway (Bakso Gemoy, Yasaka, Gorengan)**: Mode POS Fast Touch Grid (1-Tap checkout), tanpa meja dine-in, didukung formula batch BOM dapur (`productions`) atau lembar konsumsi bahan akhir hari (`eod_material_usages`).
+3. **Zero Hardcoded Business Logic**: Semua unit bisnis baru di masa depan cukup mengaktifkan/menonaktifkan *capability flags* (`has_pos`, `has_manufacturing`, `has_logistics_hub`, `has_eod_usage`) tanpa menambah kode/aplikasi baru.
+
 Dibangun sebagai PWA installable dengan dukungan offline dan responsif terhadap 2 *form factor*:
 * **Mobile Shell** (App-in-app ala Gojek)
 * **Desktop Shell** (Multi-pane ala Samsung DeX)
 
 ---
 
-## 2. Peta Dokumen & Spesifikasi (`AndayaGroup/`)
-Gunakan berkas spesifikasi di folder [AndayaGroup/](file:///D:/laragon/www/Andaya-Group/AndayaGroup) untuk detail mendalam:
+## 2. Peta Dokumen & Spesifikasi (`docs/`)
+Gunakan berkas spesifikasi di folder [docs/](file:///D:/laragon/www/Andaya-Group/docs) untuk detail mendalam:
 
 | Topik | File Referensi | Keterangan |
 |---|---|---|
-| **Kebutuhan Bisnis & Scope** | [PRD.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/PRD.md) | Requirement operasional 4 bisnis & arsitektur besar. |
-| **Design System & Shell** | [DESIGN_SYSTEM.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/DESIGN_SYSTEM.md) | Token visual (#CCF657 / #3F73F7, radius 28px/16px), komposisi shell. |
-| **Hak Akses & Otorisasi** | [RBAC.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/RBAC.md) | Role Owner, Manager, Kasir, mekanisme approval. |
-| **Struktur Database** | [DATA_MODEL.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/DATA_MODEL.md) | Skema tabel multi-tenant, foreign keys, indeks, audit log. |
-| **Log Keputusan Final** | [DECISIONS_LOG.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/DECISIONS_LOG.md) | Rekam jejak keputusan arsitektur (D-01 s/d D-22). |
-| **Roadmap & Milestone** | [ROADMAP.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/ROADMAP.md) | Indeks Fase 1 (Selesai) s/d Fase 5 (Analytics). |
-| **Standar Pengujian** | [TESTING_STANDARDS.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/TESTING_STANDARDS.md) | Checklist DoD & uji isolasi tenant. |
+| **Kebutuhan Bisnis & Scope** | [PRD.md](file:///D:/laragon/www/Andaya-Group/docs/PRD.md) | Requirement operasional 4 bisnis & arsitektur besar. |
+| **Blueprint Arsitektur Sistem** | [ARCHITECTURE.md](file:///D:/laragon/www/Andaya-Group/docs/ARCHITECTURE.md) | Blueprint arsitektur domain-driven modular (5 layer stack). |
+| **Spesifikasi Menu & CRUD UI** | [UI_MENU_SPECIFICATION.md](file:///D:/laragon/www/Andaya-Group/docs/UI_MENU_SPECIFICATION.md) | Pohon hierarki menu, modal, CRUD, & alur page. |
+| **Design System & Shell** | [DESIGN_SYSTEM.md](file:///D:/laragon/www/Andaya-Group/docs/DESIGN_SYSTEM.md) | Token visual (#CCF657 / #3F73F7, radius 28px/16px), komposisi shell. |
+| **Hak Akses & Otorisasi** | [RBAC.md](file:///D:/laragon/www/Andaya-Group/docs/RBAC.md) | Role Owner, Manager, Kasir, mekanisme approval. |
+| **Struktur Database** | [DATA_MODEL.md](file:///D:/laragon/www/Andaya-Group/docs/DATA_MODEL.md) | Skema tabel multi-tenant, foreign keys, indeks, audit log. |
+| **Snapshot Live DB** | [DATABASE_SNAPSHOT.md](file:///D:/laragon/www/Andaya-Group/docs/DATABASE_SNAPSHOT.md) | Snapshot kondisi live database PostgreSQL & jumlah data (`row_count`). |
+| **Evaluasi Versi Kode** | [evaluasi/](file:///D:/laragon/www/Andaya-Group/docs/evaluasi) | Log evaluasi sistem berversi (`eval_v-x-x.txt`). |
+| **Plan Versi Kode** | [plan/](file:///D:/laragon/www/Andaya-Group/docs/plan) | Log rancangan & perbaikan sistem berversi (`plan-v_x-x.txt`). |
+| **Log Keputusan Final** | [DECISIONS_LOG.md](file:///D:/laragon/www/Andaya-Group/docs/DECISIONS_LOG.md) | Rekam jejak keputusan arsitektur (D-01 s/d D-22). |
+| **Roadmap & Milestone** | [ROADMAP.md](file:///D:/laragon/www/Andaya-Group/docs/ROADMAP.md) | Indeks Fase 1 (Selesai) s/d Fase 5 (Analytics). |
+| **Standar Pengujian** | [TESTING_STANDARDS.md](file:///D:/laragon/www/Andaya-Group/docs/TESTING_STANDARDS.md) | Checklist DoD & uji isolasi tenant. |
 
 ---
 
@@ -40,10 +55,41 @@ Gunakan berkas spesifikasi di folder [AndayaGroup/](file:///D:/laragon/www/Anday
    * **Frontend**: React (Vite / React Router) + Tailwind CSS + Shadcn UI
    * *Jangan menambah UI framework lain (MUI, Chakra, dll.) tanpa persetujuan eksplisit.*
 4. **Vertical Slicing**: Selesaikan satu modul secara *end-to-end* (DB → API → UI) sebelum berpindah ke modul lainnya. Jangan mengerjakan banyak modul setengah-setengah secara bersamaan.
-5. **Prasyarat Lolos Fase**: Jangan melangkah ke fase berikutnya sebelum checklist *Definition of Done* di fase berjalan dan [TESTING_STANDARDS.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/TESTING_STANDARDS.md) (terutama uji isolasi cross-tenant) dinyatakan lolos.
-6. **Desain Desktop Shell**: Desktop Shell bukan versi mobile yang di-stretch. Token visual (warna, radius, tipografi) identik di semua shell; perbedaannya hanya pada komposisi layout multi-pane (lihat [DESIGN_SYSTEM.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/DESIGN_SYSTEM.md)).
-7. **Ambiguitas Logika Keuangan**: Jika menemukan ketidakjelasan requirement yang belum tercatat di [DECISIONS_LOG.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/DECISIONS_LOG.md), **berhenti dan tanyakan ke user (Kennan)**. Jangan berasumsi sendiri pada logika yang menyangkut uang, harga, stok, atau wastage.
-8. **Dropdown Harus Shadcn UI**: Setiap dropdown pilihan wajib menggunakan komponen `<Select>` / Dropdown dari Shadcn UI. **Dilarang** menggunakan tag native HTML `<select>` bawaan.
+5. **Prasyarat Lolos Fase**: Jangan melangkah ke fase berikutnya sebelum checklist *Definition of Done* di fase berjalan dan [TESTING_STANDARDS.md](file:///D:/laragon/www/Andaya-Group/docs/TESTING_STANDARDS.md) (terutama uji isolasi cross-tenant) dinyatakan lolos.
+6. **Desain Desktop Shell**: Desktop Shell bukan versi mobile yang di-stretch. Token visual (warna, radius, tipografi) identik di semua shell; perbedaannya hanya pada komposisi layout multi-pane (lihat [DESIGN_SYSTEM.md](file:///D:/laragon/www/Andaya-Group/docs/DESIGN_SYSTEM.md)).
+7. **Ambiguitas Logika Keuangan**: Jika menemukan ketidakjelasan requirement yang belum tercatat di [DECISIONS_LOG.md](file:///D:/laragon/www/Andaya-Group/docs/DECISIONS_LOG.md), **berhenti dan tanyakan ke user (Kennan)**. Jangan berasumsi sendiri pada logika yang menyangkut uang, harga, stok, atau wastage.
+8. **Dropdown & Form Harus Shadcn UI (Shadcn First)**: Setiap elemen form (Input, Label, Button, Dropdown `<Select>`, Switch, dan **`<InputOTP>` untuk PIN Kasir**) WAJIB menggunakan komponen dari Shadcn UI. **Dilarang** menggunakan tag native HTML `<select>` atau input PIN non-Shadcn.
+9. **Struktur Folder Modular Feature**: Seluruh modul pada `frontend/app/features/` WAJIB disusun berdasarkan **Domain Capability** sebagai nama folder tingkat atas, dan **Varian Modul** di dalamnya (contoh: `features/production/fnb-module.tsx`, `features/pos/retail-module.tsx`, `features/pos/fnb-module.tsx`). **Dilarang keras** menggunakan nama brand dagang (seperti `bakso`) atau nama gabungan tidak terstruktur sebagai nama folder tingkat atas.
+10. **Wajib Dukungan Dwi-Bahasa (Bilingual / i18n)**: Seluruh teks UI (label, judul, button, modal, toast message, placeholder, error message) WAJIB dideklarasikan di `frontend/app/lib/i18n.ts` dan mendukung dua bahasa (`id` Indonesia dan `en` Inggris). **Dilarang keras menanam hardcoded string secara langsung di dalam elemen JSX/TSX.**
+11. **Do Not Sugarcoating Ever**: Agent WAJIB menyampaikan masukan, kritik teknis, evaluasi arsitektur, dan feedback secara 100% jujur, obyektif, kritis, to-the-point, dan langsung tanpa pemanisan kata (*no sugarcoating*). Jika ada kelemahan, celah bug, atau desain yang tidak efisien, sampaikan secara terbuka dan lugas.
+12. **Standar Auth & Akun (Gmail & Forgot Password)**:
+    * Akun email pengguna WAJIB menggunakan domain `@gmail.com`.
+    * Form login wajib mendukung mode Password (Owner/Manager/Superadmin) dan mode PIN Kasir 6-digit via `<InputOTP>` (Staff Kasir).
+    * Halaman login wajib memiliki alur **Lupa Password (Forgot Password)** yang terhubung ke email Gmail terdaftar.
+13. **Konsep "Pelajari Selengkapnya" Ala Odoo (Contextual Help on Demand)**:
+    * Mengikuti standar **The Lean Odoo Way**, UI konfigurasi (seperti saklar modular capability flags, mode stok inventori, rule batch thaw, pajak, dsb.) **DILARANG** dipenuhi oleh paragraf penjelasan panjang atau essay yang memakan tempat secara permanen di bawah input/toggle.
+    * Label dan toggle harus tetap ringkas, bersih, dan to-the-point (contoh: label nama fitur + toggle switch).
+    * Penjelasan mendalam (definisi kapabilitas, modul yang terbuka, dampak ke double-entry ledger & stok) WAJIB disematkan secara kontekstual menggunakan icon line Lucide (`HelpCircle` / `Info`) yang membuka Shadcn `<Tooltip>` (untuk intisari 1 kalimat) atau Shadcn `<Popover>` / Drawer *"Pelajari Selengkapnya"* (*Learn More*).
+    * Dengan pendekatan ini, pengguna operasional harian tidak terganggu oleh teks berulang, namun tetap dapat membaca dokumentasi lengkap kapan pun dibutuhkan secara on-demand.
+
+14. **Wajib Pakai Komponen Reusable yang Sudah Dibuat (No Raw Hardcoding)**:
+    * **Dilarang keras menulis ulang atau meng-hardcode markup HTML mentah** jika sudah ada komponen UI standar proyek di `frontend/app/components/`:
+      - **Tabel Data Master**: WAJIB menggunakan `<ErpDataTable<T> />` (bukan tag manual `<table>`). Mendukung toggle visibilitas kolom, header kapsul, dan dual view desktop/mobile otomatis.
+      - **Kolom Pencarian**: WAJIB menggunakan `<ErpSearchBar />` dengan shortcut keyboard `/` otomatis.
+      - **Input Uang / Nominal**: WAJIB menggunakan `<CurrencyInput />` dengan format titik ribuan real-time dan nilai internal `number`.
+      - **Konfirmasi Aksi Bahaya**: WAJIB menggunakan `<ConfirmDialog />` untuk konfirmasi hapus/arsip/status penting.
+      - **Pengaturan Modul**: Gunakan komponen drawer/modal standar (`POSSettingsDrawer`, `TransactionHistoryDrawer`, dll.).
+    * Setiap pembuatan modul baru WAJIB memeriksa daftar komponen yang ada di folder `frontend/app/components/` dan menggunakannya.
+
+15. **Wajib Kontras Warna Teks Terbaca (No Low-Contrast Text)**:
+    * **Dilarang keras** menggunakan teks berwarna terang (seperti lime `#E2FF66` atau `text-primary`) di atas latar belakang terang/putih/abu-abu (`bg-white`, `bg-slate-100`, dll.).
+    * Teks di atas latar belakang terang WAJIB menggunakan warna gelap yang jelas (`text-slate-800`, `text-slate-900`, atau `text-slate-700`).
+    * Warna neon lime (`#E2FF66`) HANYA boleh digunakan sebagai latar belakang tombol solid (`bg-[#E2FF66] text-slate-900 font-bold`) atau teks di atas latar belakang gelap/hitam murni (`dark:text-white` / `dark:bg-slate-900`).
+
+16. **Zero Full-Page Reload & Reactive Local Updates (Optimistic UI)**:
+    * Pada setiap aksi CRUD, submit form drawer, reset PIN, atau toggle switch, aplikasi **DILARANG me-reload seluruh halaman atau mereset posisi scroll pengguna**.
+    * Gunakan pendekatan **Optimistic Update** pada state lokal komponen (seperti `useState` atau mutate store) seketika saat tombol ditekan bersamaan dengan `toast.promise()`.
+    * Data yang di-update di server cukup disinkronkan melalui fetching API granular pada sub-komponen terkait (`loadSubDetails()` atau callback `onUpdated(payload)`), bukan memanggil fungsi fetch master level atas yang memicu loading spinner satu halaman penuh.
 
 ---
 
@@ -63,6 +109,7 @@ Detail lengkap aturan visual dan interaksi dikelola di [.agents/rules/general_ru
   4. **Tombol Pagination Bulat**: Tombol nomor halaman harus bulat sempurna (`w-9 h-9 rounded-full`). Halaman aktif menggunakan warna neon lime (`bg-[#E2FF66] text-[#1a1a1a] font-bold border-none`).
 * **Feedback System (Toast - Wajib)**: Setiap kali aksi penting (seperti menyimpan data, mengubah status, menyalin ID/SKU, melakukan arsip, atau ketika terjadi error/kegagalan sistem) dieksekusi, aplikasi **WAJIB** memanggil `toast` dari Sonner untuk menampilkan status aksi kepada pengguna secara real-time. Gunakan `toast.success()`, `toast.error()`, `toast.info()`, dst. dengan latar belakang netral/bersih (`bg-white dark:bg-[#202024]`). Status sukses/gagal diwakili sepenuhnya oleh icon garis dari Lucide.
 * **Aksi Cepat**: Pada menu baris tabel, selalu sediakan aksi langsung untuk mengubah status operasional (Aktif, Non-aktif, Dihentikan) agar pengguna tidak perlu masuk ke halaman edit detail.
+* **Contextual Help on Demand ("Pelajari Selengkapnya")**: Gunakan icon `HelpCircle` / `Info` dengan popover/tooltip berdesain bersih untuk semua penjelasan fungsional modul, bukan meletakkan teks panjang langsung di form.
 
 ---
 

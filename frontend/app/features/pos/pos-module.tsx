@@ -6,9 +6,10 @@ import {
   Search, Trash2, Barcode, ChevronRight, CreditCard, 
   CheckCircle2, RotateCcw, XCircle, ShoppingCart, 
   Package, ClipboardCheck, FileSpreadsheet, BarChart3, 
-  ChevronDown, GripVertical, History, Printer, AlertCircle, KeyRound
+  ChevronDown, GripVertical, History, Printer, AlertCircle, KeyRound, Menu
 } from "lucide-react";
 import TransactionHistoryDrawer, { type TransactionRecord } from "../../components/TransactionHistoryDrawer";
+import { ErpSearchBar } from "../../components/ErpSearchBar";
 import { useLanguageStore, translations } from "../../lib/i18n";
 import {
   Drawer,
@@ -213,26 +214,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   const fetchProducts = async () => {
     try {
       const res = await api.get("/products?status=active");
-      let productsList = res.data || [];
-
-      if (activeContext?.type === "fnb_production") {
-        try {
-          const batchesRes = await api.get("/bakso/batches");
-          const batches = batchesRes.data || [];
-          productsList = productsList.map((p: any) => {
-            if (p.inventory_mode === "batch_thaw") {
-              const openedQty = batches
-                .filter((b: any) => b.product_id === p.id && b.batch_status === "opened")
-                .reduce((sum: number, b: any) => sum + b.quantity, 0);
-              return { ...p, current_stock: openedQty };
-            }
-            return p;
-          });
-        } catch (err) {
-          console.error("Failed to load stock batches for POS:", err);
-        }
-      }
-
+      const productsList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
       setProducts(productsList);
     } catch (err) {
       console.error("Failed to load products:", err);
@@ -286,16 +268,16 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
     const cat = (product.category || "general").toLowerCase();
     const name = product.name.toLowerCase();
     
-    if (cat.includes("bakso") || name.includes("bakso")) {
+    if (cat.includes("meatball") || cat.includes("soup") || name.includes("kuah") || name.includes("bakso") || name.includes("pentol")) {
       return "https://images.unsplash.com/photo-1596797038530-2c107229654b?w=300&auto=format&fit=crop&q=60";
     }
-    if (cat.includes("chicken") || cat.includes("ayam") || name.includes("ayam")) {
+    if (cat.includes("chicken") || cat.includes("poultry") || name.includes("ayam") || name.includes("crispy")) {
       return "https://images.unsplash.com/photo-1569058242253-92a9c755a0ec?w=300&auto=format&fit=crop&q=60";
     }
-    if (cat.includes("gorengan") || name.includes("gorengan") || name.includes("tempe") || name.includes("bakwan")) {
+    if (cat.includes("snack") || cat.includes("fritter") || name.includes("goreng") || name.includes("tempe") || name.includes("tahu")) {
       return "https://images.unsplash.com/photo-1601050690597-df056fb4ce78?w=300&auto=format&fit=crop&q=60";
     }
-    if (cat.includes("minuman") || cat.includes("teh") || cat.includes("drink") || name.includes("cola") || name.includes("fanta")) {
+    if (cat.includes("drink") || cat.includes("beverage") || name.includes("teh") || name.includes("kopi") || name.includes("cola")) {
       return "https://images.unsplash.com/photo-1497534446932-c925b458314e?w=300&auto=format&fit=crop&q=60";
     }
     if (cat.includes("shirt") || cat.includes("baju") || cat.includes("jeans") || cat.includes("t-shirt")) {
@@ -812,23 +794,14 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
       {/* ================= LEFT SIDE: PRODUCTS GRID ================= */}
       <section className="flex-1 flex flex-col overflow-hidden space-y-3 lg:space-y-5 pb-16 lg:pb-0">
 
-        {/* Search Bar (Rounded Pill design) */}
-        <form onSubmit={handleBarcodeSubmit} className="w-full flex-shrink-0">
-          <div className="relative w-full">
-            <Search className="absolute left-5 top-4 w-4 h-4 text-neutral-dark opacity-65 dark:text-white" />
-            <input
-              ref={barcodeInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`${t.posSearchPlaceholder} ( / )`}
-              className={`w-full pl-12 pr-6 py-3 rounded-full border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-purple/40 focus:border-brand-purple transition-colors ${
-                isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border text-neutral-dark"
-              }`}
-              style={{ minHeight: "48px" }}
-            />
-          </div>
-        </form>
+        {/* Top Header Row: Unified ErpSearchBar + Mobile Menu Button Aligned Side-by-Side */}
+        <ErpSearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          onSubmit={handleBarcodeSubmit}
+          placeholder={t.posSearchPlaceholder}
+          inputRef={barcodeInputRef}
+        />
 
         {/* Global Error & Success Alerts */}
         {error && (
@@ -844,11 +817,11 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           </div>
         )}
 
-        {/* Horizontal Category Pill selector (Mobile & Desktop Optimized) */}
-        <div className="relative flex items-center w-full flex-shrink-0">
+        {/* Horizontal Minimalist Text Category Tabs with Custom Underline */}
+        <div className="relative flex items-center w-full flex-shrink-0 border-b border-slate-200/80 dark:border-[#38383C] pt-1">
           <div 
             ref={categoryRef}
-            className="flex-1 flex space-x-2 overflow-x-auto pb-1 scrollbar-none scroll-smooth"
+            className="flex-1 flex space-x-6 overflow-x-auto scrollbar-none scroll-smooth"
           >
             {categories.map((cat) => {
               const isCatActive = activeCategory === cat;
@@ -859,28 +832,25 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                   key={cat}
                   type="button"
                   onClick={() => setActiveCategory(cat)}
-                  className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition-all duration-200 cursor-pointer shrink-0 ${
+                  className={`relative pb-2.5 pt-1 px-0.5 text-xs sm:text-sm transition-all cursor-pointer shrink-0 flex items-center space-x-2 select-none group ${
                     isCatActive
-                      ? isDarkMode
-                        ? "bg-primary border-primary text-neutral-dark shadow-sm"
-                        : "bg-neutral-dark border-neutral-dark text-white shadow-sm"
-                      : isDarkMode
-                        ? "bg-dark-card-lighter border-dark-border-lighter text-slate-300 hover:bg-white/10"
-                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                      ? "text-slate-900 dark:text-white font-extrabold"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium"
                   }`}
                 >
-                  <span className="truncate max-w-[140px]">{displayLabel}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                  <span className="truncate max-w-[150px]">{displayLabel}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-black transition-colors ${
                     isCatActive
-                      ? isDarkMode
-                        ? "bg-neutral-dark/20 text-neutral-dark"
-                        : "bg-white/20 text-white"
-                      : isDarkMode
-                        ? "bg-white/10 text-slate-400"
-                        : "bg-slate-100 text-slate-500"
+                      ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                      : "bg-slate-100 dark:bg-white/10 text-slate-400 dark:text-slate-500"
                   }`}>
                     {count}
                   </span>
+
+                  {/* Active Custom Underline Indicator (Solid Black in Light Mode / Pure White in Dark Mode) */}
+                  {isCatActive && (
+                    <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-slate-900 dark:bg-white rounded-full transition-all duration-200 shadow-2xs" />
+                  )}
                 </button>
               );
             })}
@@ -891,8 +861,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
             onClick={() => {
               categoryRef.current?.scrollBy({ left: 180, behavior: 'smooth' });
             }}
-            className="h-9 w-6 flex items-center justify-center text-muted-foreground hover:text-foreground hover:scale-110 transition-all shrink-0 cursor-pointer ml-1"
-            title="Scroll categories right"
+            className="hidden sm:flex shrink-0 p-1.5 ml-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+            title="Scroll Kategori"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -1587,55 +1557,57 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
         onReprintReceipt={handleReprintReceipt}
       />
 
-      {/* 6. Mobile Cart Bottom Sheet Drawer (Fixed Bottom Anchored with 80% Expand) */}
-      {cart.length > 0 && (
-        <>
-          {/* Backdrop Overlay when expanded */}
-          {isMobileCartExpanded && (
-            <div
-              onClick={() => setIsMobileCartExpanded(false)}
-              className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
-            />
-          )}
-
-          {/* Bottom Sheet Drawer Container */}
+      {/* 6. Mobile Cart Bottom Sheet Drawer (Fixed Bottom Anchored with 80% Expand, Always Visible on Mobile) */}
+      <>
+        {/* Backdrop Overlay when expanded */}
+        {isMobileCartExpanded && (
           <div
-            onTouchStart={handleCartTouchStart}
-            onTouchEnd={handleCartTouchEnd}
-            className={`lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-[#202024] border-t border-slate-200 dark:border-[#38383C] rounded-t-[28px] shadow-[0_-8px_30px_rgba(0,0,0,0.18)] flex flex-col transition-all duration-300 ease-out overflow-hidden ${
-              isMobileCartExpanded ? "h-[80vh] max-h-[85vh]" : "h-[76px]"
-            }`}
+            onClick={() => setIsMobileCartExpanded(false)}
+            className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          />
+        )}
+
+        {/* Bottom Sheet Drawer Container */}
+        <div
+          onTouchStart={handleCartTouchStart}
+          onTouchEnd={handleCartTouchEnd}
+          className={`lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-[#202024] border-t border-slate-200 dark:border-[#38383C] rounded-t-[28px] shadow-[0_-8px_30px_rgba(0,0,0,0.18)] flex flex-col transition-all duration-300 ease-out overflow-hidden ${
+            isMobileCartExpanded ? "h-[80vh] max-h-[85vh]" : "h-[76px]"
+          }`}
+        >
+          {/* Top Drag Handle Pill */}
+          <div
+            onClick={() => setIsMobileCartExpanded(!isMobileCartExpanded)}
+            className="w-full pt-2.5 pb-1 cursor-pointer flex items-center justify-center shrink-0 touch-none"
           >
-            {/* Top Drag Handle Pill */}
+            <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full" />
+          </div>
+
+          <div className="flex-1 flex flex-col overflow-hidden px-4 pb-4 space-y-3">
+            {/* Peek Header (Visible both when collapsed & expanded) */}
             <div
               onClick={() => setIsMobileCartExpanded(!isMobileCartExpanded)}
-              className="w-full pt-2.5 pb-1 cursor-pointer flex items-center justify-center shrink-0 touch-none"
+              className="flex items-center justify-between cursor-pointer select-none pb-2.5 border-b border-slate-100 dark:border-slate-800/80 shrink-0"
             >
-              <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full" />
-            </div>
-
-            <div className="flex-1 flex flex-col overflow-hidden px-4 pb-4 space-y-3">
-              {/* Peek Header (Visible both when collapsed & expanded) */}
-              <div
-                onClick={() => setIsMobileCartExpanded(!isMobileCartExpanded)}
-                className="flex items-center justify-between cursor-pointer select-none pb-2.5 border-b border-slate-100 dark:border-slate-800/80 shrink-0"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-brand-purple/10 dark:bg-primary/10 flex items-center justify-center font-extrabold text-xs text-brand-purple dark:text-primary shrink-0">
-                    {cart.reduce((sum, item) => sum + item.qty, 0)}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-brand-purple/10 dark:bg-primary/10 flex items-center justify-center font-extrabold text-xs text-brand-purple dark:text-primary shrink-0">
+                  {cart.reduce((sum, item) => sum + item.qty, 0)}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-black text-neutral-dark dark:text-white truncate">
+                    Rp {Math.round(totalAmount).toLocaleString("id-ID")}
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-black text-neutral-dark dark:text-white truncate">
-                      Rp {Math.round(totalAmount).toLocaleString("id-ID")}
-                    </div>
-                    <div className="text-[10px] opacity-75 font-semibold text-slate-500 dark:text-slate-400 truncate">
-                      {cart.reduce((sum, item) => sum + item.qty, 0)} {language === "id" ? "Item Belanjaan" : "Items"} ({cart.length} SKU)
-                    </div>
+                  <div className="text-[10px] opacity-75 font-semibold text-slate-500 dark:text-slate-400 truncate">
+                    {cart.length > 0
+                      ? `${cart.reduce((sum, item) => sum + item.qty, 0)} ${language === "id" ? "Item Belanjaan" : "Items"} (${cart.length} SKU)`
+                      : (language === "id" ? "Keranjang Kosong" : "Empty Cart")}
                   </div>
                 </div>
+              </div>
 
-                {/* Right side: ONLY Reset Cart Button (No Bayar button in peek header!) */}
-                <div className="flex items-center space-x-1.5 shrink-0">
+              {/* Right side: Reset Cart Button (Visible when cart has items) */}
+              <div className="flex items-center space-x-1.5 shrink-0">
+                {cart.length > 0 ? (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -1649,13 +1621,28 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                     <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
                     <span>Reset</span>
                   </button>
-                </div>
+                ) : (
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 px-2.5 py-1 bg-slate-100 dark:bg-white/5 rounded-lg">
+                    {language === "id" ? "Pilih Produk" : "Select Product"}
+                  </span>
+                )}
               </div>
+            </div>
 
-              {/* Expanded Content: Item List & Checkout Action (Only visible when expanded) */}
-              {isMobileCartExpanded && (
-                <>
-                  {/* Item List */}
+            {/* Expanded Content: Item List & Checkout Action (Only visible when expanded) */}
+            {isMobileCartExpanded && (
+              <>
+                {cart.length === 0 ? (
+                  <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center p-6 space-y-2">
+                    <ShoppingCart className="w-12 h-12 text-slate-300 dark:text-slate-600 stroke-[1.5]" />
+                    <p className="font-bold text-sm text-slate-600 dark:text-slate-300">
+                      {language === "id" ? "Keranjang Masih Kosong" : "Cart is Empty"}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {language === "id" ? "Pilih produk di atas untuk menambahkan ke keranjang" : "Select products above to add to cart"}
+                    </p>
+                  </div>
+                ) : (
                   <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5 py-1 scrollbar-thin">
                     {cart.map((item, idx) => (
                       <div
@@ -1694,35 +1681,40 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                       </div>
                     ))}
                   </div>
+                )}
 
-                  {/* Sticky Action Footer */}
-                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5 shrink-0">
-                    <div className="flex items-center justify-between text-sm font-extrabold">
-                      <span>{t.posTotalPayment}</span>
-                      <span className="text-brand-purple dark:text-primary text-base">
-                        Rp {Math.round(totalAmount).toLocaleString("id-ID")}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsMobileCartExpanded(false);
-                        setShowPaymentModal(true);
-                      }}
-                      disabled={cart.length === 0}
-                      className="w-full py-3.5 bg-brand-purple hover:bg-brand-purple-hover text-white dark:bg-primary dark:text-neutral-dark font-extrabold text-sm rounded-2xl shadow-md transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-                    >
-                      <CreditCard className="w-4 h-4 stroke-[2.5]" />
-                      <span>Bayar Sekarang (Rp {Math.round(totalAmount).toLocaleString("id-ID")})</span>
-                    </button>
+                {/* Sticky Action Footer */}
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5 shrink-0">
+                  <div className="flex items-center justify-between text-sm font-extrabold">
+                    <span>{t.posTotalPayment}</span>
+                    <span className="text-brand-purple dark:text-primary text-base">
+                      Rp {Math.round(totalAmount).toLocaleString("id-ID")}
+                    </span>
                   </div>
-                </>
-              )}
-            </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (cart.length === 0) return;
+                      setIsMobileCartExpanded(false);
+                      setShowPaymentModal(true);
+                    }}
+                    disabled={cart.length === 0}
+                    className="w-full py-3.5 bg-brand-purple hover:bg-brand-purple-hover text-white dark:bg-primary dark:text-neutral-dark font-extrabold text-sm rounded-2xl shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <CreditCard className="w-4 h-4 stroke-[2.5]" />
+                    <span>
+                      {cart.length > 0 
+                        ? `Bayar Sekarang (Rp ${Math.round(totalAmount).toLocaleString("id-ID")})` 
+                        : (language === "id" ? "Keranjang Kosong" : "Cart Empty")}
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
-        </>
-      )}
+        </div>
+      </>
 
     </div>
   );

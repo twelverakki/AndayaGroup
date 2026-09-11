@@ -55,11 +55,20 @@ export function ErpDataTable<T>({
     return initialState;
   });
 
+  // Controlled Column Dropdown state (supports hover fade-in & right-click on thead)
+  const [isColumnDropdownOpen, setIsColumnDropdownOpen] = useState(false);
+
   const toggleColumn = (key: string) => {
     setVisibleColumns((prev) => ({
       ...prev,
       [key]: !prev[key],
     }));
+  };
+
+  const handleHeaderContextMenu = (e: React.MouseEvent) => {
+    if (!enableColumnToggle) return;
+    e.preventDefault();
+    setIsColumnDropdownOpen(true);
   };
 
   const activeColumns = initialColumns.filter((col) => visibleColumns[col.key]);
@@ -114,8 +123,12 @@ export function ErpDataTable<T>({
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-separate" style={{ borderSpacing: 0 }}>
-              <thead>
-                <tr className="text-slate-600 dark:text-slate-300 select-none">
+              {/* Header section with Hover Fade-In & Right-Click Context Menu Support */}
+              <thead
+                onContextMenu={handleHeaderContextMenu}
+                className="group/thead text-slate-600 dark:text-slate-300 select-none"
+              >
+                <tr>
                   {activeColumns.map((col, idx) => {
                     const isFirst = idx === 0;
                     const isLast = idx === activeColumns.length - 1;
@@ -129,61 +142,68 @@ export function ErpDataTable<T>({
                     return (
                       <th
                         key={col.key}
-                        className={`py-3.5 px-5 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34] ${alignClass} ${
+                        className={`py-3.5 px-5 text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34] ${alignClass} ${
                           col.width || ""
                         } ${isFirst ? "rounded-l-full" : ""} ${
-                          isLast && !enableColumnToggle ? "rounded-r-full" : ""
+                          isLast ? "rounded-r-full relative" + (enableColumnToggle ? " pr-11" : "") : ""
                         }`}
                       >
                         {col.label}
+
+                        {/* Floating Column Visibility Button inside the last <th> to satisfy HTML DOM nesting rules */}
+                        {isLast && enableColumnToggle && (
+                          <span
+                            className={`absolute right-2.5 top-1/2 -translate-y-1/2 z-20 transition-all duration-200 ${
+                              isColumnDropdownOpen
+                                ? "opacity-100 pointer-events-auto scale-100"
+                                : "opacity-0 pointer-events-none group-hover/thead:opacity-100 group-hover/thead:pointer-events-auto"
+                            }`}
+                          >
+                            <DropdownMenu open={isColumnDropdownOpen} onOpenChange={setIsColumnDropdownOpen}>
+                              <DropdownMenuTrigger
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-md hover:scale-105 transition-all cursor-pointer focus:outline-none"
+                                title="Atur Visibilitas Kolom (Klik Kanan di Header)"
+                              >
+                                <SlidersHorizontal className="w-3.5 h-3.5" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-2xl rounded-2xl p-2 min-w-[200px] space-y-1"
+                              >
+                                <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center justify-between border-b border-slate-100 dark:border-[#333338] mb-1">
+                                  <span>Visibilitas Kolom</span>
+                                  <SlidersHorizontal className="w-3 h-3 text-slate-400" />
+                                </div>
+                                {initialColumns.map((c) => {
+                                  const isChecked = Boolean(visibleColumns[c.key]);
+                                  return (
+                                    <div
+                                      key={c.key}
+                                      onClick={() => toggleColumn(c.key)}
+                                      className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl cursor-pointer transition-colors"
+                                    >
+                                      <span>{c.label}</span>
+                                      <Checkbox
+                                        checked={isChecked}
+                                        onCheckedChange={() => toggleColumn(c.key)}
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </span>
+                        )}
                       </th>
                     );
                   })}
-
-                  {/* Column Toggle Dropdown in Top Right Table Header */}
-                  {enableColumnToggle && (
-                    <th className="py-3 px-4 text-[11px] font-bold uppercase tracking-wider text-right whitespace-nowrap bg-[#E7E9ED] dark:bg-[#2E2E34] rounded-r-full w-12">
-                      <div className="flex items-center justify-end">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/70 dark:bg-black/20 hover:bg-white dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 border border-slate-300/60 dark:border-white/10 shadow-xs transition-all cursor-pointer focus:outline-none"
-                            title="Atur Visibilitas Kolom"
-                          >
-                            <SlidersHorizontal className="w-3.5 h-3.5" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-2xl rounded-2xl p-2 min-w-[200px] space-y-1">
-                            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between border-b border-slate-100 dark:border-[#333338] mb-1">
-                              <span>Visibilitas Kolom</span>
-                              <SlidersHorizontal className="w-3 h-3 text-slate-400" />
-                            </div>
-                            {initialColumns.map((col) => {
-                              const isChecked = Boolean(visibleColumns[col.key]);
-                              return (
-                                <div
-                                  key={col.key}
-                                  onClick={() => toggleColumn(col.key)}
-                                  className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg cursor-pointer transition-colors"
-                                >
-                                  <span>{col.label}</span>
-                                  <Checkbox
-                                    checked={isChecked}
-                                    onCheckedChange={() => toggleColumn(col.key)}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </th>
-                  )}
                 </tr>
               </thead>
               <tbody>
                 {data.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={activeColumns.length + (enableColumnToggle ? 1 : 0)}
+                      colSpan={activeColumns.length}
                       className="text-center py-16 text-slate-400 dark:text-slate-500 font-bold border-b border-slate-200/80 dark:border-dark-border"
                     >
                       {emptyText}
@@ -224,10 +244,6 @@ export function ErpDataTable<T>({
                             </td>
                           );
                         })}
-
-                        {enableColumnToggle && (
-                          <td className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#38383C]" />
-                        )}
                       </tr>
                     );
                   })

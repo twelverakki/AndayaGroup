@@ -37,12 +37,9 @@ Dokumen ini berisi standar dan aturan baku arsitektur UI/UX serta interaksi untu
 
 ## 5. Standar Multi-Bahasa (Bilingual: Indonesia `id` & English `en`)
 - Seluruh teks UI harus dideklarasikan di [`frontend/app/lib/i18n.ts`](file:///D:/laragon/www/Andaya-Group/frontend/app/lib/i18n.ts).
-- Tidak boleh mencampur bahasa secara acak di dalam satu halaman (misalnya sebagian Indonesia, sebagian Inggris).
-- Ambil teks terjemahan secara konsisten menggunakan:
-  ```tsx
-  const { language } = useLanguageStore();
-  const t = translations[language];
-  ```
+- **DILARANG GANDA BAHASA DALAM 1 STRIP/LABEL (NO REDUNDANT DUAL-LANGUAGE TEXT)**:
+  - **Dilarang keras** menggabungkan dua bahasa sekaligus dalam satu label visual (seperti `"Bahan Baku (Raw Materials)"` atau `"Tools & Supplies (Alat & Kemasan)"`).
+  - Karena aplikasi sudah memiliki switcher dwi-bahasa terpusat (`id`/`en`), label wajib ditampilkan secara bersih tunggal sesuai bahasa yang sedang aktif (`"Bahan Baku"` saat mode Bahasa Indonesia `id`, atau `"Raw Materials"` saat mode Bahasa Inggris `en`).
 
 ---
 
@@ -53,6 +50,7 @@ Dokumen ini berisi standar dan aturan baku arsitektur UI/UX serta interaksi untu
   - Opsi radio menggunakan **ShadCN Radio pattern** dengan icon checkmark di sebelah kiri tanpa kotak pembungkus.
 - **Table Column Management**:
   - Gunakan komponen **ShadCN Checkbox** (`<Checkbox checked={...} onCheckedChange={...} />`) di header tabel dan klik-kanan context menu.
+- **Prinsip Font Weight Ringan & Seimbang**: Gunakan `font-normal` atau `font-medium` secara default pada judul modul (`h3`), label kartu, dan tabulasi. **DILARANG** menggunakan `font-bold` / `font-extrabold` / `font-black` secara berlebihan di seluruh elemen. Simpan `font-semibold` / `font-bold` **HANYA** untuk elemen yang sedang di-highlight (seperti tab yang sedang aktif, status terisi, atau angka metrik utama) agar tampilan visual tetap bersih dan elegan.
 - **Palet Warna Gelap**: Menggunakan lapisan abu-abu gelap berlapis (`#202024`, `#232326`, `#2E2E34`, `#38383C`) dengan aksen neon lime/kuning lemon (`#E2FF66` / `#c5ff00`).
 
 ---
@@ -115,10 +113,23 @@ Seluruh tabel data di modul apapun (Inventory, Procurement, Opname, dsb.) **WAJI
    - Klik kiri pada baris membuka modal/dialog detail (*Detail Dialog*).
    - Klik kanan pada baris memunculkan menu konteks (*Custom Context Menu*).
 
-5. **Standar Pagination Tabel**:
-   - Kontrol pagination diletakkan di bawah card tabel dengan tombol nomor halaman melingkar (`w-9 h-9 rounded-full flex items-center justify-center border text-sm font-semibold`).
-   - Halaman aktif menggunakan warna neon lime (`bg-[#E2FF66] text-[#1a1a1a] font-bold border-none`).
-   - Halaman inaktif dan tombol navigasi prev/next (`‹` dan `›`) menggunakan `bg-white dark:bg-[#232326] border-slate-200 dark:border-[#38383C] text-slate-600 dark:text-[#94a3b8]`.
-   - Di sebelah tombol nomor halaman, tampilkan teks info rentang data: `X–Y dari Z item`.
+11. **Konsep "Pelajari Selengkapnya" Ala Odoo (Contextual Help on Demand)**
+- **Prinsip Bebas Paragraf Panjang (Clean Form / Minimalist UI)**:
+  - Pada halaman pengaturan, saklar fitur modular (*capability flags*), mode inventori, pengaturan pajak, shift, dan parameter sistem lainnya, **DILARANG meletakkan deskripsi paragraf panjang secara permanen di bawah label/toggle**.
+  - Form harus padat, intuitif, dan siap dieksekusi dengan cepat.
+12. **Standar Kontras Warna Teks & Tombol (High Contrast UI)**
+- **DILARANG menggunakan teks neon lime (`text-primary` / `#E2FF66`) di atas latar belakang terang** (putih `bg-white`, abu-abu terang `bg-slate-50`, `bg-slate-100`).
+- Teks pada tombol outline atau latar belakang terang wajib menggunakan warna solid yang tajam dan mudah dibaca (`text-slate-900`, `text-slate-800`, `text-slate-700`).
+- Neon Lime (`#E2FF66` / `#c5ff00`) hanya boleh dipakai sebagai latar belakang tombol solid dengan teks hitam pekat (`bg-[#E2FF66] text-slate-900 font-bold`) atau aksen border/icon pada mode gelap (`dark:text-[#E2FF66]`).
+
+---
+
+13. **Optimistic UI & Zero Full-Page Reload**
+- **DILARANG me-reload seluruh halaman atau memicu spinner master atas untuk aksi lokal**:
+  - Saat submit form drawer, reset PIN kasir, mengubah status staf/cabang, atau switch kapabilitas modul, UI harus di-update secara lokal dan optimis seketika (*instant optimistic state update*).
+  - Toast notifikasi `toast.promise` berjalan di latar belakang sembari API sinkronisasi tereksekusi.
+  - Jika diperlukan pembaruan data dari server, panggil fetcher granular spesifik (`loadSubDetails()`) tanpa memicu re-render layout shell atau mereset posisi scroll pengguna.
+
+
 
 

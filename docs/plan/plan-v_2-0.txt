@@ -1,0 +1,83 @@
+================================================================================
+MASTER EXECUTION PLAN V-2.0: THE LEAN ODOO WAY IMPLEMENTATION
+Target: Andaya Group Multi-Tenant Lean ERP
+Lead Architect: Kennan | Executing Agent: Antigravity
+Timestamp: 05 September 2026 (WITA)
+================================================================================
+
+PRINSIP UTAMA:
+1. Strangler Fig Pattern: Penyelarasan dilakukan secara bertahap tanpa merusak 
+   flow yang sudah berjalan (backward-compatible).
+2. Pure Domain Capabilities: Menghilangkan 100% sisa nama merek dagang dari kode,
+   rute API, navigasi, dan state frontend.
+3. First-Class Organization Management: Memberikan hak akses penuh kepada Owner 
+   untuk mengelola kasir/staf, cabang outlet, dan capability flags bisnisnya sendiri.
+
+--------------------------------------------------------------------------------
+PHASE 1: DATABASE SCHEMA & CAPABILITY FLAGS ALIGNMENT (POSTGRESQL) [✅ SELESAI]
+--------------------------------------------------------------------------------
+1. Perluasan Kolom pada Tabel Inti:
+   - `businesses`: Capability flags boolean (`has_pos`, `has_manufacturing`, 
+     `has_logistics_hub`, `has_eod_usage`) -> ✅ SELESAI
+   - `items`: `requires_thaw BOOLEAN DEFAULT FALSE` -> ✅ SELESAI
+   - `transactions`: `channel VARCHAR(30) DEFAULT 'pos_retail'` -> ✅ SELESAI
+   - `distributions`: `shrinkage_tolerance_pct` & `shrinkage_qty` -> ✅ SELESAI
+
+2. Pembuatan Tabel Baru:
+   - `eod_material_usages`: Lembar konsumsi bahan harian akhir shift -> ✅ SELESAI
+
+--------------------------------------------------------------------------------
+PHASE 2: BACKEND DOMAIN REFACTORING & STANDARDIZATION (GO FIBER V2)
+--------------------------------------------------------------------------------
+1. Penyelarasan DTO & Models di `internal/models/models.go`:
+   - Tambahkan struct `EodMaterialUsage` dan field capability pada `Item` & `Business`.
+   - Tambahkan `Channel` pada struct `Transaction` dan `TransactionRequest`.
+   - Sediakan alias standar: `Session`, `StockTransfer`, `Purchase`, dan `Organization`.
+
+2. Modul Produksi (`internal/modules/production/`):
+   - Endpoint `POST /api/v1/productions/eod-usages` untuk kalkulasi konsumsi bahan harian.
+
+3. Modul Organisasi & Staff Tenant (`internal/modules/organization/`):
+   - Endpoint `GET /api/v1/organization/staff` (List kasir & staf di unit bisnis aktif).
+   - Endpoint `POST /api/v1/organization/staff` (Tambah kasir baru + set PIN 6 digit).
+   - Endpoint `PUT /api/v1/organization/staff/:id` (Ubah status / reset PIN).
+   - Endpoint `GET & POST /api/v1/organization/outlets` (Manajemen cabang fisik).
+
+4. Penyelarasan Rute API di `backend/main.go`:
+   - Standarisasi rute: `/api/v1/items`, `/api/v1/inventory`, `/api/v1/pos`, 
+     `/api/v1/transfers`, `/api/v1/productions`, `/api/v1/settlements`, 
+     `/api/v1/purchases`, `/api/v1/organization`.
+   - Hapus rute legacy `/bakso/*`.
+
+5. Verifikasi Automated Test Suite:
+   - `go test -p 1 -count=1 ./internal/modules/...` -> 100% PASS.
+
+--------------------------------------------------------------------------------
+PHASE 3: FRONTEND ADAPTIVE REFACTORING (REACT + VITE + TAILWIND)
+--------------------------------------------------------------------------------
+1. Pembersihan Navigasi & Shell:
+   - Hapus ID navigasi usang (`bakso-sales`, `bakso-expense`) di `navigation.ts`.
+   - Tambahkan menu resmi `organization` (Manajemen Staff & Outlet) untuk Owner.
+   - Ganti pengecekan menu di shell menjadi murni domain: `settlements`, `transfers`, 
+     `purchases`, `production`, `organization`.
+
+2. Pembuatan Fitur Modular `features/organization/`:
+   - `organization-module.tsx`: Tab Staff & Kasir, Tab Outlet/Cabang, dan Tab Profil Bisnis.
+
+3. POS Module Adaptif (`pos-module.tsx`):
+   - Hapus string-matching kaku `cat.includes("bakso")`.
+   - Dynamic render: Mode Retail (Barcode) vs Mode F&B (Fast Grid 1-Tap).
+
+4. Kamus Bilingual (`i18n.ts`):
+   - Standarisasi istilah `sessions`, `transfers`, `purchases`, `organization`, `eod_usages`.
+
+5. Integrasi Lembar Konsumsi Bahan Akhir Shift (EOD Usage Modal):
+   - Form hitung sisa bahan di modal penutupan sesi kasir.
+
+--------------------------------------------------------------------------------
+PHASE 4: INTEGRATION TESTING, ISOLATION AUDIT & DoD
+--------------------------------------------------------------------------------
+1. Uji Isolasi Cross-Tenant.
+2. Uji Offline PWA & Idempotency `client_uuid`.
+3. Validasi Kompilasi: `go vet ./...` & `npx tsc --noEmit` Exit Code 0.
+================================================================================

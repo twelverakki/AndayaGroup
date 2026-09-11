@@ -7,8 +7,11 @@ import (
 	"andaya-erp/backend/internal/middleware"
 	"andaya-erp/backend/internal/modules/admin"
 	"andaya-erp/backend/internal/modules/auth"
-	"andaya-erp/backend/internal/modules/bakso"
-	"andaya-erp/backend/internal/modules/products"
+	"andaya-erp/backend/internal/modules/items"
+	"andaya-erp/backend/internal/modules/logistics"
+	"andaya-erp/backend/internal/modules/organization"
+	"andaya-erp/backend/internal/modules/production"
+	"andaya-erp/backend/internal/modules/settlements"
 	"andaya-erp/backend/internal/modules/transactions"
 
 	"github.com/gofiber/fiber/v2"
@@ -53,6 +56,8 @@ func main() {
 	authGroup := api.Group("/auth")
 	authGroup.Post("/login", auth.HandleLogin)
 	authGroup.Post("/logout", auth.HandleLogout)
+	authGroup.Post("/forgot-password", auth.HandleForgotPassword)
+	authGroup.Post("/reset-password", auth.HandleResetPassword)
 
 	// Protected Auth Endpoints (Require user session but not active workspace yet)
 	protectedAuthGroup := api.Group("/auth", middleware.AuthGuard())
@@ -79,40 +84,50 @@ func main() {
 		})
 	})
 
-	// Upload Endpoints (Accepts authenticated uploads)
-	api.Post("/upload", middleware.AuthGuard(), products.HandleUploadFile)
-	scopedAPI.Post("/upload", products.HandleUploadFile)
+	// Items Unified Master Catalog Endpoints
+	itemsHandler := items.NewItemsHandler(config.DB)
 
-	// Products CRUD Endpoints
+	// Upload Endpoints (Accepts authenticated uploads)
+	api.Post("/upload", middleware.AuthGuard(), itemsHandler.HandleUploadFile)
+	scopedAPI.Post("/upload", itemsHandler.HandleUploadFile)
+	itemsGroup := scopedAPI.Group("/items")
+	itemsGroup.Get("/", itemsHandler.HandleGetItems)
+	itemsGroup.Post("/", itemsHandler.HandleCreateItem)
+	itemsGroup.Put("/:id", itemsHandler.HandleUpdateItem)
+	itemsGroup.Patch("/:id/status", itemsHandler.HandleUpdateItemStatus)
+
+	// Backwards Compatibility Aliases
 	productsGroup := scopedAPI.Group("/products")
-	productsGroup.Get("/", products.HandleGetProducts)
-	productsGroup.Get("/:id", products.HandleGetProductByID)
-	productsGroup.Post("/", products.HandleCreateProduct)
-	productsGroup.Put("/:id", products.HandleUpdateProduct)
-	productsGroup.Delete("/:id", products.HandleDeleteProduct)
+	productsGroup.Get("/", itemsHandler.HandleGetItems)
+	productsGroup.Post("/", itemsHandler.HandleCreateItem)
+	productsGroup.Put("/:id", itemsHandler.HandleUpdateItem)
+	productsGroup.Patch("/:id/status", itemsHandler.HandleUpdateItemStatus)
+
+	ingredientsGroup := scopedAPI.Group("/ingredients")
+	ingredientsGroup.Get("/", itemsHandler.HandleGetItems)
+	ingredientsGroup.Post("/", itemsHandler.HandleCreateItem)
 
 	// Categories Endpoints
-	scopedAPI.Get("/categories", products.HandleGetCategories)
+	categoriesGroup := scopedAPI.Group("/categories")
+	categoriesGroup.Get("/", itemsHandler.HandleGetCategories)
+	categoriesGroup.Post("/", itemsHandler.HandleCreateCategory)
+	categoriesGroup.Delete("/:id", itemsHandler.HandleDeleteCategory)
 
-	// Ingredients CRUD Endpoints
-	ingredientsGroup := scopedAPI.Group("/ingredients")
-	ingredientsGroup.Get("/", products.HandleGetIngredients)
-	ingredientsGroup.Post("/", products.HandleCreateIngredient)
-	ingredientsGroup.Put("/:id", products.HandleUpdateIngredient)
-	ingredientsGroup.Delete("/:id", products.HandleDeleteIngredient)
-
-	// Wastage / Opname Logs Endpoints
+	// Wastage Logs Endpoints
 	wastageGroup := scopedAPI.Group("/wastage-logs")
-	wastageGroup.Get("/", products.HandleGetWastageLogs)
-	wastageGroup.Post("/", products.HandleCreateWastageLog)
-	wastageGroup.Post("/:id/approve", products.HandleApproveWastageLog)
-	wastageGroup.Post("/:id/reject", products.HandleRejectWastageLog)
+	wastageGroup.Get("/", itemsHandler.HandleGetWastageLogs)
 
-	// Cashier Shift Endpoints
+	// Cashier Session Endpoints
 	shiftsGroup := scopedAPI.Group("/shifts")
 	shiftsGroup.Get("/active", transactions.HandleGetActiveShift)
 	shiftsGroup.Post("/open", transactions.HandleOpenShift)
 	shiftsGroup.Post("/close", transactions.HandleCloseShift)
+
+	// Standard POS Sessions Route Alias
+	sessionsGroup := scopedAPI.Group("/pos/sessions")
+	sessionsGroup.Get("/active", transactions.HandleGetActiveShift)
+	sessionsGroup.Post("/open", transactions.HandleOpenShift)
+	sessionsGroup.Post("/close", transactions.HandleCloseShift)
 
 	// POS Transaction Endpoints
 	transactionsGroup := scopedAPI.Group("/transactions")
@@ -120,35 +135,69 @@ func main() {
 	transactionsGroup.Post("/", transactions.HandleCreateTransaction)
 	transactionsGroup.Post("/:id/void", transactions.HandleVoidTransaction)
 
-	// Procurement Endpoints
+	// Purchases / Procurement Endpoints
 	procurementsGroup := scopedAPI.Group("/procurements")
-	procurementsGroup.Get("/", products.HandleGetProcurements)
-	procurementsGroup.Get("/:id", products.HandleGetProcurementByID)
-	procurementsGroup.Post("/", products.HandleCreateProcurement)
-	procurementsGroup.Put("/:id/payment", products.HandleUpdateProcurementPayment)
+	procurementsGroup.Get("/", itemsHandler.HandleGetProcurements)
+
+	purchasesGroup := scopedAPI.Group("/purchases")
+	purchasesGroup.Get("/", itemsHandler.HandleGetProcurements)
 
 	// Sales Reports & Analytics Endpoints
 	reportsGroup := scopedAPI.Group("/reports")
 	reportsGroup.Get("/sales", transactions.HandleGetSalesReport)
 
-	// Bakso Kang Gemoy Endpoints
+	// F&B Batch Production Runs & EOD Usages Endpoints (Domain Agnostic)
+	prodHandler := production.NewProductionHandler(config.DB)
+	logisticsHandler := logistics.NewLogisticsHandler(config.DB)
+	settlementHandler := settlements.NewSettlementsHandler(config.DB)
+
 	productionsGroup := scopedAPI.Group("/productions")
-	productionsGroup.Post("/", bakso.HandleCreateProduction)
-	productionsGroup.Get("/", bakso.HandleGetProductions)
+	productionsGroup.Post("/", prodHandler.HandleCreateProduction)
+	productionsGroup.Get("/", prodHandler.HandleGetProductions)
+	productionsGroup.Post("/eod-usages", prodHandler.HandleCreateEodMaterialUsage)
+	productionsGroup.Get("/eod-usages", prodHandler.HandleGetEodMaterialUsages)
 
+	// Transfers & Logistics Endpoints (The Lean Odoo Way)
+	transfersGroup := scopedAPI.Group("/transfers")
+	transfersGroup.Post("/", logisticsHandler.HandleCreateDistribution)
+	transfersGroup.Get("/", logisticsHandler.HandleGetDistributions)
+	transfersGroup.Post("/:id/receive", logisticsHandler.HandleReceiveDistribution)
+	transfersGroup.Post("/thaw", logisticsHandler.HandleThaw)
+
+	logisticsGroup := scopedAPI.Group("/logistics")
+	logisticsGroup.Post("/distributions", logisticsHandler.HandleCreateDistribution)
+	logisticsGroup.Post("/distributions/:id/receive", logisticsHandler.HandleReceiveDistribution)
+	logisticsGroup.Post("/thaw", logisticsHandler.HandleThaw)
+	logisticsGroup.Get("/distributions", logisticsHandler.HandleGetDistributions)
+
+	// Deprecated / Backwards Compatible Route Support
 	distributionsGroup := scopedAPI.Group("/distributions")
-	distributionsGroup.Post("/", bakso.HandleCreateDistribution)
-	distributionsGroup.Get("/", bakso.HandleGetDistributions)
-	distributionsGroup.Post("/:id/receive", bakso.HandleReceiveDistribution)
-	distributionsGroup.Post("/return", bakso.HandleCreateReturn)
-	distributionsGroup.Post("/:id/receive-return", bakso.HandleReceiveReturn)
+	distributionsGroup.Post("/", logisticsHandler.HandleCreateDistribution)
+	distributionsGroup.Get("/", logisticsHandler.HandleGetDistributions)
+	distributionsGroup.Post("/:id/receive", logisticsHandler.HandleReceiveDistribution)
 
-	baksoGroup := scopedAPI.Group("/bakso")
-	baksoGroup.Post("/thaw", bakso.HandleThawBatch)
-	baksoGroup.Post("/batches/:id/qc", bakso.HandleQualityCheckBatch)
-	baksoGroup.Post("/closing", bakso.HandleCloseDailyStock)
-	baksoGroup.Get("/batches", bakso.HandleGetStockBatches)
-	baksoGroup.Get("/stock-alerts", bakso.HandleGetStockAlerts)
+	// Settlements & Daily Closing Endpoints (Domain Agnostic)
+	settlementRouteGroup := scopedAPI.Group("/settlements")
+	settlementRouteGroup.Post("/", settlementHandler.HandleCreateSettlement)
+	settlementRouteGroup.Get("/", settlementHandler.HandleGetSettlements)
+	settlementRouteGroup.Post("/direct-sales", settlementHandler.HandleCreateDirectSale)
+	settlementRouteGroup.Post("/wholesale", settlementHandler.HandleCreateDirectSale)
+
+	// Organization, Outlets & Staff Management (Owner & Superadmin)
+	orgHandler := organization.NewHandler(organization.NewService(config.DB))
+	orgGroup := scopedAPI.Group("/organization")
+	orgGroup.Get("/businesses", orgHandler.GetAllBusinesses)
+	orgGroup.Post("/businesses", orgHandler.CreateBusiness)
+	orgGroup.Get("/staff", orgHandler.GetStaff)
+	orgGroup.Post("/staff", orgHandler.CreateStaff)
+	orgGroup.Put("/staff/:id", orgHandler.UpdateStaff)
+	orgGroup.Get("/outlets", orgHandler.GetOutlets)
+	orgGroup.Post("/outlets", orgHandler.CreateOutlet)
+	orgGroup.Get("/business/profile", orgHandler.GetBusinessProfile)
+	orgGroup.Put("/business/capabilities", orgHandler.UpdateCapabilities)
+	orgGroup.Put("/business/profile", orgHandler.UpdateBusinessProfile)
+	orgGroup.Put("/outlets/:id", orgHandler.UpdateOutletDetails)
+	orgGroup.Get("/audit-logs", orgHandler.GetAuditLogs)
 
 	// Superadmin Control Center Endpoints
 	adminGroup := api.Group("/admin", middleware.AuthGuard())
@@ -158,6 +207,9 @@ func main() {
 	adminGroup.Put("/users/:id/assignments", admin.HandleUpdateUserAssignments)
 	adminGroup.Get("/businesses", admin.HandleGetBusinesses)
 	adminGroup.Get("/outlets", admin.HandleGetOutlets)
+	adminGroup.Get("/security-logs", admin.HandleGetSecurityAuditLogs)
+	adminGroup.Get("/owners", admin.HandleGetOwnersHierarchy)
+	adminGroup.Post("/owners/:id/businesses", admin.HandleCreateBusinessForOwner)
 
 	// 5. Start HTTP Server
 	log.Printf("Starting API server on port %s in %s mode...", config.AppConfig.Port, config.AppConfig.Env)

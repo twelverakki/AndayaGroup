@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuthStore } from "../lib/store";
 import { useLanguageStore, translations } from "../lib/i18n";
 import { useTheme } from "../hooks/use-theme";
@@ -9,16 +9,25 @@ import POSSettingsDrawer from "../components/POSSettingsDrawer";
 import POSModule from "../features/pos/pos-module";
 import InventoryModule from "../features/inventory/inventory-module";
 import ProcurementModule from "../features/procurement/procurement-module";
-
+import OpnameModule from "../features/opname/opname-module";
+import SalesReportModule from "../features/sales-report/sales-report-module";
+import DashboardView from "../components/DashboardView";
+import { ProductionModule } from "../features/production/production-module";
+import { DistributionModule } from "../features/distribution/distribution-module";
+import { SettlementModule } from "../features/settlement/settlement-module";
+import { ItemListModule } from "../features/items/item-list-module";
+import BusinessesListView from "../features/organization/businesses-list-view";
+import UsersManagementView from "../features/admin/users-management-view";
+import SecurityLogsView from "../features/admin/security-logs-view";
 import SuperadminModule from "../features/superadmin/superadmin-module";
-import { sidebarMenuConfig, isMenuItemAllowed } from "../config/navigation";
+import { sidebarMenuConfig, isMenuItemAllowed, getDefaultMenuId } from "../config/navigation";
 import {
   Drawer,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
 } from "../components/ui/drawer";
-import { Sun, Moon, LogOut, Menu, X, ChevronRight, Settings } from "lucide-react";
+import { Sun, Moon, LogOut, Menu, X, ChevronRight, Settings, Search, Plus } from "lucide-react";
 
 interface MobileShellProps {
   children?: React.ReactNode;
@@ -32,10 +41,29 @@ export default function MobileShell({ children }: MobileShellProps) {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState("dashboard");
+
+  // Auto-resolve grouped parent menu IDs to default child submenu IDs (e.g. "inventory" -> "inventory-master")
+  useEffect(() => {
+    const resolved = getDefaultMenuId(activeMenu);
+    if (resolved !== activeMenu) {
+      setActiveMenu(resolved);
+    }
+  }, [activeMenu]);
+
   const [productsCount, setProductsCount] = useState(0);
   const [isLeftDrawerOpen, setIsLeftDrawerOpen] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const { isDark, toggleTheme } = useTheme();
+
+  // Master Product Top Floating Menu Navigation States
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState("");
+
+  const handleScroll = (e: React.UIEvent<HTMLElement>) => {
+    const scrollTop = e.currentTarget.scrollTop;
+    setIsScrolled(scrollTop > 20);
+  };
 
   const isFocusPage = activeMenu === "pos";
 
@@ -72,7 +100,8 @@ export default function MobileShell({ children }: MobileShellProps) {
       if (!activeContext) return;
       try {
         const res = await api.get("/products");
-        setProductsCount(res.data.length);
+        const list = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        setProductsCount(list.length);
       } catch (err) {
         console.error("Failed to load products count:", err);
       }
@@ -105,97 +134,163 @@ export default function MobileShell({ children }: MobileShellProps) {
     isMenuItemAllowed(menu, activeContext)
   );
 
+  const hasAddAction = activeMenu.startsWith("inventory") || activeMenu.startsWith("procurement") || activeMenu === "superadmin";
+
   return (
     <div 
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       style={!isDark ? {
         backgroundImage: "radial-gradient(circle at 50% 50%, #eae5f7 0%, #f5e3f0 35%, #D6D7DC 80%)"
-      } : undefined}
-      className={`flex flex-col h-screen overflow-hidden font-sans transition-colors duration-300 relative ${
-        isDark ? "dark bg-[#1E1E1E] text-[#F8FAFC]" : "text-neutral-dark"
-      }`}
+      } : {
+        backgroundColor: "#141416"
+      }}
+      className="flex flex-col h-screen overflow-hidden font-sans transition-colors duration-300 relative bg-slate-100 dark:bg-[#141416] text-slate-900 dark:text-slate-100"
     >
       
-      {/* 1. Floating Action Menu Button (Icon-Only, Floating Glass Pill for Non-Inventory Pages) */}
-      {activeMenu !== "inventory" && (
+      {/* ── MASTER PRODUCT TOP FLOATING MENU (STANDARDIZED MOBILE NAVIGATION) ── */}
+      
+      {/* Kondisi 1: Unscrolled (isScrolled === false) -> Menu icon ONLY at top-right with NO background */}
+      {!isScrolled && (
         <button
           type="button"
           onClick={() => setIsLeftDrawerOpen(true)}
-          className="fixed top-3 right-3 z-40 w-10 h-10 rounded-full backdrop-blur-md bg-slate-900/80 dark:bg-white/15 text-white flex items-center justify-center shadow-lg active:scale-95 transition-all cursor-pointer border border-white/20"
-          title="Buka Navigasi"
+          className="fixed top-3.5 right-3.5 z-40 p-2 text-slate-800 dark:text-slate-100 drop-shadow-md hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+          title="Menu Navigasi"
           aria-label="Open Navigation Menu"
         >
-          <Menu className="w-5 h-5 stroke-[2.5]" />
+          <Menu className="w-6 h-6 stroke-[2.5]" />
         </button>
       )}
 
-      {/* Floating Settings Button for POS Focus Page */}
-      {isFocusPage && (
-        <button
-          type="button"
-          onClick={() => setSettingsDrawerOpen(true)}
-          className="fixed top-3 right-15 z-40 w-10 h-10 rounded-full backdrop-blur-md bg-slate-900/80 dark:bg-white/15 text-white flex items-center justify-center shadow-lg active:scale-95 transition-all cursor-pointer border border-white/20"
-          title="Pengaturan POS & Shift"
-          aria-label="Open POS Settings"
-        >
-          <Settings className="w-5 h-5 stroke-[2.5]" />
-        </button>
+      {/* Kondisi 2: Scrolled Down & Search Inactive (isScrolled === true & !isSearchActive) */}
+      {isScrolled && !isSearchActive && (
+        <>
+          {/* Search Trigger Button slides in from Left */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsSearchActive(true);
+              window.dispatchEvent(new CustomEvent("focus_mobile_search"));
+            }}
+            className="fixed top-3.5 left-3.5 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer animate-in slide-in-from-left-4 duration-300"
+            title="Cari Data"
+            aria-label="Open Floating Search"
+          >
+            <Search className="w-5 h-5 stroke-[2.5]" />
+          </button>
+
+          {/* Combined Plus + Menu Glass Pill at Top Right */}
+          <div className="fixed top-3.5 right-3.5 z-40 backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white rounded-full p-1.5 px-3 border border-white/20 shadow-xl flex items-center gap-1.5 transition-all duration-300 animate-in fade-in zoom-in-95">
+            {hasAddAction && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent("trigger_mobile_add"))}
+                  className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
+                  title="Tambah Baru"
+                  aria-label="Add Entry"
+                >
+                  <Plus className="w-5 h-5 stroke-[2.5]" />
+                </button>
+                <div className="w-px h-4 bg-white/25" />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsLeftDrawerOpen(true)}
+              className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
+              title="Menu Navigasi"
+              aria-label="Open Navigation Menu"
+            >
+              <Menu className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Kondisi 3: Scrolled Down & Search Active (isScrolled === true & isSearchActive) */}
+      {isScrolled && isSearchActive && (
+        <>
+          {/* Full Width Floating Search Bar Pill from Left to Right */}
+          <div className="fixed top-3.5 left-3.5 right-16 z-50 backdrop-blur-xl bg-white/95 dark:bg-[#202024]/95 text-slate-900 dark:text-slate-100 rounded-full border border-slate-300/80 dark:border-[#38383C] shadow-2xl px-3.5 py-1.5 flex items-center gap-2.5 transition-all duration-300 animate-in fade-in slide-in-from-left-2">
+            <Search className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.5]" />
+            <input
+              autoFocus
+              type="text"
+              value={mobileSearchQuery}
+              onChange={(e) => {
+                setMobileSearchQuery(e.target.value);
+                window.dispatchEvent(new CustomEvent("focus_mobile_search"));
+              }}
+              placeholder="Cari..."
+              className="w-full bg-transparent text-xs font-semibold focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setMobileSearchQuery("");
+                setIsSearchActive(false);
+              }}
+              className="p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer shrink-0"
+              title="Tutup & Reset Pencarian"
+            >
+              <X className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          </div>
+
+          {/* Top Right Floating Menu Button ONLY (Plus icon hidden during search) */}
+          <button
+            type="button"
+            onClick={() => setIsLeftDrawerOpen(true)}
+            className="fixed top-3.5 right-3.5 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer"
+            title="Menu Navigasi"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="w-5 h-5 stroke-[2.5]" />
+          </button>
+        </>
       )}
 
       {/* 2. Scrollable Body Area */}
-      <main className={`flex-1 ${isFocusPage ? "overflow-hidden p-2 sm:p-4" : "overflow-y-auto p-4 pb-8"}`}>
+      <main
+        onScroll={handleScroll}
+        className={`flex-1 ${isFocusPage ? "overflow-hidden p-2 sm:p-4" : "overflow-y-auto p-4 pb-8"}`}
+      >
         {activeMenu === "pos" ? (
           <POSModule />
-        ) : activeMenu === "inventory" ? (
-          <InventoryModule />
-        ) : activeMenu === "procurement" ? (
+        ) : activeMenu.startsWith("inventory") || activeMenu === "items-master" || activeMenu === "items" ? (
+          <ItemListModule />
+        ) : activeMenu.startsWith("procurement") ? (
           <ProcurementModule />
+        ) : activeMenu === "opname" ? (
+          <OpnameModule />
+        ) : activeMenu === "sales-report" ? (
+          <SalesReportModule />
+        ) : activeMenu === "items-master" || activeMenu === "items" ? (
+          <ItemListModule />
         ) : activeMenu === "produksi" ? (
-          <div className="p-4">Produksi Placeholder</div>
-        ) : activeMenu === "distribusi" ? (
-          <div className="p-4">Distribusi Placeholder</div>
+          <ProductionModule />
+        ) : activeMenu.startsWith("distribusi") ? (
+          <DistributionModule />
+        ) : activeMenu.startsWith("settlements") || activeMenu.startsWith("bakso-sales") ? (
+          <SettlementModule />
+        ) : activeMenu === "organization" || activeMenu === "organization-businesses" ? (
+          <BusinessesListView />
+        ) : activeMenu === "users" ? (
+          <UsersManagementView onNavigateToBusinesses={() => setActiveMenu("organization")} />
+        ) : activeMenu === "security-logs" ? (
+          <SecurityLogsView />
         ) : activeMenu === "superadmin" ? (
-          <SuperadminModule />
+          <UsersManagementView onNavigateToBusinesses={() => setActiveMenu("organization")} />
         ) : activeMenu === "dashboard" ? (
-          <div className="space-y-4">
-            {/* Chunky card banner */}
-            <div className={`border rounded-card p-6 shadow-sm transition-colors ${
-              isDark ? "bg-dark-card-lighter border-dark-border-lighter" : "bg-white border-slate-200"
-            }`}>
-              <h2 className="text-lg font-bold mb-2">Andaya ERP Mobile</h2>
-              <p className="opacity-80 text-xs font-medium leading-relaxed mb-4">
-                Sistem ERP multi-tenant untuk bisnis retail & F&B. Workspace aktif disinkronkan otomatis secara aman di sisi klien.
-              </p>
-              
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 rounded-button border border-emerald-100 dark:border-emerald-900/50 text-xs font-semibold">
-                Context: {activeContext?.name}
-              </div>
-            </div>
-
-            {/* Quick stats placeholder */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className={`border rounded-card p-4 shadow-sm flex flex-col justify-between h-28 transition-colors ${
-                isDark ? "bg-dark-card-lighter border-dark-border-lighter" : "bg-white border-slate-200"
-              }`}>
-                <span className="text-[10px] text-muted-foreground font-bold uppercase">Sales Hari Ini</span>
-                <span className="text-lg font-semibold">Rp 0</span>
-              </div>
-              <div className={`border rounded-card p-4 shadow-sm flex flex-col justify-between h-28 transition-colors ${
-                isDark ? "bg-dark-card-lighter border-dark-border-lighter" : "bg-white border-slate-200"
-              }`}>
-                <span className="text-[10px] text-muted-foreground font-bold uppercase">Stok Terbuka</span>
-                <span className="text-lg font-semibold">{productsCount} SKU</span>
-              </div>
-            </div>
-          </div>
+          <DashboardView onNavigate={(menuId) => setActiveMenu(menuId)} />
         ) : (
-          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50 rounded-card p-6 text-center">
-            <span className="text-3xl mb-2 block">🛠️</span>
-            <h3 className="font-semibold text-amber-800 dark:text-amber-450 text-sm mb-1">
-              Modul {activeMenu.toUpperCase()} dalam Pengembangan
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50 rounded-2xl p-6 text-center space-y-1">
+            <h3 className="font-semibold text-amber-800 dark:text-amber-400 text-sm">
+              Modul {activeMenu.toUpperCase()} Dalam Pengembangan
             </h3>
-            <p className="text-amber-700/80 dark:text-amber-500/80 text-xs max-w-xs mx-auto">
+            <p className="text-amber-700/80 dark:text-amber-500/80 text-xs max-w-xs mx-auto font-normal">
               Fitur ini akan diaktifkan pada fase pengerjaan berikutnya.
             </p>
           </div>
@@ -204,43 +299,55 @@ export default function MobileShell({ children }: MobileShellProps) {
 
       {/* 3. Shadcn UI Left Navigation Drawer */}
       <Drawer direction="left" open={isLeftDrawerOpen} onOpenChange={setIsLeftDrawerOpen}>
-        <DrawerContent className="p-0 border-r border-slate-200 dark:border-[#38383C] bg-white dark:bg-[#202024]">
+        <DrawerContent className="p-0 border-r border-slate-200 dark:border-[#2E2E34] bg-white dark:bg-[#1C1C20] text-slate-900 dark:text-slate-100">
           <div className="h-full flex flex-col justify-between w-full">
             {/* Header / Workspace Switcher Trigger */}
-            <DrawerHeader className="p-4 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-left">
+            <div className="p-4 border-b border-slate-100 dark:border-[#2A2A30] flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <img
+                    src="/icon-192.png"
+                    alt="Andaya"
+                    className="w-7 h-7 object-contain rounded-lg shadow-xs"
+                  />
+                  <span className="font-black text-sm tracking-tight text-slate-900 dark:text-white">
+                    ANDAYA GROUP
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLeftDrawerOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 cursor-pointer"
+                >
+                  <X className="w-5 h-5 stroke-[2]" />
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
                   setIsLeftDrawerOpen(false);
                   setSwitcherOpen(true);
                 }}
-                className="flex items-center space-x-2.5 text-left cursor-pointer min-w-0"
+                className="flex items-center space-x-2.5 p-2 rounded-2xl bg-slate-50 dark:bg-[#25252A] text-left cursor-pointer min-w-0 border border-slate-200/60 dark:border-[#333338]"
               >
-                <div className="w-9 h-9 rounded-full bg-brand-purple flex items-center justify-center text-white font-bold text-sm shadow-sm shrink-0">
+                <div className="w-8 h-8 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-semibold text-xs shadow-xs shrink-0">
                   {activeContext?.name?.charAt(0) || "A"}
                 </div>
-                <div className="min-w-0">
-                  <DrawerTitle className="font-bold text-sm truncate leading-tight">
+                <div className="min-w-0 flex-1">
+                  <DrawerTitle className="font-semibold text-xs truncate leading-tight text-slate-900 dark:text-white">
                     {activeContext?.name || "Pilih Workspace"}
                   </DrawerTitle>
-                  <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
                     {activeContext?.role === "owner" ? "Owner" : activeContext?.role} ▾
                   </p>
                 </div>
               </button>
-
-              <button
-                type="button"
-                onClick={() => setIsLeftDrawerOpen(false)}
-                className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </DrawerHeader>
+            </div>
 
             {/* Menu List */}
             <div className="flex-1 overflow-y-auto p-3 space-y-1.5 scrollbar-thin">
-              <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Navigasi Modul
               </div>
               {allowedMenus.map((menu) => {
@@ -253,17 +360,14 @@ export default function MobileShell({ children }: MobileShellProps) {
                     key={menu.id}
                     type="button"
                     onClick={() => {
-                      setActiveMenu(menu.id);
+                      const targetId = menu.subItems && menu.subItems.length > 0 ? menu.subItems[0].id : menu.id;
+                      setActiveMenu(targetId);
                       setIsLeftDrawerOpen(false);
                     }}
-                    className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-2xl text-xs transition-all cursor-pointer ${
                       isActive
-                        ? isDark
-                          ? "bg-[#E2FF66] text-[#1A1A1A] font-black shadow-sm"
-                          : "bg-[#1A1A1A] text-white font-black shadow-sm"
-                        : isDark
-                          ? "text-slate-300 hover:bg-white/10"
-                          : "text-slate-700 hover:bg-slate-100"
+                        ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs font-semibold"
+                        : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 font-medium"
                     }`}
                   >
                     <Icon className={`w-4.5 h-4.5 ${menu.iconClassName || ""}`} />
@@ -275,7 +379,7 @@ export default function MobileShell({ children }: MobileShellProps) {
             </div>
 
             {/* Footer Actions: All Controls Moved From Header */}
-            <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2 bg-slate-50/50 dark:bg-white/[0.02]">
+            <div className="p-3 border-t border-slate-100 dark:border-[#2A2A30] space-y-2 bg-slate-50/50 dark:bg-white/[0.02]">
               {/* Workspace Info & Switcher Button */}
               <button
                 type="button"
@@ -283,22 +387,22 @@ export default function MobileShell({ children }: MobileShellProps) {
                   setIsLeftDrawerOpen(false);
                   setSwitcherOpen(true);
                 }}
-                className="w-full flex items-center justify-between p-2.5 rounded-xl border border-slate-200/80 dark:border-dark-border bg-white dark:bg-dark-card text-left cursor-pointer transition-all hover:border-slate-300"
+                className="w-full flex items-center justify-between p-2.5 rounded-xl border border-slate-200/80 dark:border-[#333338] bg-white dark:bg-[#25252A] text-left cursor-pointer transition-all hover:border-slate-300"
               >
                 <div className="flex items-center space-x-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-brand-purple flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-semibold text-xs shadow-sm shrink-0">
                     {activeContext?.name?.charAt(0) || "A"}
                   </div>
                   <div className="min-w-0">
-                    <h4 className="font-bold text-xs truncate leading-tight text-slate-900 dark:text-slate-100">
+                    <h4 className="font-semibold text-xs truncate leading-tight text-slate-900 dark:text-slate-100">
                       {activeContext?.name || "Pilih Workspace"}
                     </h4>
-                    <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">
+                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
                       {activeContext?.role === "owner" ? "Owner" : activeContext?.role} • {activeContext?.type || "erp"}
                     </p>
                   </div>
                 </div>
-                <span className="text-xs font-bold text-slate-400">▾</span>
+                <span className="text-xs font-medium text-slate-400">▾</span>
               </button>
 
               {/* POS & Shift Settings Trigger Button */}
@@ -308,7 +412,7 @@ export default function MobileShell({ children }: MobileShellProps) {
                   setIsLeftDrawerOpen(false);
                   setSettingsDrawerOpen(true);
                 }}
-                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 text-slate-800 dark:text-slate-200 transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium bg-white dark:bg-[#25252A] border border-slate-200/80 dark:border-[#333338] cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 text-slate-800 dark:text-slate-200 transition-colors"
               >
                 <span className="flex items-center gap-2">
                   <Settings className="w-4 h-4 text-slate-500" />
@@ -320,7 +424,7 @@ export default function MobileShell({ children }: MobileShellProps) {
               <button
                 type="button"
                 onClick={toggleTheme}
-                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 text-slate-800 dark:text-slate-200 transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold bg-white dark:bg-[#25252A] border border-slate-200/80 dark:border-[#333338] cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 text-slate-800 dark:text-slate-200 transition-colors"
               >
                 <span className="flex items-center gap-2">
                   {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
@@ -332,7 +436,7 @@ export default function MobileShell({ children }: MobileShellProps) {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-red-500 hover:bg-red-500/10 cursor-pointer transition-colors"
+                className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-500/10 cursor-pointer transition-colors"
               >
                 <LogOut className="w-4 h-4" />
                 <span>Sign Out</span>

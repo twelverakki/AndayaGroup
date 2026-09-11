@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { ErpDataTable } from "../../components/ErpDataTable";
+import { ErpSearchBar } from "../../components/ErpSearchBar";
+import { StockAdjustmentModal } from "../../components/StockAdjustmentModal";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import {
@@ -36,12 +39,19 @@ import {
   SheetDescription,
   SheetFooter,
 } from "../../components/ui/sheet";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "../../components/ui/select";
 import { 
   ArrowLeft, Barcode, CheckCircle2, AlertCircle, AlertTriangle,
   Info, Sparkles, Tag, DollarSign, Package, Plus, Edit3, Menu,
   Upload, X, MoreHorizontal, Search, SlidersHorizontal, ChevronDown, ArrowUpDown,
   Eye, Filter, Copy, Check, ChevronLeft, ChevronRight, LayoutGrid,
-  Globe, RotateCcw, Archive, Layers
+  Globe, RotateCcw, Archive, Layers, Trash2, ShieldAlert
 } from "lucide-react";
 
 interface Product {
@@ -87,7 +97,8 @@ export default function InventoryModule({
   const unitTypes = getUnitTypes(language);
   const statusOptions = getStatusOptions(language);
 
-  const isManagerOrOwner = activeContext?.role === "manager" || activeContext?.role === "owner";
+  const isManagerOrOwner = activeContext?.role === "manager" || activeContext?.role === "owner" || activeContext?.role === "superadmin" || activeContext?.role === "admin_gudang";
+  const isStaff = activeContext?.role === "staff" || activeContext?.role === "kasir";
 
   // Internal Navigation View & Selection States
   const [internalView, setInternalView] = useState<"master" | "new" | "edit" | "discontinued">(view || "master");
@@ -102,6 +113,10 @@ export default function InventoryModule({
   const activeProduct = internalProduct;
 
   const handleTriggerAdd = () => {
+    if (isStaff) {
+      toast.error(language === "en" ? "Access Denied: Staff cannot add or edit master products" : "Akses Dibatasi: Staf tidak memiliki izin menambah atau mengedit master data");
+      return;
+    }
     if (onAddNew) onAddNew();
     else if (onNavigate) onNavigate("inventory-add");
     else {
@@ -109,6 +124,14 @@ export default function InventoryModule({
       setInternalView("new");
     }
   };
+
+  useEffect(() => {
+    const handleMobileAdd = () => {
+      handleTriggerAdd();
+    };
+    window.addEventListener("trigger_mobile_add", handleMobileAdd);
+    return () => window.removeEventListener("trigger_mobile_add", handleMobileAdd);
+  }, [onAddNew, onNavigate]);
 
   const handleTriggerEdit = (targetProd: Product) => {
     if (onEditProduct) onEditProduct(targetProd);
@@ -128,6 +151,7 @@ export default function InventoryModule({
   // Search & Rich Multi-Filter States
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [statusFilter, setStatusFilter] = useState<{
     active: boolean;
@@ -255,9 +279,28 @@ export default function InventoryModule({
     }
   };
 
+  // Domain Capability Inventory Tabs
+  const [inventoryDomainTab, setInventoryDomainTab] = useState<"products" | "raw_materials" | "tool_supplies">("products");
+
   // Data States
   const [products, setProducts] = useState<Product[]>([]);
+  const [ingredients, setIngredients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Ingredient Form Modal & Filter States
+  const [showIngredientModal, setShowIngredientModal] = useState(false);
+  const [editingIngredient, setEditingIngredient] = useState<any | null>(null);
+  const [deletingIngredientItem, setDeletingIngredientItem] = useState<any | null>(null);
+  const [ingName, setIngName] = useState("");
+  const [ingCategory, setIngCategory] = useState<"raw_material" | "tool_supplies">("raw_material");
+  const [ingSubCategory, setIngSubCategory] = useState("General");
+  const [isCustomIngSubCat, setIsCustomIngSubCat] = useState(false);
+  const [ingUnit, setIngUnit] = useState("kg");
+  const [isCustomIngUnit, setIsCustomIngUnit] = useState(false);
+  const [ingStock, setIngStock] = useState("0");
+  const [ingMinAlert, setIngMinAlert] = useState("5");
+  const [ingCost, setIngCost] = useState("0");
+  const [selectedIngredientSubCategory, setSelectedIngredientSubCategory] = useState("all");
   
   // Product Form Inputs
   const [prodName, setProdName] = useState("");
@@ -316,9 +359,15 @@ export default function InventoryModule({
     const fetchCategories = async () => {
       try {
         const res = await api.get("/categories");
-        setExistingCategories(res.data || []);
+        const cats = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data)
+          ? res.data
+          : [];
+        setExistingCategories(cats);
       } catch (err) {
         console.error("Failed to load categories:", err);
+        setExistingCategories([]);
       }
     };
     if (activeView === "new" || activeView === "edit") {
@@ -346,8 +395,14 @@ export default function InventoryModule({
 
     setLoading(true);
     try {
-      const prodRes = await api.get("/products");
-      setProducts(prodRes.data || []);
+      const [prodRes, ingRes] = await Promise.all([
+        api.get("/products"),
+        api.get("/ingredients"),
+      ]);
+      const prodList = Array.isArray(prodRes.data) ? prodRes.data : (prodRes.data?.data || []);
+      const ingList = Array.isArray(ingRes.data) ? ingRes.data : (ingRes.data?.data || []);
+      setProducts(Array.isArray(prodList) ? prodList : []);
+      setIngredients(Array.isArray(ingList) ? ingList : []);
     } catch (err) {
       console.error("Failed to load inventory data:", err);
       toast.error(t.errorFetchProducts);
@@ -573,7 +628,90 @@ export default function InventoryModule({
     }
   };
 
-  // Quick Change Status directly from row menu or context menu
+  // Ingredient CRUD Handlers (Bahan Baku & Alat Kemasan)
+  const handleOpenIngredientModal = (ing?: any) => {
+    if (ing) {
+      setEditingIngredient(ing);
+      setIngName(ing.name);
+      setIngCategory(ing.category || (inventoryDomainTab === "tool_supplies" ? "tool_supplies" : "raw_material"));
+      setIngSubCategory(ing.sub_category || "General");
+      setIsCustomIngSubCat(false);
+      setIngUnit(ing.unit_type || (inventoryDomainTab === "tool_supplies" ? "pcs" : "kg"));
+      setIsCustomIngUnit(false);
+      setIngStock(ing.current_stock?.toString() || "0");
+      setIngMinAlert(ing.min_stock_alert?.toString() || "5");
+      setIngCost(formatNumberInput(ing.unit_cost || 0));
+    } else {
+      setEditingIngredient(null);
+      setIngName("");
+      const isTool = inventoryDomainTab === "tool_supplies";
+      setIngCategory(isTool ? "tool_supplies" : "raw_material");
+      setIngSubCategory(isTool ? "Kemasan & Plastik" : "Daging & Protein");
+      setIsCustomIngSubCat(false);
+      setIngUnit(isTool ? "pcs" : "kg");
+      setIsCustomIngUnit(false);
+      setIngStock("0");
+      setIngMinAlert("5");
+      setIngCost("0");
+    }
+    setShowIngredientModal(true);
+  };
+
+  const handleIngredientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ingName.trim()) {
+      toast.error(language === "en" ? "Name is required" : "Nama item wajib diisi");
+      return;
+    }
+
+    const payload = {
+      name: ingName,
+      category: ingCategory,
+      sub_category: ingSubCategory,
+      unit_type: ingUnit,
+      current_stock: parseFloat(ingStock) || 0,
+      min_stock_alert: parseFloat(ingMinAlert) || 5,
+      unit_cost: parseNumberInput(ingCost),
+    };
+
+    try {
+      if (editingIngredient) {
+        await api.put(`/ingredients/${editingIngredient.id}`, payload);
+        toast.success(language === "en" ? "Item updated successfully!" : "Detail item berhasil diperbarui!");
+      } else {
+        await api.post("/ingredients", payload);
+        toast.success(language === "en" ? "New item created successfully!" : "Item baru berhasil didaftarkan!");
+      }
+      setShowIngredientModal(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || (language === "en" ? "Failed to save item" : "Gagal menyimpan data bahan/alat"));
+    }
+  };
+
+  const handleDeleteIngredient = (ing: any) => {
+    setDeletingIngredientItem(ing);
+  };
+
+  const confirmDeleteIngredient = async () => {
+    if (!deletingIngredientItem) return;
+    try {
+      await api.delete(`/ingredients/${deletingIngredientItem.id}`);
+      toast.success(
+        language === "en"
+          ? `Item "${deletingIngredientItem.name}" deleted successfully!`
+          : `Item "${deletingIngredientItem.name}" berhasil dihapus!`
+      );
+      fetchData();
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message ||
+          (language === "en" ? "Failed to delete item" : "Gagal menghapus item")
+      );
+    } finally {
+      setDeletingIngredientItem(null);
+    }
+  };
   const handleQuickStatusChange = async (
     targetProd: Product,
     newStatus: "active" | "inactive" | "discontinued"
@@ -623,6 +761,28 @@ export default function InventoryModule({
 
   // Render Form Page (For New & Edit)
   if (activeView === "new" || activeView === "edit") {
+    if (isStaff) {
+      return (
+        <div className="p-12 text-center space-y-4 max-w-lg mx-auto bg-white dark:bg-[#202024] rounded-3xl border border-slate-200 dark:border-slate-800 my-10 shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Akses Dibatasi</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-normal">
+            Staf tidak memiliki wewenang untuk menambah atau mengedit master data produk/bahan baku.
+            Silakan hubungi Manager atau Owner toko Anda.
+          </p>
+          <button
+            type="button"
+            onClick={handleFormBack}
+            className="px-5 py-2 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-semibold hover:opacity-90 transition-all cursor-pointer"
+          >
+            Kembali ke Daftar Master
+          </button>
+        </div>
+      );
+    }
+
     const labelClass = "block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 text-left";
     
     // Icon-prefixed input (with padding left)
@@ -787,7 +947,7 @@ export default function InventoryModule({
                           <span className="text-[10px] opacity-60">▼</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-dark-border shadow-xl rounded-xl p-1.5 min-w-[220px] max-h-60 overflow-y-auto">
-                          {existingCategories.length === 0 ? (
+                          {!Array.isArray(existingCategories) || existingCategories.length === 0 ? (
                             <DropdownMenuItem disabled className="text-xs opacity-60 px-3 py-2">
                               {t.noCategoriesYet}
                             </DropdownMenuItem>
@@ -1233,8 +1393,10 @@ export default function InventoryModule({
 
   // ================= RENDER PRODUCT LIST (MASTER INVENTORY) =================
 
+  const safeProducts = Array.isArray(products) ? products : [];
+
   // Dynamically multi-filter products
-  const filteredProducts = products.filter((p) => {
+  const filteredProducts = safeProducts.filter((p) => {
     // Search query filter
     const matchesSearch =
       !searchQuery.trim() ||
@@ -1294,147 +1456,148 @@ export default function InventoryModule({
   // Extract unique categories for category pills
   const categoriesList = [
     "all",
-    ...Array.from(new Set(products.map((p) => p.category || "General"))).filter(Boolean),
+    ...Array.from(new Set(safeProducts.map((p) => p.category || "General"))).filter(Boolean),
   ];
 
   // KPI summary metrics calculated from total products list
   const kpiMetrics = {
-    total: products.length,
-    lowStock: products.filter(
+    total: safeProducts.length,
+    lowStock: safeProducts.filter(
       (p) => p.min_stock_alert !== undefined && p.current_stock <= p.min_stock_alert && p.current_stock > 0
     ).length,
-    outOfStock: products.filter((p) => p.current_stock <= 0).length,
-    inactive: products.filter((p) => p.status !== "active").length,
+    outOfStock: safeProducts.filter((p) => p.current_stock <= 0).length,
+    inactive: safeProducts.filter((p) => p.status !== "active").length,
   };
 
   return (
     <div className="space-y-6 text-left transition-all relative">
-      
-      {/* ── DYNAMIC FLOATING HEADER BAR (SYNCHRONIZED SEARCH) ── */}
-      {/* Kondisi 1: Unscrolled (isScrolled === false) -> Menu icon ONLY at top-right with NO background */}
-      {!isScrolled && (
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
-          className="fixed top-3 right-3 z-40 p-2 text-slate-800 dark:text-slate-100 drop-shadow-md hover:opacity-80 active:scale-95 transition-all cursor-pointer"
-          title="Menu Navigasi"
-          aria-label="Open Navigation Menu"
-        >
-          <Menu className="w-6 h-6 stroke-[2.5]" />
-        </button>
-      )}
-
-      {/* Kondisi 2: Scrolled Down & Search Inactive (isScrolled === true & !isSearchActive) */}
-      {isScrolled && !isSearchActive && (
-        <>
-          {/* Search Trigger Button slides in from Left */}
-          <button
-            type="button"
-            onClick={() => setIsSearchExpanded(true)}
-            className="fixed top-3 left-3 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer animate-in slide-in-from-left-4 duration-300"
-            title="Cari Produk"
-            aria-label="Open Floating Search"
-          >
-            <Search className="w-5 h-5 stroke-[2.5]" />
-          </button>
-
-          {/* Combined Plus + Menu Glass Pill at Top Right */}
-          <div className="fixed top-3 right-3 z-40 backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white rounded-full p-1.5 px-2.5 border border-white/20 shadow-xl flex items-center gap-1.5 transition-all duration-300 animate-in fade-in zoom-in-95">
-            {isManagerOrOwner && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleTriggerAdd}
-                  className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
-                  title="Tambah Produk Baru"
-                  aria-label="Add Product"
-                >
-                  <Plus className="w-5 h-5 stroke-[2.5]" />
-                </button>
-                <div className="w-px h-4 bg-white/25" />
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
-              className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-95 cursor-pointer"
-              title="Menu Navigasi"
-              aria-label="Open Navigation Menu"
-            >
-              <Menu className="w-5 h-5 stroke-[2.5]" />
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* Kondisi 3: Scrolled Down & Search Active (isScrolled === true & isSearchActive) */}
-      {isScrolled && isSearchActive && (
-        <>
-          {/* Full Width Floating Search Bar Pill from Left to Right */}
-          <div className="fixed top-3 left-3 right-16 z-50 backdrop-blur-xl bg-white/95 dark:bg-[#202024]/95 text-slate-900 dark:text-slate-100 rounded-full border border-slate-300/80 dark:border-[#38383C] shadow-2xl px-3.5 py-1.5 flex items-center gap-2.5 transition-all duration-300 animate-in fade-in slide-in-from-left-2">
-            <Search className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.5]" />
-            <input
-              autoFocus
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari produk, SKU, kategori..."
-              className="w-full bg-transparent text-xs font-semibold focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery("");
-                setIsSearchExpanded(false);
-              }}
-              className="p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer shrink-0"
-              title="Tutup & Reset Pencarian"
-            >
-              <X className="w-4 h-4 stroke-[2.5]" />
-            </button>
-          </div>
-
-          {/* Top Right Floating Menu Button ONLY (Plus icon hidden) */}
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent("open_mobile_menu"))}
-            className="fixed top-3 right-3 z-40 w-10 h-10 rounded-full backdrop-blur-xl bg-slate-900/85 dark:bg-[#202024]/90 text-white flex items-center justify-center shadow-lg border border-white/20 active:scale-95 transition-all cursor-pointer"
-            title="Menu Navigasi"
-            aria-label="Open Navigation Menu"
-          >
-            <Menu className="w-5 h-5 stroke-[2.5]" />
-          </button>
-        </>
-      )}
 
       {/* ── PAGE HEADER ── */}
       <div className="border-b border-slate-200/80 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h3 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 capitalize">
+          <h3 className="text-2xl font-medium tracking-tight text-slate-900 dark:text-slate-100 capitalize">
             {activeView === "master" ? t.masterInventoryTitle : t.discontinuedTitle}
           </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-normal mt-1">
             {activeView === "master" ? t.masterInventoryDesc : t.discontinuedDesc}
           </p>
         </div>
-
-        {/* Action Button: Add New Product */}
-        {activeView === "master" && (
-          <button
-            type="button"
-            onClick={handleTriggerAdd}
-            className="px-4 py-2.5 rounded-full font-bold text-xs bg-primary dark:bg-primary text-slate-900 shadow-sm hover:brightness-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer self-start sm:self-auto shrink-0"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>{t.menuAddNewProduct}</span>
-          </button>
-        )}
       </div>
 
-      {/* ── TOP KPI QUICK-FILTER CARDS STRIP (OPSI A: BEST PRACTICE UX FOR USER-FRIENDLINESS) ── */}
+      {/* ── DOMAIN CAPABILITY SEGMENTED TAB SWITCHER ── */}
+      {activeView === "master" && (
+        <div className="w-full overflow-x-auto no-scrollbar pb-1">
+          <div className="inline-flex items-center gap-1.5 p-1.5 bg-slate-200/60 dark:bg-[#1E1E22] rounded-2xl border border-slate-300/70 dark:border-[#2E2E34] shadow-inner min-w-max">
+            {/* Tab 1: Produk Jadi & Pack */}
+            <button
+              type="button"
+              onClick={() => setInventoryDomainTab("products")}
+              className={`px-4 py-2 rounded-xl text-xs transition-all duration-200 cursor-pointer flex items-center gap-2.5 relative select-none ${
+                inventoryDomainTab === "products"
+                  ? "bg-[#18181B] text-white dark:bg-[#E2FF66] dark:text-slate-950 font-semibold shadow-md shadow-slate-900/10 scale-[1.01] ring-1 ring-slate-900/20 dark:ring-[#E2FF66]/50"
+                  : "text-slate-600 dark:text-slate-400 font-normal hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-300/40 dark:hover:bg-[#2A2A30]"
+              }`}
+            >
+              <Package className={`w-4 h-4 transition-transform ${inventoryDomainTab === "products" ? "scale-105 text-[#E2FF66] dark:text-slate-950" : "text-slate-500 dark:text-slate-400"}`} />
+              <span className="tracking-tight">{language === "en" ? "Finished Products & Packs" : "Produk Jadi & Pack"}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-medium transition-colors ${
+                inventoryDomainTab === "products"
+                  ? "bg-[#E2FF66] text-slate-950 dark:bg-slate-900 dark:text-[#E2FF66]"
+                  : "bg-slate-300/70 dark:bg-[#2E2E34] text-slate-700 dark:text-slate-300"
+              }`}>
+                {products.length}
+              </span>
+            </button>
+
+            {/* Tab 2: Bahan Baku */}
+            <button
+              type="button"
+              onClick={() => setInventoryDomainTab("raw_materials")}
+              className={`px-4 py-2 rounded-xl text-xs transition-all duration-200 cursor-pointer flex items-center gap-2.5 relative select-none ${
+                inventoryDomainTab === "raw_materials"
+                  ? "bg-[#18181B] text-white dark:bg-[#E2FF66] dark:text-slate-950 font-semibold shadow-md shadow-slate-900/10 scale-[1.01] ring-1 ring-slate-900/20 dark:ring-[#E2FF66]/50"
+                  : "text-slate-600 dark:text-slate-400 font-normal hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-300/40 dark:hover:bg-[#2A2A30]"
+              }`}
+            >
+              <Layers className={`w-4 h-4 transition-transform ${inventoryDomainTab === "raw_materials" ? "scale-105 text-[#E2FF66] dark:text-slate-950" : "text-slate-500 dark:text-slate-400"}`} />
+              <span className="tracking-tight">{language === "en" ? "Raw Materials" : "Bahan Baku"}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-medium transition-colors ${
+                inventoryDomainTab === "raw_materials"
+                  ? "bg-[#E2FF66] text-slate-950 dark:bg-slate-900 dark:text-[#E2FF66]"
+                  : "bg-slate-300/70 dark:bg-[#2E2E34] text-slate-700 dark:text-slate-300"
+              }`}>
+                {ingredients.filter((i) => i.category === "raw_material" || !i.category).length}
+              </span>
+            </button>
+
+            {/* Tab 3: Alat & Kemasan */}
+            <button
+              type="button"
+              onClick={() => setInventoryDomainTab("tool_supplies")}
+              className={`px-4 py-2 rounded-xl text-xs transition-all duration-200 cursor-pointer flex items-center gap-2.5 relative select-none ${
+                inventoryDomainTab === "tool_supplies"
+                  ? "bg-[#18181B] text-white dark:bg-[#E2FF66] dark:text-slate-950 font-semibold shadow-md shadow-slate-900/10 scale-[1.01] ring-1 ring-slate-900/20 dark:ring-[#E2FF66]/50"
+                  : "text-slate-600 dark:text-slate-400 font-normal hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-300/40 dark:hover:bg-[#2A2A30]"
+              }`}
+            >
+              <Tag className={`w-4 h-4 transition-transform ${inventoryDomainTab === "tool_supplies" ? "scale-105 text-[#E2FF66] dark:text-slate-950" : "text-slate-500 dark:text-slate-400"}`} />
+              <span className="tracking-tight">{language === "en" ? "Tools & Supplies" : "Alat & Kemasan"}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-medium transition-colors ${
+                inventoryDomainTab === "tool_supplies"
+                  ? "bg-[#E2FF66] text-slate-950 dark:bg-slate-900 dark:text-[#E2FF66]"
+                  : "bg-slate-300/70 dark:bg-[#2E2E34] text-slate-700 dark:text-slate-300"
+              }`}>
+                {ingredients.filter((i) => i.category === "tool_supplies").length}
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── TOP KPI QUICK-FILTER CARDS STRIP WITH ADD ACTION CARD ── */}
       {view === "master" && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Card 1: Semua Produk */}
+          {/* Card 1: Action Add Card (Ala-Ala Add Card) */}
+          <button
+            type="button"
+            onClick={() => {
+              if (inventoryDomainTab === "products") {
+                handleTriggerAdd();
+              } else {
+                handleOpenIngredientModal();
+              }
+            }}
+            className="p-3.5 rounded-2xl border-2 border-dashed border-[#b8e635] bg-[#E2FF66]/15 dark:bg-[#E2FF66]/10 hover:bg-[#E2FF66]/25 dark:hover:bg-[#E2FF66]/20 transition-all cursor-pointer flex items-center justify-between text-left group active:scale-[0.98] shadow-xs"
+          >
+            <div className="text-left flex-1 min-w-0 pr-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-[#E2FF66] block mb-0.5 text-left">
+                {language === "en" ? "ADD DATA" : "TAMBAH DATA"}
+              </span>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-white group-hover:translate-x-0.5 transition-transform text-left truncate">
+                {inventoryDomainTab === "products" ? (
+                  <>
+                    <Package className="w-3.5 h-3.5 text-slate-700 dark:text-[#E2FF66] shrink-0" />
+                    <span className="truncate">{language === "en" ? "Finished Product" : "Produk Jadi & Pack"}</span>
+                  </>
+                ) : inventoryDomainTab === "raw_materials" ? (
+                  <>
+                    <Layers className="w-3.5 h-3.5 text-slate-700 dark:text-[#E2FF66] shrink-0" />
+                    <span className="truncate">{language === "en" ? "Raw Material" : "Bahan Baku"}</span>
+                  </>
+                ) : (
+                  <>
+                    <Tag className="w-3.5 h-3.5 text-slate-700 dark:text-[#E2FF66] shrink-0" />
+                    <span className="truncate">{language === "en" ? "Tool & Supply" : "Alat & Kemasan"}</span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-[#E2FF66] text-slate-950 flex items-center justify-center font-bold shadow-sm group-hover:rotate-90 transition-transform shrink-0">
+              <Plus className="w-5 h-5 stroke-[2.5]" />
+            </div>
+          </button>
+
+          {/* Card 2: Semua Data / Total Stock Items */}
           <button
             type="button"
             onClick={() => {
@@ -1448,10 +1611,10 @@ export default function InventoryModule({
             }`}
           >
             <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
                 {t.kpiAllProducts}
               </span>
-              <span className="text-xl font-extrabold font-mono text-slate-900 dark:text-slate-100 group-hover:scale-105 transition-transform inline-block">
+              <span className="text-lg font-semibold font-mono text-slate-900 dark:text-slate-100 group-hover:scale-105 transition-transform inline-block">
                 {kpiMetrics.total}
               </span>
             </div>
@@ -1460,7 +1623,7 @@ export default function InventoryModule({
             </div>
           </button>
 
-          {/* Card 2: Stok Menipis */}
+          {/* Card 3: Stok Menipis */}
           <button
             type="button"
             onClick={() => {
@@ -1486,7 +1649,7 @@ export default function InventoryModule({
             </div>
           </button>
 
-          {/* Card 3: Stok Habis */}
+          {/* Card 4: Stok Habis */}
           <button
             type="button"
             onClick={() => {
@@ -1511,32 +1674,6 @@ export default function InventoryModule({
               <AlertTriangle className="w-4 h-4" />
             </div>
           </button>
-
-          {/* Card 4: Non-Aktif / Arsip */}
-          <button
-            type="button"
-            onClick={() => {
-              setFilterStock("all");
-              setStatusFilter({ active: false, inactive: true, discontinued: true });
-            }}
-            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between group ${
-              !statusFilter.active && (statusFilter.inactive || statusFilter.discontinued)
-                ? "bg-slate-700 dark:bg-[#333339] border-slate-700 dark:border-slate-500 text-white ring-2 ring-slate-700/20 shadow-sm"
-                : "bg-white dark:bg-dark-card border-slate-200/80 dark:border-dark-border text-slate-700 dark:text-slate-200 hover:border-slate-300"
-            }`}
-          >
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
-                {t.kpiInactive}
-              </span>
-              <span className="text-xl font-extrabold font-mono text-slate-600 dark:text-slate-400 group-hover:scale-105 transition-transform inline-block">
-                {kpiMetrics.inactive}
-              </span>
-            </div>
-            <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-[#252528] flex items-center justify-center text-slate-500 dark:text-slate-400">
-              <Archive className="w-4 h-4" />
-            </div>
-          </button>
         </div>
       )}
 
@@ -1544,43 +1681,14 @@ export default function InventoryModule({
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
           
-          {/* Search Bar */}
-          <div className="relative flex-1">
-            <Search className="absolute left-5 top-3.5 w-4 h-4 text-slate-400" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-              }}
-              placeholder={t.searchPlaceholder}
-              className={`w-full pl-12 pr-16 py-3 rounded-full border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-400/20 transition-all ${
-                isDarkMode 
-                  ? "bg-dark-card border-dark-border text-white focus:border-primary" 
-                  : "bg-white border-light-border/60 text-slate-800 focus:border-slate-500"
-              }`}
-            />
-            <div className="absolute right-4 top-3 flex items-center gap-1.5">
-              {searchQuery ? (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
-                  title="Hapus"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              ) : (
-                <kbd
-                  className="hidden sm:inline-flex items-center px-2 py-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-md pointer-events-none shadow-2xs"
-                  title={t.shortcutSearchHint}
-                >
-                  /
-                </kbd>
-              )}
-            </div>
-          </div>
+          {/* Unified ErpSearchBar */}
+          <ErpSearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder={t.searchPlaceholder}
+            inputRef={searchInputRef}
+            className="flex-1"
+          />
 
           {/* Controls: Rich Horizontal Multi-Filter & Sort Menu */}
           <div className="flex items-center gap-2 shrink-0">
@@ -1851,45 +1959,80 @@ export default function InventoryModule({
           </div>
         </div>
 
-        {/* Category Pill Group (Full Width with Active Underline, Scroll Chevrons, and Grid Modal Trigger) */}
+        {/* Domain Category Pill Group */}
         <div className="flex items-center justify-between bg-slate-100 dark:bg-[#202023] p-1.5 rounded-full border border-slate-200/70 dark:border-[#35353A] w-full gap-2 shadow-sm">
           {/* Scrollable Categories List */}
           <div
             ref={categoryScrollRef}
             className="flex items-center gap-1 overflow-x-auto scrollbar-none flex-1 py-0.5 px-1 scroll-smooth"
           >
-            {categoriesList.map((cat) => {
-              const isCatActive = selectedCategory.toLowerCase() === cat.toLowerCase();
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => {
-                    setSelectedCategory(cat);
-                  }}
-                  className={`relative px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer whitespace-nowrap capitalize shrink-0 ${
-                    isCatActive
-                      ? "text-slate-900 dark:text-primary"
-                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                  }`}
-                >
-                  {cat === "all" ? t.allCategories : cat}
-                  {isCatActive && (
-                    <span className="absolute bottom-0 left-3.5 right-3.5 h-[2px] bg-slate-900 dark:bg-primary rounded-full" />
-                  )}
-                </button>
-              );
-            })}
+            {inventoryDomainTab === "products"
+              ? categoriesList.map((cat) => {
+                  const isCatActive = selectedCategory.toLowerCase() === cat.toLowerCase();
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`relative px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer whitespace-nowrap capitalize shrink-0 ${
+                        isCatActive
+                          ? "text-slate-900 dark:text-primary"
+                          : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      {cat === "all" ? t.allCategories : cat}
+                      {isCatActive && (
+                        <span className="absolute bottom-0 left-3.5 right-3.5 h-[2px] bg-slate-900 dark:bg-primary rounded-full" />
+                      )}
+                    </button>
+                  );
+                })
+              : (inventoryDomainTab === "raw_materials"
+                  ? [
+                      { id: "all", label: language === "en" ? "All Sub-Categories" : "Semua Sub-Kategori" },
+                      { id: "Daging & Protein", label: "Daging & Protein" },
+                      { id: "Tepung & Pati", label: "Tepung & Pati" },
+                      { id: "Bumbu & Rempah", label: "Bumbu & Rempah" },
+                      { id: "Minyak & Cairan", label: "Minyak & Cairan" },
+                      { id: "Bumbu Racik", label: "Bumbu Racik" },
+                      { id: "Bahan Penolong", label: "Bahan Penolong" },
+                    ]
+                  : [
+                      { id: "all", label: language === "en" ? "All Sub-Categories" : "Semua Sub-Kategori" },
+                      { id: "Kemasan & Plastik", label: "Kemasan & Plastik" },
+                      { id: "Peralatan Dapur", label: "Peralatan Dapur" },
+                      { id: "Tabung & Gas", label: "Tabung & Gas" },
+                      { id: "Kebersihan & Sanitasi", label: "Kebersihan & Sanitasi" },
+                      { id: "Perlengkapan", label: "Perlengkapan" },
+                    ]
+                ).map((c) => {
+                  const isCatActive = selectedIngredientSubCategory === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedIngredientSubCategory(c.id)}
+                      className={`relative px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer whitespace-nowrap capitalize shrink-0 ${
+                        isCatActive
+                          ? "text-slate-900 dark:text-primary"
+                          : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      {c.label}
+                      {isCatActive && (
+                        <span className="absolute bottom-0 left-3.5 right-3.5 h-[2px] bg-slate-900 dark:bg-primary rounded-full" />
+                      )}
+                    </button>
+                  );
+                })}
           </div>
 
-          {/* Right Controls: Chevrons & Grid Button */}
+          {/* Right Controls: Chevrons */}
           <div className="flex items-center gap-1 shrink-0 pl-1 pr-0.5">
             <button
               type="button"
               onClick={() => handleScrollCategory("left")}
               className="w-7 h-7 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/80 dark:hover:bg-white/10 transition-all cursor-pointer"
-              title="Scroll Left"
-              aria-label="Scroll Categories Left"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -1897,33 +2040,122 @@ export default function InventoryModule({
               type="button"
               onClick={() => handleScrollCategory("right")}
               className="w-7 h-7 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/80 dark:hover:bg-white/10 transition-all cursor-pointer"
-              title="Scroll Right"
-              aria-label="Scroll Categories Right"
             >
               <ChevronRight className="w-4 h-4" />
-            </button>
-            <div className="w-[1px] h-4 bg-slate-300 dark:bg-dark-border mx-0.5" />
-            <button
-              type="button"
-              onClick={() => {
-                setCategorySearch("");
-                setIsCategoryDialogOpen(true);
-              }}
-              className="w-8 h-8 rounded-full flex items-center justify-center bg-white dark:bg-[#2B2B30] text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-primary hover:scale-105 border border-slate-200/80 dark:border-dark-border shadow-sm transition-all cursor-pointer"
-              title={t.viewAllCategories}
-              aria-label={t.viewAllCategories}
-            >
-              <LayoutGrid className="w-4 h-4" />
             </button>
           </div>
         </div>
       </div>
-{/* Loading state */}
+
+      {/* Loading state */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-dark-card border border-slate-200/80 dark:border-slate-800 rounded-[28px] shadow-sm">
           <div className="w-10 h-10 border-4 border-slate-700 dark:border-primary border-t-transparent rounded-full animate-spin mb-3" />
           <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">{t.loading}</span>
         </div>
+      ) : inventoryDomainTab !== "products" ? (
+        <ErpDataTable
+          data={ingredients.filter((ing) => {
+            const isMatchingDomain =
+              inventoryDomainTab === "tool_supplies"
+                ? ing.category === "tool_supplies"
+                : ing.category === "raw_material" || !ing.category;
+
+            const matchesSubCat =
+              selectedIngredientSubCategory === "all" ||
+              (ing.sub_category || "General").toLowerCase() === selectedIngredientSubCategory.toLowerCase();
+
+            const matchesSearch =
+              !searchQuery.trim() || ing.name.toLowerCase().includes(searchQuery.toLowerCase());
+
+            return isMatchingDomain && matchesSubCat && matchesSearch;
+          })}
+          columns={[
+            {
+              key: "name",
+              label: language === "en" ? "Item Name" : "Nama Bahan / Alat",
+              renderCell: (ing) => (
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold text-xs">
+                    {ing.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-foreground text-sm block">{ing.name}</span>
+                    <span className="text-[11px] text-muted-foreground font-mono">
+                      {ing.sub_category || "General"}
+                    </span>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: "current_stock",
+              label: language === "en" ? "Current Stock" : "Stok Saat Ini",
+              renderCell: (ing) => {
+                const isLow = ing.min_stock_alert && ing.current_stock <= ing.min_stock_alert;
+                return (
+                  <div className="flex items-center gap-2">
+                    <span className={`font-bold font-mono text-sm ${isLow ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>
+                      {ing.current_stock} {ing.unit_type}
+                    </span>
+                    {isLow && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 border border-rose-500/20">
+                        Stok Menipis
+                      </span>
+                    )}
+                  </div>
+                );
+              },
+            },
+            {
+              key: "unit_cost",
+              label: language === "en" ? "Unit Purchase Cost" : "Harga Beli / Unit",
+              renderCell: (ing) => (
+                <span className="font-mono font-semibold text-foreground text-xs">
+                  {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(ing.unit_cost || 0)} / {ing.unit_type}
+                </span>
+              ),
+            },
+            {
+              key: "min_stock_alert",
+              label: language === "en" ? "Min Stock Alert" : "Batas Alert Min",
+              renderCell: (ing) => (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {ing.min_stock_alert || 5} {ing.unit_type}
+                </span>
+              ),
+            },
+            {
+              key: "actions",
+              label: language === "en" ? "Actions" : "Aksi",
+              renderCell: (ing) => (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleOpenIngredientModal(ing)}
+                    className="p-1.5 rounded-button border border-border text-foreground hover:bg-accent transition-all cursor-pointer"
+                    title={language === "en" ? "Edit item" : "Edit data"}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteIngredient(ing)}
+                    className="p-1.5 rounded-button text-rose-500 hover:bg-rose-500/10 transition-all cursor-pointer"
+                    title={language === "en" ? "Delete item" : "Hapus data"}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+          keyExtractor={(item) => item.id}
+          loading={loading}
+          emptyText={
+            inventoryDomainTab === "tool_supplies"
+              ? (language === "en" ? "No tools or supplies registered yet." : "Belum ada data alat atau kemasan terdaftar.")
+              : (language === "en" ? "No raw materials registered yet." : "Belum ada data bahan baku terdaftar.")
+          }
+        />
       ) : (
         <>
           {/* ── REUSABLE UNIFIED ERP DATA TABLE (DESKTOP TABLE + MOBILE ACCORDION) ── */}
@@ -1942,14 +2174,19 @@ export default function InventoryModule({
         }}
         renderMobileItem={(p) => {
           const isExpanded = expandedProductId === p.id;
-          const profitNominal = p.sell_price - p.purchase_price;
-          const marginPercent = p.purchase_price > 0 ? Math.round((profitNominal / p.purchase_price) * 100) : 100;
+          const buyPrice = Number(p.purchase_price ?? (p as any).standard_cost ?? 0);
+          const sellPrice = Number(p.sell_price ?? 0);
+          const currentStock = Number(p.current_stock ?? (p as any).qty_loose ?? 0);
+          const unitType = p.unit_type || (p as any).base_unit || "pcs";
+          const categoryName = p.category || (p as any).category_name || "General";
+          const profitNominal = sellPrice - buyPrice;
+          const marginPercent = buyPrice > 0 ? Math.round((profitNominal / buyPrice) * 100) : 100;
 
           return (
-            <div className="transition-colors">
+            <div className="transition-all duration-300 ease-out">
               <div
                 onClick={() => setExpandedProductId(isExpanded ? null : p.id)}
-                className="flex items-center justify-between py-3 px-1 hover:bg-slate-100/50 dark:hover:bg-white/[0.03] active:bg-slate-200/40 dark:active:bg-white/5 transition-all cursor-pointer group"
+                className="flex items-center justify-between py-3 px-1 hover:bg-slate-100/50 dark:hover:bg-white/[0.03] active:bg-slate-200/40 dark:active:bg-white/5 transition-all duration-200 cursor-pointer group"
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
                   <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 dark:bg-dark-bg flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-dark-border">
@@ -1960,7 +2197,7 @@ export default function InventoryModule({
                     )}
                   </div>
                   <div className="min-w-0">
-                    <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate group-hover:text-slate-700 dark:group-hover:text-primary transition-colors">
+                    <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors">
                       {p.name}
                     </h4>
                   </div>
@@ -1968,12 +2205,12 @@ export default function InventoryModule({
 
                 <div className="flex items-center gap-2 shrink-0 text-right">
                   <div>
-                    <div className="font-mono font-extrabold text-sm text-slate-900 dark:text-slate-100">
-                      Rp {p.sell_price.toLocaleString("id-ID")}
+                    <div className="font-mono font-semibold text-sm text-slate-900 dark:text-slate-100">
+                      Rp {sellPrice.toLocaleString("id-ID")}
                     </div>
                     <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                      <span className="text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400">
-                        {p.current_stock} {p.unit_type}
+                      <span className="text-[11px] font-mono font-medium text-slate-500 dark:text-slate-400">
+                        {currentStock} {unitType}
                       </span>
                       <div
                         className={`w-2 h-2 rounded-full ${
@@ -1983,83 +2220,97 @@ export default function InventoryModule({
                       />
                     </div>
                   </div>
-                  <ChevronRight className={`w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
+                  <ChevronRight className={`w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform duration-300 ease-out ${
                     isExpanded ? "rotate-90 text-slate-900 dark:text-slate-100" : ""
                   }`} />
                 </div>
               </div>
 
               {isExpanded && (
-                <div className="px-3 pb-4 pt-2 bg-slate-50/70 dark:bg-[#1A1A1E]/80 rounded-2xl mb-2 border border-slate-200/50 dark:border-[#25252A] space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="flex items-center gap-2 text-xs flex-wrap pb-1 border-b border-slate-200/40 dark:border-[#2A2A30]">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
-                      {t.colCategory}: <strong className="font-bold">{p.category || "General"}</strong>
+                <div className="px-3.5 pb-4 pt-2.5 bg-slate-50/80 dark:bg-[#1A1A1E]/90 rounded-2xl mb-2.5 border border-slate-200/60 dark:border-[#25252A] space-y-3 transition-all duration-300 ease-out animate-in fade-in-50 slide-in-from-top-2">
+                  <div className="flex items-center gap-2 text-xs flex-wrap pb-1.5 border-b border-slate-200/50 dark:border-[#2A2A30]">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
+                      {t.colCategory}: <span className="font-semibold">{categoryName}</span>
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
-                      SKU: <strong className="font-bold">{p.sku || "-"}</strong>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
+                      SKU: <span className="font-semibold">{p.sku || "-"}</span>
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
-                      Satuan: <strong className="font-bold">{p.unit_type}</strong>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-200/80 dark:bg-[#25252A] text-slate-700 dark:text-slate-300">
+                      Satuan: <span className="font-semibold">{unitType}</span>
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="p-3 bg-white dark:bg-[#222226] rounded-xl border border-slate-200/60 dark:border-[#303035] space-y-1">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">Matriks Keuangan</span>
-                      <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">Matriks Keuangan</span>
+                      <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 font-medium">
                         <span>Harga Modal (HPP):</span>
-                        <span className="font-mono font-bold text-slate-900 dark:text-slate-100">Rp {p.purchase_price.toLocaleString("id-ID")}</span>
+                        <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">Rp {buyPrice.toLocaleString("id-ID")}</span>
                       </div>
-                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-[#2F2F34]">
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-[#2F2F34] font-medium">
                         <span>Margin Profit:</span>
-                        <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">+Rp {profitNominal.toLocaleString("id-ID")} ({marginPercent}%)</span>
+                        <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">+Rp {profitNominal.toLocaleString("id-ID")} ({marginPercent}%)</span>
                       </div>
                     </div>
 
                     <div className="p-3 bg-white dark:bg-[#222226] rounded-xl border border-slate-200/60 dark:border-[#303035] space-y-1">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">Aturan Mode Inventori</span>
-                      <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">Aturan Mode Inventori</span>
+                      <div className="flex items-center justify-between font-medium">
                         <span className="text-slate-600 dark:text-slate-400">Mode:</span>
-                        <span className="font-bold text-slate-900 dark:text-slate-100 capitalize">{p.inventory_mode === "dry_strict" ? "Dry Strict" : p.inventory_mode === "wet_batch_thaw" ? "Wet Batch Thaw" : "Infinite"}</span>
+                        <span className="font-semibold text-slate-900 dark:text-slate-100 capitalize">{p.inventory_mode === "dry_strict" ? "Dry Strict" : p.inventory_mode === "wet_batch_thaw" ? "Wet Batch Thaw" : "Infinite"}</span>
                       </div>
-                      <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-[#2F2F34]">
+                      <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-[#2F2F34] font-medium">
                         <span>Limit Peringatan Stok:</span>
-                        <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{p.min_stock_alert} {p.unit_type}</span>
+                        <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{p.min_stock_alert ?? 0} {unitType}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <div className="flex items-center gap-2 pt-1">
+                    {/* Primary Action 1: Adjustment */}
+                    <button
+                      type="button"
+                      onClick={() => setAdjustingProduct(p)}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-semibold text-xs cursor-pointer transition-all active:scale-95 shadow-xs"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                      <span>Adjustment</span>
+                    </button>
+
+                    {/* Primary Action 2: Edit */}
                     <button
                       type="button"
                       onClick={() => handleTriggerEdit(p)}
-                      className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 dark:bg-primary text-white dark:text-slate-900 font-bold text-xs cursor-pointer transition-all active:scale-95 shadow-2xs"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#222226] border border-slate-200/80 dark:border-[#333338] hover:bg-slate-100 dark:hover:bg-white/10 font-medium text-xs text-slate-700 dark:text-slate-300 cursor-pointer transition-all active:scale-95"
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Edit Detail</span>
+                      <Edit3 className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Edit</span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (p.sku) {
-                          navigator.clipboard.writeText(p.sku);
-                          toast.success(t.skuCopied);
-                        }
-                      }}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#222226] border border-slate-200/80 dark:border-[#333338] hover:bg-slate-100 dark:hover:bg-white/10 font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer transition-all active:scale-95"
-                    >
-                      <Copy className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Salin SKU</span>
-                    </button>
-
+                    {/* Far-Right 3-Dots Menu */}
                     <DropdownMenu>
-                      <DropdownMenuTrigger className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#222226] border border-slate-200/80 dark:border-[#333338] hover:bg-slate-100 dark:hover:bg-white/10 font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer transition-all">
-                        <span className={`w-2 h-2 rounded-full ${p.status === "active" ? "bg-emerald-500" : p.status === "inactive" ? "bg-slate-400" : "bg-red-500"}`} />
-                        <span className="capitalize">{p.status}</span>
-                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                      <DropdownMenuTrigger className="flex items-center justify-center w-9 h-9 rounded-xl bg-white dark:bg-[#222226] border border-slate-200/80 dark:border-[#333338] hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 cursor-pointer transition-all shrink-0">
+                        <MoreHorizontal className="w-4 h-4 text-slate-500" />
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-xl p-1 min-w-[140px]">
+                      <DropdownMenuContent align="end" className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-2xl p-1.5 min-w-[160px] space-y-1">
+                        {/* Copy SKU */}
+                        <DropdownMenuItem
+                          onClick={() => {
+                            if (p.sku) {
+                              navigator.clipboard.writeText(p.sku);
+                              toast.success(t.skuCopied);
+                            }
+                          }}
+                          className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl flex items-center gap-2"
+                        >
+                          <Copy className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Salin SKU</span>
+                        </DropdownMenuItem>
+
+                        {/* Status Change Subitems */}
+                        <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 border-t border-slate-100 dark:border-[#2F2F34] mt-1 pt-1.5">
+                          Ubah Status
+                        </div>
                         {[
                           { val: "active", label: "Aktif", color: "bg-emerald-500" },
                           { val: "inactive", label: "Non-Aktif", color: "bg-slate-400" },
@@ -2068,26 +2319,28 @@ export default function InventoryModule({
                           <DropdownMenuItem
                             key={st.val}
                             onClick={() => handleQuickStatusChange(p, st.val as any)}
-                            className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center justify-between"
+                            className="cursor-pointer px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl flex items-center justify-between"
                           >
                             <div className="flex items-center gap-2">
                               <div className={`w-2 h-2 rounded-full ${st.color}`} />
                               <span>{st.label}</span>
                             </div>
-                            {p.status === st.val && <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[3]" />}
+                            {p.status === st.val && <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[2]" />}
                           </DropdownMenuItem>
                         ))}
+
+                        {/* Archive / Delete Product */}
+                        <div className="border-t border-slate-100 dark:border-[#2F2F34] mt-1 pt-1">
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteProduct(p.id)}
+                            className="cursor-pointer px-3 py-2 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl flex items-center gap-2"
+                          >
+                            <Archive className="w-3.5 h-3.5" />
+                            <span>{t.archive}</span>
+                          </DropdownMenuItem>
+                        </div>
                       </DropdownMenuContent>
                     </DropdownMenu>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteProduct(p.id)}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200/60 dark:border-red-900/40 text-red-600 dark:text-red-400 font-bold text-xs cursor-pointer transition-all active:scale-95 hover:bg-red-100"
-                    >
-                      <Archive className="w-3.5 h-3.5" />
-                      <span>{t.archive}</span>
-                    </button>
                   </div>
                 </div>
               )}
@@ -2128,7 +2381,7 @@ export default function InventoryModule({
             label: t.colCategory,
             renderCell: (p) => (
               <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-[#2A2A2E] text-slate-700 dark:text-slate-300 font-semibold text-xs">
-                {p.category || "General"}
+                {p.category || (p as any).category_name || "General"}
               </span>
             ),
           },
@@ -2152,31 +2405,39 @@ export default function InventoryModule({
             key: "buyPrice",
             label: t.colBuyPrice,
             align: "right",
-            renderCell: (p) => (
-              <span className="font-mono text-slate-600 dark:text-slate-300 text-xs">
-                Rp {p.purchase_price.toLocaleString("id-ID")}
-              </span>
-            ),
+            renderCell: (p) => {
+              const buyPrice = Number(p.purchase_price ?? (p as any).standard_cost ?? 0);
+              return (
+                <span className="font-mono text-slate-600 dark:text-slate-300 text-xs">
+                  Rp {buyPrice.toLocaleString("id-ID")}
+                </span>
+              );
+            },
           },
           {
             key: "sellPrice",
             label: t.colSellPrice,
             align: "right",
-            renderCell: (p) => (
-              <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">
-                Rp {p.sell_price.toLocaleString("id-ID")}
-              </span>
-            ),
+            renderCell: (p) => {
+              const sellPrice = Number(p.sell_price ?? 0);
+              return (
+                <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">
+                  Rp {sellPrice.toLocaleString("id-ID")}
+                </span>
+              );
+            },
           },
           {
             key: "stock",
             label: t.colStock,
             align: "right",
             renderCell: (p) => {
-              const isLowStock = p.inventory_mode === "dry_strict" && p.current_stock <= (p.min_stock_alert || 0);
+              const currentStock = Number(p.current_stock ?? (p as any).qty_loose ?? 0);
+              const unitType = p.unit_type || (p as any).base_unit || "pcs";
+              const isLowStock = p.inventory_mode === "dry_strict" && currentStock <= (p.min_stock_alert || 0);
               return (
                 <span className={`font-mono font-bold text-xs ${isLowStock ? "text-red-500 font-extrabold" : "text-slate-900 dark:text-slate-100"}`}>
-                  {p.current_stock} {p.unit_type}
+                  {currentStock} {unitType}
                 </span>
               );
             },
@@ -2210,10 +2471,21 @@ export default function InventoryModule({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    setAdjustingProduct(p);
+                  }}
+                  className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200 transition-colors"
+                  title="Penyesuaian Stok (Adjust Stock)"
+                >
+                  <SlidersHorizontal className="w-4 h-4 text-slate-700 dark:text-white" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     handleTriggerEdit(p);
                   }}
                   className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 transition-colors"
-                  title="Edit Produk"
+                  title="Edit Detail Produk"
                 >
                   <Edit3 className="w-4 h-4" />
                 </button>
@@ -2224,13 +2496,20 @@ export default function InventoryModule({
                   >
                     <MoreHorizontal className="w-4 h-4" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-xl p-1 min-w-[150px]">
+                  <DropdownMenuContent className="bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#3A3A3E] shadow-xl rounded-xl p-1 min-w-[170px]">
+                    <DropdownMenuItem
+                      onClick={() => setAdjustingProduct(p)}
+                      className="cursor-pointer px-3 py-2 text-xs font-bold text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-slate-900 dark:text-white" />
+                      <span>Penyesuaian Stok</span>
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => handleTriggerEdit(p)}
                       className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg flex items-center gap-2"
                     >
                       <Edit3 className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Edit Produk</span>
+                      <span>Edit Detail</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
@@ -2435,7 +2714,8 @@ export default function InventoryModule({
           )}
         </div>
       )}
-      </>)}
+      </>
+      )}
 
       {/* ── ALL CATEGORIES MODAL DIALOG ── */}
       <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
@@ -2488,8 +2768,8 @@ export default function InventoryModule({
               .map((cat) => {
                 const isCatActive = selectedCategory.toLowerCase() === cat.toLowerCase();
                 const count = cat === "all" 
-                  ? products.length 
-                  : products.filter(p => (p.category || "General").toLowerCase() === cat.toLowerCase()).length;
+                  ? safeProducts.length 
+                  : safeProducts.filter(p => (p.category || "General").toLowerCase() === cat.toLowerCase()).length;
                 return (
                   <button
                     key={cat}
@@ -2531,6 +2811,292 @@ export default function InventoryModule({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Stock Adjustment Modal */}
+      <StockAdjustmentModal
+        isOpen={Boolean(adjustingProduct)}
+        onClose={() => setAdjustingProduct(null)}
+        product={adjustingProduct}
+        onSuccess={fetchData}
+      />
+
+      {/* Ingredient Form Modal (Dedicated Raw Materials vs Tools & Supplies Form) */}
+      <Dialog open={showIngredientModal} onOpenChange={setShowIngredientModal}>
+        <DialogContent className="sm:max-w-2xl rounded-2xl bg-white dark:bg-[#202024] text-slate-900 dark:text-slate-100 border border-slate-200/80 dark:border-[#38383C] p-6 shadow-xl">
+          {(() => {
+            const isTool = ingCategory === "tool_supplies" || inventoryDomainTab === "tool_supplies";
+            return (
+              <>
+                <DialogHeader className="pb-3 border-b border-slate-100 dark:border-[#2E2E34]">
+                  <DialogTitle className="flex items-center gap-2.5 text-lg font-medium">
+                    <div className="w-9 h-9 rounded-xl bg-[#E2FF66]/20 dark:bg-[#E2FF66]/15 text-slate-900 dark:text-[#E2FF66] flex items-center justify-center shrink-0">
+                      {isTool ? <Tag className="w-5 h-5" /> : <Layers className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <span className="block font-medium text-slate-900 dark:text-slate-100">
+                        {editingIngredient
+                          ? isTool
+                            ? (language === "en" ? "Edit Tool & Supply Item" : "Edit Alat & Kemasan")
+                            : (language === "en" ? "Edit Raw Material Item" : "Edit Bahan Baku Mentah")
+                          : isTool
+                          ? (language === "en" ? "Add New Tool & Supply Item" : "Tambah Alat & Kemasan Baru")
+                          : (language === "en" ? "Add New Raw Material Item" : "Tambah Bahan Baku Baru")}
+                      </span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-normal block mt-0.5">
+                        {isTool
+                          ? (language === "en"
+                              ? "Input kitchen equipment, packaging, or operational gas details."
+                              : "Input detail peralatan dapur, kemasan, atau tabung gas operasional.")
+                          : (language === "en"
+                              ? "Input raw ingredients, production spices, and supplier unit costs."
+                              : "Input detail bahan mentah, resep, dan bumbu produksi.")}
+                      </span>
+                    </div>
+                  </DialogTitle>
+                </DialogHeader>
+
+                <form onSubmit={handleIngredientSubmit} className="space-y-5 pt-4">
+                  {/* Section 1: Informasi Utama Item */}
+                  <div className="space-y-3">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                      {language === "en" ? "1. Item Identification" : "1. Identitas Item"}
+                    </span>
+
+                    {/* Item Name */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                        {isTool
+                          ? (language === "en" ? "Tool / Supply Name *" : "Nama Alat / Kemasan *")
+                          : (language === "en" ? "Raw Material Name *" : "Nama Bahan Baku *")}
+                      </label>
+                      <input
+                        type="text"
+                        value={ingName}
+                        onChange={(e) => setIngName(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-[#18181C] border border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-slate-900 dark:focus:ring-[#E2FF66]"
+                        placeholder={
+                          isTool
+                            ? (language === "en" ? "e.g. 500ml Plastic Bowl / 3kg Gas Tank" : "cth: Mangkuk Plastik 500ml / Gas Elpiji 3kg")
+                            : (language === "en" ? "e.g. Fresh Beef Meat / Tapioca Flour" : "cth: Daging Sapi Murni / Tepung Tapioka Super")
+                        }
+                        required
+                      />
+                    </div>
+
+                    {/* Sub-Category & Unit Type Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                      {/* Sub-Category */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                            {language === "en" ? "Sub-Category" : "Sub-Kategori"}
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCustomIngSubCat(!isCustomIngSubCat);
+                              if (!isCustomIngSubCat) setIngSubCategory("");
+                            }}
+                            className="text-[10px] font-medium text-slate-500 hover:text-slate-900 dark:hover:text-[#E2FF66] hover:underline cursor-pointer"
+                          >
+                            {isCustomIngSubCat
+                              ? (language === "en" ? "Pilih Daftar" : "Pilih Daftar")
+                              : (language === "en" ? "+ Custom" : "+ Custom")}
+                          </button>
+                        </div>
+
+                        {isCustomIngSubCat ? (
+                          <input
+                            type="text"
+                            value={ingSubCategory}
+                            onChange={(e) => setIngSubCategory(e.target.value)}
+                            placeholder={language === "en" ? "Type sub-category..." : "Tulis sub-kategori custom..."}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#18181C] border border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-slate-100 text-xs font-medium"
+                            required
+                          />
+                        ) : (
+                          <Select value={ingSubCategory} onValueChange={(v) => v && setIngSubCategory(v)}>
+                            <SelectTrigger className="w-full rounded-xl bg-slate-50 dark:bg-[#18181C] border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-slate-100 text-xs font-medium">
+                              <SelectValue placeholder="Pilih Sub-Kategori" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white dark:bg-[#202024] text-slate-900 dark:text-slate-100 border-slate-200 dark:border-[#38383C]">
+                              {isTool ? (
+                                <>
+                                  <SelectItem value="Kemasan & Plastik">Kemasan & Plastik</SelectItem>
+                                  <SelectItem value="Peralatan Dapur">Peralatan Dapur</SelectItem>
+                                  <SelectItem value="Tabung & Gas">Tabung & Gas</SelectItem>
+                                  <SelectItem value="Kebersihan & Sanitasi">Kebersihan & Sanitasi</SelectItem>
+                                  <SelectItem value="Perlengkapan">Perlengkapan</SelectItem>
+                                </>
+                              ) : (
+                                <>
+                                  <SelectItem value="Daging & Protein">Daging & Protein</SelectItem>
+                                  <SelectItem value="Tepung & Pati">Tepung & Pati</SelectItem>
+                                  <SelectItem value="Bumbu & Rempah">Bumbu & Rempah</SelectItem>
+                                  <SelectItem value="Minyak & Cairan">Minyak & Cairan</SelectItem>
+                                  <SelectItem value="Bumbu Racik">Bumbu Racik</SelectItem>
+                                  <SelectItem value="Bahan Penolong">Bahan Penolong</SelectItem>
+                                </>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+
+                      {/* Unit Type */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                            {language === "en" ? "Unit Type" : "Satuan Unit"}
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCustomIngUnit(!isCustomIngUnit);
+                              if (!isCustomIngUnit) setIngUnit("");
+                            }}
+                            className="text-[10px] font-medium text-slate-500 hover:text-slate-900 dark:hover:text-[#E2FF66] hover:underline cursor-pointer"
+                          >
+                            {isCustomIngUnit
+                              ? (language === "en" ? "Pilih Daftar" : "Pilih Daftar")
+                              : (language === "en" ? "+ Custom" : "+ Custom")}
+                          </button>
+                        </div>
+
+                        {isCustomIngUnit ? (
+                          <input
+                            type="text"
+                            value={ingUnit}
+                            onChange={(e) => setIngUnit(e.target.value)}
+                            placeholder={language === "en" ? "Type unit (e.g. botol, cup)..." : "Tulis satuan custom (cth: botol, cup)..."}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#18181C] border border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-slate-100 text-xs font-medium"
+                            required
+                          />
+                        ) : (
+                          <Select value={ingUnit} onValueChange={(v) => v && setIngUnit(v)}>
+                            <SelectTrigger className="w-full rounded-xl bg-slate-50 dark:bg-[#18181C] border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-slate-100 text-xs font-medium">
+                              <SelectValue placeholder="Pilih Satuan" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white dark:bg-[#202024] text-slate-900 dark:text-slate-100 border-slate-200 dark:border-[#38383C]">
+                              {isTool ? (
+                                <>
+                                  <SelectItem value="pcs">Pieces (pcs)</SelectItem>
+                                  <SelectItem value="unit">Unit</SelectItem>
+                                  <SelectItem value="roll">Roll</SelectItem>
+                                  <SelectItem value="set">Set</SelectItem>
+                                  <SelectItem value="tabung">Tabung (Gas)</SelectItem>
+                                  <SelectItem value="dus">Dus / Box</SelectItem>
+                                  <SelectItem value="pack">Pack</SelectItem>
+                                </>
+                              ) : (
+                                <>
+                                  <SelectItem value="kg">Kilogram (kg)</SelectItem>
+                                  <SelectItem value="gram">Gram (g)</SelectItem>
+                                  <SelectItem value="liter">Liter (l)</SelectItem>
+                                  <SelectItem value="ml">MiliLiter (ml)</SelectItem>
+                                  <SelectItem value="pack">Pack</SelectItem>
+                                  <SelectItem value="ikat">Ikat</SelectItem>
+                                  <SelectItem value="botol">Botol</SelectItem>
+                                </>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 2: Financial & Inventory Parameters */}
+                  <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-[#2E2E34]">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                      {language === "en" ? "2. Inventory & Cost Parameters" : "2. Parameter Stok & Harga Modal"}
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                      {/* Initial Stock */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                          {language === "en" ? "Initial Stock" : "Stok Awal"}
+                        </label>
+                        <input
+                          type="text"
+                          value={ingStock}
+                          onChange={(e) => setIngStock(formatNumberInput(e.target.value))}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-[#18181C] border border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-slate-100 text-sm font-semibold font-mono"
+                          placeholder="0"
+                        />
+                      </div>
+
+                      {/* Min Stock Alert */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                          {language === "en" ? "Min Stock Alert" : "Batas Alert Min"}
+                        </label>
+                        <input
+                          type="text"
+                          value={ingMinAlert}
+                          onChange={(e) => setIngMinAlert(formatNumberInput(e.target.value))}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-[#18181C] border border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-slate-100 text-sm font-semibold font-mono"
+                          placeholder="5"
+                        />
+                      </div>
+
+                      {/* Purchase Cost */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                          {language === "en" ? "Unit Cost (Rp)" : "Harga Beli / Unit (Rp)"}
+                        </label>
+                        <input
+                          type="text"
+                          value={ingCost}
+                          onChange={(e) => setIngCost(formatNumberInput(e.target.value))}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-[#18181C] border border-slate-200 dark:border-[#38383C] text-slate-900 dark:text-slate-100 text-sm font-semibold font-mono"
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer Buttons */}
+                  <DialogFooter className="pt-4 border-t border-slate-100 dark:border-[#2E2E34] flex flex-row items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowIngredientModal(false)}
+                      className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-[#38383C] text-slate-700 dark:text-slate-300 font-medium text-xs hover:bg-slate-100 dark:hover:bg-[#2E2E34] cursor-pointer transition-colors"
+                    >
+                      {language === "en" ? "Cancel" : "Batal"}
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 rounded-xl bg-[#E2FF66] text-slate-950 font-semibold text-xs hover:brightness-105 cursor-pointer shadow-sm transition-all"
+                    >
+                      {language === "en" ? "Save Item" : "Simpan Data"}
+                    </button>
+                  </DialogFooter>
+                </form>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Ingredient Confirm Modal */}
+      <ConfirmDialog
+        isOpen={Boolean(deletingIngredientItem)}
+        onClose={() => setDeletingIngredientItem(null)}
+        onConfirm={confirmDeleteIngredient}
+        title={
+          language === "en"
+            ? `Delete "${deletingIngredientItem?.name}"?`
+            : `Hapus "${deletingIngredientItem?.name}"?`
+        }
+        description={
+          language === "en"
+            ? `Are you sure you want to delete ${deletingIngredientItem?.name}? This action cannot be undone.`
+            : `Apakah Anda yakin ingin menghapus "${deletingIngredientItem?.name}" dari sistem? Data ini tidak dapat dikembalikan.`
+        }
+        variant="destructive"
+      />
 
     </div>
   );

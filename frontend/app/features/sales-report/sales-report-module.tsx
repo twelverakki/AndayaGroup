@@ -4,6 +4,10 @@ import { useState, useEffect, useMemo } from "react";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useLanguageStore, translations } from "../../lib/i18n";
+import { ErpSearchBar } from "../../components/ErpSearchBar";
+import { ErpDataTable } from "../../components/ErpDataTable";
+import { DatePicker } from "../../components/ui/date-picker";
+import { toast } from "../../components/ui/sonner";
 import {
   Select,
   SelectContent,
@@ -26,10 +30,8 @@ import {
   Search,
   Filter,
   RefreshCw,
-  ArrowUpRight,
   Sparkles,
   ChevronDown,
-  Layers,
   Clock,
   CheckCircle2,
   AlertCircle,
@@ -181,10 +183,10 @@ export default function SalesReportModule() {
     });
   }, [transactions, statusFilter, paymentFilter, typeFilter, searchTxQuery]);
 
-  // Export to CSV
+  // Export to CSV using Toast Sonner instead of native alert
   const handleExportCSV = () => {
     if (filteredTransactions.length === 0) {
-      alert("Tidak ada data transaksi untuk diekspor.");
+      toast.info(t.noData || "Tidak ada data transaksi untuk diekspor.");
       return;
     }
 
@@ -207,6 +209,7 @@ export default function SalesReportModule() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    toast.success("Laporan penjualan berhasil diekspor!");
   };
 
   // Max daily sales for relative chart bar heights
@@ -216,35 +219,26 @@ export default function SalesReportModule() {
   }, [summary?.daily_trends]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto space-y-6 p-6 lg:p-8 scrollbar-thin">
+    <div className="space-y-6 text-left relative">
       
-      {/* ================= HEADER SECTION ================= */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-dark-border">
+      {/* ── PAGE HEADER (STANDARDIZED MATCHING INVENTORY & PROCUREMENT) ── */}
+      <div className="border-b border-slate-200/80 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-brand-purple/10 dark:bg-primary/10 text-brand-purple dark:text-primary flex items-center justify-center font-bold">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                {language === "id" ? "Laporan & Rekap Penjualan" : "Sales Analytics & Reports"}
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {language === "id"
-                  ? "Analisis omset transaksi, metode pembayaran, tren penjualan, dan produk terlaris."
-                  : "Analyze revenue trends, payment methods, cashier performance, and top-selling items."}
-              </p>
-            </div>
-          </div>
+          <h3 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            {t.salesReportTitle || "Laporan & Rekap Penjualan"}
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
+            {t.salesReportDesc || "Analisis omset transaksi, metode pembayaran, tren harian, dan produk terlaris."}
+          </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2">
+        {/* Header Action Pills */}
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
           <button
             type="button"
             onClick={fetchReportData}
             disabled={loading}
-            className="p-2.5 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-[#26262A] hover:bg-slate-50 dark:hover:bg-[#2E2E34] text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+            className="p-2.5 rounded-full border border-slate-200/80 dark:border-[#38383C] bg-white dark:bg-[#202024] hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 transition-all cursor-pointer shadow-xs"
             title="Refresh Data"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -253,29 +247,29 @@ export default function SalesReportModule() {
           <button
             type="button"
             onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-[#26262A] hover:bg-slate-50 dark:hover:bg-[#2E2E34] text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer shadow-xs"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-slate-200/80 dark:border-[#38383C] bg-white dark:bg-[#202024] hover:bg-slate-100 dark:hover:bg-white/5 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-all cursor-pointer shadow-xs"
           >
-            <Download className="w-4 h-4 text-purple-600 dark:text-primary" />
-            <span>Ekspor CSV</span>
+            <Download className="w-4 h-4 text-slate-500" />
+            <span>{t.exportCsv || "Ekspor CSV"}</span>
           </button>
 
           <button
             type="button"
             onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-purple hover:bg-brand-purple-hover text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 text-xs font-semibold transition-all shadow-xs cursor-pointer"
           >
             <Printer className="w-4 h-4" />
-            <span>Cetak Laporan</span>
+            <span>{t.printReport || "Cetak Laporan"}</span>
           </button>
         </div>
       </div>
 
-      {/* ================= FILTER TOOLBAR ================= */}
-      <div className="p-4 rounded-3xl bg-slate-50/80 dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3">
+      {/* ── FILTER TOOLBAR (CLEAN DATE PRESETS & SHADCN SELECTS) ── */}
+      <div className="p-4 rounded-3xl bg-slate-50/80 dark:bg-[#1C1C20] border border-slate-200/70 dark:border-[#2F2F34] space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           
           {/* Quick Date Range Presets */}
-          <div className="flex items-center gap-1.5 bg-white dark:bg-dark-bg p-1 rounded-2xl border border-slate-200 dark:border-dark-border">
+          <div className="flex items-center gap-1.5 bg-white dark:bg-[#25252A] p-1 rounded-2xl border border-slate-200/80 dark:border-[#333338]">
             {[
               { id: "today", label: language === "id" ? "Hari Ini" : "Today" },
               { id: "7days", label: language === "id" ? "7 Hari" : "7 Days" },
@@ -286,10 +280,10 @@ export default function SalesReportModule() {
                 key={p.id}
                 type="button"
                 onClick={() => applyDatePreset(p.id as any)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   datePreset === p.id
-                    ? "bg-brand-purple dark:bg-primary text-white dark:text-[#1a1a1a] shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
                 }`}
               >
                 {p.label}
@@ -299,55 +293,45 @@ export default function SalesReportModule() {
 
           {/* Date Picker Inputs */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-xs font-semibold">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => {
-                  setStartDate(e.target.value);
-                  setDatePreset("custom");
-                }}
-                className="bg-transparent focus:outline-none text-slate-700 dark:text-slate-200"
-              />
-            </div>
-            <span className="text-xs text-slate-400 font-bold">s/d</span>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-xs font-semibold">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => {
-                  setEndDate(e.target.value);
-                  setDatePreset("custom");
-                }}
-                className="bg-transparent focus:outline-none text-slate-700 dark:text-slate-200"
-              />
-            </div>
+            <DatePicker
+              value={startDate}
+              onChange={(val) => {
+                setStartDate(val);
+                setDatePreset("custom");
+              }}
+            />
+            <span className="text-xs text-slate-400 font-medium">s/d</span>
+            <DatePicker
+              value={endDate}
+              onChange={(val) => {
+                setEndDate(val);
+                setDatePreset("custom");
+              }}
+            />
           </div>
 
-          {/* Payment Method & Type Filter Dropdowns */}
+          {/* Payment Method & Type Filter Dropdowns (Shadcn UI Select) */}
           <div className="flex items-center gap-2">
             <Select value={paymentFilter} onValueChange={(val) => setPaymentFilter(val || "all")}>
-              <SelectTrigger className="w-[160px] text-xs font-bold h-9 rounded-xl border bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-700 dark:text-slate-200">
-                <SelectValue placeholder={language === "id" ? "Pilih Pembayaran" : "Select Payment"} />
+              <SelectTrigger className="w-[150px] text-xs font-semibold h-9 rounded-2xl border bg-white dark:bg-[#25252A] border-slate-200/80 dark:border-[#333338] text-slate-700 dark:text-slate-200">
+                <SelectValue placeholder="Metode Bayar" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{language === "id" ? "Semua Pembayaran" : "All Payments"}</SelectItem>
-                <SelectItem value="cash">Tunai (Cash)</SelectItem>
+                <SelectItem value="all">Semua Pembayaran</SelectItem>
+                <SelectItem value="cash">Tunai</SelectItem>
                 <SelectItem value="qris">QRIS</SelectItem>
-                <SelectItem value="other">{language === "id" ? "Lainnya" : "Other"}</SelectItem>
+                <SelectItem value="other">Lainnya</SelectItem>
               </SelectContent>
             </Select>
 
             <Select value={typeFilter} onValueChange={(val) => setTypeFilter(val || "all")}>
-              <SelectTrigger className="w-[150px] text-xs font-bold h-9 rounded-xl border bg-white dark:bg-dark-bg border-slate-200 dark:border-dark-border text-slate-700 dark:text-slate-200">
-                <SelectValue placeholder={language === "id" ? "Pilih Tipe" : "Select Type"} />
+              <SelectTrigger className="w-[140px] text-xs font-semibold h-9 rounded-2xl border bg-white dark:bg-[#25252A] border-slate-200/80 dark:border-[#333338] text-slate-700 dark:text-slate-200">
+                <SelectValue placeholder="Tipe Nota" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{language === "id" ? "Semua Tipe" : "All Types"}</SelectItem>
-                <SelectItem value="sale">{language === "id" ? "Penjualan (Sales)" : "Customer Sales"}</SelectItem>
-                <SelectItem value="internal_take">{language === "id" ? "Konsumsi Internal" : "Internal Take"}</SelectItem>
+                <SelectItem value="all">Semua Tipe</SelectItem>
+                <SelectItem value="sale">Penjualan</SelectItem>
+                <SelectItem value="internal_take">Konsumsi Internal</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -355,122 +339,122 @@ export default function SalesReportModule() {
         </div>
       </div>
 
-      {/* Error alert */}
+      {/* Error Feedback */}
       {error && (
-        <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-semibold flex items-center gap-2">
+        <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-medium flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* ================= 4 HERO KPI METRICS ================= */}
+      {/* ── 4 HERO KPI METRICS CARDS ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* 1. Total Gross Revenue */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3 shadow-xs">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E22] border border-slate-200/70 dark:border-[#333338] space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              {language === "id" ? "Total Omset Bruto" : "Total Gross Sales"}
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {t.totalGrossSales || "Total Omset Bruto"}
             </span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-semibold">
               <DollarSign className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-extrabold text-emerald-600 dark:text-primary">
+            <h3 className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
               Rp {(summary?.total_gross_sales || 0).toLocaleString("id-ID")}
             </h3>
             <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 font-medium">
               <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-              <span>{summary?.total_transactions || 0} {language === "id" ? "nota selesai" : "completed orders"}</span>
+              <span>{summary?.total_transactions || 0} nota selesai</span>
             </p>
           </div>
         </div>
 
         {/* 2. Total Transactions & AOV */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3 shadow-xs">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E22] border border-slate-200/70 dark:border-[#333338] space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              {language === "id" ? "Rata-rata Nilai Nota (AOV)" : "Average Order Value"}
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {t.averageOrderValue || "Rata-rata Nilai Nota (AOV)"}
             </span>
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-primary flex items-center justify-center font-bold">
+            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-semibold">
               <Receipt className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-extrabold text-slate-800 dark:text-white">
+            <h3 className="text-2xl font-semibold text-slate-800 dark:text-white font-mono">
               Rp {(summary?.average_order_value || 0).toLocaleString("id-ID")}
             </h3>
             <p className="text-[11px] text-slate-400 mt-1 font-medium">
-              {language === "id" ? "Rata-rata per transaksi kasir" : "Per transaction average"}
+              Rata-rata per transaksi kasir
             </p>
           </div>
         </div>
 
         {/* 3. Total Items Sold */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3 shadow-xs">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E22] border border-slate-200/70 dark:border-[#333338] space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              {language === "id" ? "Total Produk Terjual" : "Total Items Sold"}
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {t.totalItemsSold || "Total Produk Terjual"}
             </span>
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-semibold">
               <ShoppingBag className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-extrabold text-slate-800 dark:text-white">
-              {(summary?.total_items_sold || 0).toLocaleString("id-ID")} <span className="text-sm font-semibold text-slate-400">unit</span>
+            <h3 className="text-2xl font-semibold text-slate-800 dark:text-white font-mono">
+              {(summary?.total_items_sold || 0).toLocaleString("id-ID")} <span className="text-xs font-normal text-slate-400">unit</span>
             </h3>
             <p className="text-[11px] text-slate-400 mt-1 font-medium">
-              {language === "id" ? "Termasuk kuantiti timbangan & eceran" : "Including weighted items"}
+              Termasuk kuantiti timbangan & eceran
             </p>
           </div>
         </div>
 
         {/* 4. Total Void Transactions */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-3 shadow-xs">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E22] border border-slate-200/70 dark:border-[#333338] space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              {language === "id" ? "Transaksi Dibatalkan (Void)" : "Voided Losses"}
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {t.voidedLosses || "Transaksi Dibatalkan"}
             </span>
-            <div className="w-8 h-8 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center font-bold">
+            <div className="w-8 h-8 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center font-semibold">
               <RotateCcw className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-extrabold text-red-500">
+            <h3 className="text-2xl font-semibold text-red-600 dark:text-red-400 font-mono">
               Rp {(summary?.total_void_amount || 0).toLocaleString("id-ID")}
             </h3>
             <p className="text-[11px] text-slate-400 mt-1 font-medium">
-              {summary?.total_void_count || 0} {language === "id" ? "transaksi di-void" : "voided orders"}
+              {summary?.total_void_count || 0} nota di-void
             </p>
           </div>
         </div>
 
       </div>
 
-      {/* ================= VISUAL SECTION: TRENDS & PAYMENT BREAKDOWN ================= */}
+      {/* ── VISUAL SECTION: TRENDS & PAYMENT BREAKDOWN ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Daily Sales Bar Chart (Span 2) */}
-        <div className="lg:col-span-2 p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-4 shadow-xs">
+        <div className="lg:col-span-2 p-6 rounded-3xl bg-white dark:bg-[#1E1E22] border border-slate-200/70 dark:border-[#333338] space-y-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-purple-600 dark:text-primary" />
-                <span>{language === "id" ? "Tren Penjualan Harian" : "Daily Sales Revenue Trend"}</span>
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-500" />
+                <span>{t.dailySalesTrend || "Tren Penjualan Harian"}</span>
               </h3>
-              <p className="text-[11px] text-slate-400">
-                {language === "id" ? "Fluktuasi omset penjualan per hari pada periode aktif" : "Daily revenue fluctuations"}
+              <p className="text-[11px] text-slate-400 font-medium">
+                {t.dailySalesTrendDesc || "Fluktuasi omset penjualan per hari pada periode aktif"}
               </p>
             </div>
           </div>
 
           {/* Chart Bars */}
           {!summary?.daily_trends || summary.daily_trends.length === 0 ? (
-            <div className="py-16 flex flex-col items-center justify-center text-slate-400 text-xs font-bold">
+            <div className="py-16 flex flex-col items-center justify-center text-slate-400 text-xs font-semibold">
               <Receipt className="w-8 h-8 mb-2 opacity-30" />
-              <span>{language === "id" ? "Belum ada data penjualan pada periode ini" : "No sales data found"}</span>
+              <span>Belum ada data penjualan pada periode ini</span>
             </div>
           ) : (
             <div className="pt-6 space-y-2">
@@ -481,9 +465,9 @@ export default function SalesReportModule() {
                     <div key={day.date} className="flex-1 flex flex-col items-center gap-1.5 min-w-[36px] group relative">
                       {/* Tooltip Hover */}
                       <div className="absolute bottom-full mb-2 hidden group-hover:flex flex-col items-center z-20 pointer-events-none">
-                        <div className="px-2.5 py-1.5 rounded-xl bg-slate-900 text-white text-[10px] font-bold whitespace-nowrap shadow-xl">
+                        <div className="px-2.5 py-1.5 rounded-xl bg-slate-900 text-white text-[10px] font-medium whitespace-nowrap shadow-xl">
                           <p>{day.date}</p>
-                          <p className="text-emerald-400">Rp {day.gross_sales.toLocaleString("id-ID")}</p>
+                          <p className="text-emerald-400 font-mono font-semibold">Rp {day.gross_sales.toLocaleString("id-ID")}</p>
                           <p className="text-slate-300 font-normal">{day.tx_count} transaksi</p>
                         </div>
                       </div>
@@ -492,7 +476,7 @@ export default function SalesReportModule() {
                       <div className="w-full h-full flex items-end">
                         <div
                           style={{ height: `${heightPercent}%` }}
-                          className="w-full rounded-xl bg-gradient-to-t from-purple-600 to-indigo-500 dark:from-brand-purple dark:to-primary transition-all group-hover:brightness-110 shadow-xs"
+                          className="w-full rounded-xl bg-slate-900 dark:bg-white transition-all group-hover:brightness-110 shadow-xs"
                         />
                       </div>
 
@@ -509,32 +493,32 @@ export default function SalesReportModule() {
         </div>
 
         {/* Payment Method Distribution (Span 1) */}
-        <div className="p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-4 shadow-xs flex flex-col justify-between">
+        <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E22] border border-slate-200/70 dark:border-[#333338] space-y-4 shadow-xs flex flex-col justify-between">
           <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-purple-600 dark:text-primary" />
-              <span>{language === "id" ? "Distribusi Pembayaran" : "Payment Methods"}</span>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-emerald-500" />
+              <span>{t.paymentDistribution || "Distribusi Pembayaran"}</span>
             </h3>
-            <p className="text-[11px] text-slate-400">
-              {language === "id" ? "Proporsi transaksi Cash vs QRIS" : "Cash vs QRIS proportion"}
+            <p className="text-[11px] text-slate-400 font-medium">
+              {t.paymentDistributionDesc || "Proporsi transaksi Tunai vs QRIS"}
             </p>
           </div>
 
           <div className="space-y-3 my-auto">
             {(!summary?.payment_breakdown || summary.payment_breakdown.length === 0) ? (
-              <div className="py-10 text-center text-slate-400 text-xs">
-                {language === "id" ? "Belum ada transaksi" : "No transactions"}
+              <div className="py-10 text-center text-slate-400 text-xs font-medium">
+                Belum ada transaksi
               </div>
             ) : (
               summary.payment_breakdown.map((pm) => {
                 const isCash = pm.method === "cash";
                 const isQris = pm.method === "qris";
                 return (
-                  <div key={pm.method} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-dark-bg border border-slate-200/60 dark:border-dark-border space-y-2">
+                  <div key={pm.method} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#25252A] border border-slate-200/60 dark:border-[#333338] space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-semibold text-xs ${
                             isCash
                               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                               : isQris
@@ -544,13 +528,13 @@ export default function SalesReportModule() {
                         >
                           {isCash ? <Banknote className="w-3.5 h-3.5" /> : <QrCode className="w-3.5 h-3.5" />}
                         </div>
-                        <span className="text-xs font-extrabold uppercase text-slate-800 dark:text-slate-200">
+                        <span className="text-xs font-semibold uppercase text-slate-800 dark:text-slate-200">
                           {pm.method}
                         </span>
                       </div>
 
                       <div className="text-right">
-                        <span className="text-xs font-bold text-slate-800 dark:text-white">
+                        <span className="text-xs font-semibold text-slate-800 dark:text-white font-mono">
                           Rp {pm.total_sales.toLocaleString("id-ID")}
                         </span>
                         <span className="text-[10px] text-slate-400 block font-mono">
@@ -560,11 +544,11 @@ export default function SalesReportModule() {
                     </div>
 
                     {/* Progress Percentage Bar */}
-                    <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-dark-border overflow-hidden">
+                    <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-[#303035] overflow-hidden">
                       <div
                         style={{ width: `${Math.min(100, Math.max(5, pm.percentage))}%` }}
                         className={`h-full rounded-full ${
-                          isCash ? "bg-emerald-500" : isQris ? "bg-blue-500" : "bg-brand-purple"
+                          isCash ? "bg-emerald-500" : isQris ? "bg-blue-500" : "bg-purple-500"
                         }`}
                       />
                     </div>
@@ -574,66 +558,66 @@ export default function SalesReportModule() {
             )}
           </div>
 
-          <div className="pt-2 text-[10px] text-slate-400 text-center border-t border-slate-200/60 dark:border-dark-border">
+          <div className="pt-2 text-[10px] text-slate-400 text-center border-t border-slate-200/60 dark:border-[#333338] font-mono">
             Total Omset: Rp {(summary?.total_gross_sales || 0).toLocaleString("id-ID")}
           </div>
         </div>
 
       </div>
 
-      {/* ================= TOP SELLING PRODUCTS LEADERBOARD ================= */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-4 shadow-xs">
+      {/* ── TOP SELLING PRODUCTS LEADERBOARD ── */}
+      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E22] border border-slate-200/70 dark:border-[#333338] space-y-4 shadow-xs">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>{language === "id" ? "Produk Terlaris (Top Selling Items)" : "Top Selling Products"}</span>
+              <span>{t.topProducts || "Produk Terlaris"}</span>
             </h3>
-            <p className="text-[11px] text-slate-400">
-              {language === "id" ? "Peringkat produk dengan kontribusi omset tertinggi" : "Highest revenue contributing products"}
+            <p className="text-[11px] text-slate-400 font-medium">
+              {t.topProductsDesc || "Peringkat produk dengan kontribusi omset tertinggi"}
             </p>
           </div>
         </div>
 
         {(!summary?.top_products || summary.top_products.length === 0) ? (
-          <div className="py-12 text-center text-slate-400 text-xs font-bold">
+          <div className="py-12 text-center text-slate-400 text-xs font-medium">
             <ShoppingBag className="w-8 h-8 mb-2 opacity-30 mx-auto" />
-            <span>{language === "id" ? "Belum ada produk terjual pada periode ini" : "No products sold"}</span>
+            <span>Belum ada produk terjual pada periode ini</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             {summary.top_products.map((p, idx) => (
               <div
                 key={p.product_id}
-                className="p-4 rounded-2xl bg-slate-50 dark:bg-dark-bg border border-slate-200/80 dark:border-dark-border flex items-center justify-between"
+                className="p-4 rounded-2xl bg-slate-50 dark:bg-[#25252A] border border-slate-200/80 dark:border-[#333338] flex items-center justify-between"
               >
                 <div className="flex items-center gap-3">
                   <div
-                    className={`w-7 h-7 rounded-xl flex items-center justify-center font-extrabold text-xs shrink-0 ${
+                    className={`w-7 h-7 rounded-xl flex items-center justify-center font-semibold text-xs shrink-0 ${
                       idx === 0
                         ? "bg-amber-500 text-white shadow-xs"
                         : idx === 1
                         ? "bg-slate-300 text-slate-800"
                         : idx === 2
                         ? "bg-amber-700/80 text-white"
-                        : "bg-slate-200 dark:bg-dark-border text-slate-600 dark:text-slate-400"
+                        : "bg-slate-200 dark:bg-[#303035] text-slate-600 dark:text-slate-400"
                     }`}
                   >
                     #{idx + 1}
                   </div>
 
                   <div className="min-w-0">
-                    <h4 className="text-xs font-bold text-slate-800 dark:text-white truncate">
+                    <h4 className="text-xs font-semibold text-slate-800 dark:text-white truncate">
                       {p.product_name}
                     </h4>
-                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                    <p className="text-[10px] text-slate-400 truncate mt-0.5 font-medium">
                       {p.category} • {p.qty_sold} terjual
                     </p>
                   </div>
                 </div>
 
                 <div className="text-right shrink-0">
-                  <span className="text-xs font-extrabold text-emerald-600 dark:text-primary">
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
                     Rp {p.total_sales.toLocaleString("id-ID")}
                   </span>
                 </div>
@@ -643,126 +627,144 @@ export default function SalesReportModule() {
         )}
       </div>
 
-      {/* ================= DETAILED TRANSACTIONS TABLE ================= */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#26262A] border border-slate-200/80 dark:border-dark-border space-y-4 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+      {/* ── REUSABLE UNIFIED ERP DATA TABLE FOR DETAILED TRANSACTIONS ── */}
+      <div className="space-y-4 pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Receipt className="w-4 h-4 text-purple-600 dark:text-primary" />
-              <span>{language === "id" ? "Rincian Riwayat Transaksi" : "Transaction Records"}</span>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-emerald-500" />
+              <span>{t.transactionRecords || "Rincian Riwayat Transaksi"}</span>
             </h3>
-            <p className="text-[11px] text-slate-400">
-              {filteredTransactions.length} {language === "id" ? "nota ditemukan" : "invoices found"}
+            <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+              {filteredTransactions.length} nota ditemukan pada periode ini
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder={language === "id" ? "Cari no nota, kasir, nominal..." : "Search invoice ID, staff..."}
-                value={searchTxQuery}
-                onChange={(e) => setSearchTxQuery(e.target.value)}
-                className="w-56 pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border focus:outline-none"
-              />
-            </div>
-
-            {/* Status filter tabs */}
-            <div className="flex gap-1 bg-slate-100 dark:bg-dark-bg p-1 rounded-xl">
-              {[
-                { id: "all", label: language === "id" ? "Semua" : "All" },
-                { id: "completed", label: language === "id" ? "Sukses" : "Completed" },
-                { id: "voided", label: "Void" },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setStatusFilter(tab.id)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                    statusFilter === tab.id
-                      ? "bg-white dark:bg-[#2C2C30] text-slate-900 dark:text-white shadow-xs"
-                      : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+            <ErpSearchBar
+              value={searchTxQuery}
+              onChange={setSearchTxQuery}
+              placeholder="Cari ID nota, kasir, nominal..."
+              size="sm"
+              className="w-full sm:w-64"
+            />
           </div>
         </div>
 
-        {/* Table Container */}
-        <div className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-dark-border">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-dark-bg text-slate-500 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-dark-border">
-              <tr>
-                <th className="px-4 py-3">No. Nota</th>
-                <th className="px-4 py-3">Waktu</th>
-                <th className="px-4 py-3">Kasir</th>
-                <th className="px-4 py-3">Tipe</th>
-                <th className="px-4 py-3">Metode Bayar</th>
-                <th className="px-4 py-3 text-right">Total Nominal</th>
-                <th className="px-4 py-3 text-center">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-dark-border/60 font-medium">
-              {filteredTransactions.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
-                    <Receipt className="w-8 h-8 mb-2 opacity-30 mx-auto" />
-                    <span>{language === "id" ? "Tidak ada transaksi yang cocok" : "No matching transactions"}</span>
-                  </td>
-                </tr>
-              ) : (
-                filteredTransactions.map((tx) => {
-                  const isVoid = tx.status === "voided";
-                  return (
-                    <tr key={tx.id} className="hover:bg-slate-50/60 dark:hover:bg-[#2D2D32]/50 transition-colors">
-                      <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
-                        #{tx.id.substring(0, 8).toUpperCase()}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
-                        {new Date(tx.created_at).toLocaleString("id-ID", {
-                          day: "2-digit",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
-                        {tx.staff_name || "Kasir"}
-                      </td>
-                      <td className="px-4 py-3 capitalize text-slate-600 dark:text-slate-400">
-                        {tx.type === "sale" ? "Sales" : "Internal"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="uppercase text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-dark-bg text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-dark-border">
-                          {tx.payment_method}
-                        </span>
-                      </td>
-                      <td className={`px-4 py-3 text-right font-extrabold ${isVoid ? "line-through text-slate-400" : "text-slate-900 dark:text-white"}`}>
-                        Rp {tx.total_amount.toLocaleString("id-ID")}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {isVoid ? (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-500/10 text-red-500 border border-red-500/20">
-                            VOID
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                            Sukses
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        {/* ErpDataTable Component with Floating Capsule Header */}
+        <ErpDataTable<TransactionDetail>
+          data={filteredTransactions}
+          keyExtractor={(tx) => tx.id}
+          loading={loading}
+          emptyText="Tidak ada data transaksi yang cocok"
+          renderMobileItem={(tx) => {
+            const isVoid = tx.status === "voided";
+            return (
+              <div className="p-3.5 bg-white dark:bg-[#202024] rounded-2xl border border-slate-200/80 dark:border-[#2F2F34] space-y-2 mb-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-semibold text-xs text-slate-900 dark:text-white">
+                    #{tx.id.substring(0, 8).toUpperCase()}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
+                    isVoid
+                      ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400"
+                      : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400"
+                  }`}>
+                    {isVoid ? "VOID" : "SUKSES"}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <span>{tx.staff_name || "Kasir"} • {tx.payment_method.toUpperCase()}</span>
+                  <span className={`font-mono font-semibold ${isVoid ? "line-through text-slate-400" : "text-slate-900 dark:text-white"}`}>
+                    Rp {tx.total_amount.toLocaleString("id-ID")}
+                  </span>
+                </div>
+
+                <div className="text-[10px] text-slate-400 font-mono">
+                  {new Date(tx.created_at).toLocaleString("id-ID")}
+                </div>
+              </div>
+            );
+          }}
+          columns={[
+            {
+              key: "id",
+              label: "No. Nota",
+              renderCell: (tx) => (
+                <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                  #{tx.id.substring(0, 8).toUpperCase()}
+                </span>
+              ),
+            },
+            {
+              key: "date",
+              label: "Waktu",
+              renderCell: (tx) => (
+                <span className="text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                  {new Date(tx.created_at).toLocaleString("id-ID", {
+                    day: "2-digit",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              ),
+            },
+            {
+              key: "staff",
+              label: "Kasir",
+              renderCell: (tx) => (
+                <span className="text-slate-700 dark:text-slate-300 font-medium">
+                  {tx.staff_name || "Kasir"}
+                </span>
+              ),
+            },
+            {
+              key: "type",
+              label: "Tipe Nota",
+              renderCell: (tx) => (
+                <span className="capitalize text-slate-600 dark:text-slate-400 font-medium">
+                  {tx.type === "sale" ? "Penjualan" : "Konsumsi Internal"}
+                </span>
+              ),
+            },
+            {
+              key: "payment",
+              label: "Metode Bayar",
+              renderCell: (tx) => (
+                <span className="uppercase text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-[#25252A] text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-[#333338]">
+                  {tx.payment_method}
+                </span>
+              ),
+            },
+            {
+              key: "amount",
+              label: "Total Nominal",
+              align: "right",
+              renderCell: (tx) => (
+                <span className={`font-mono font-semibold ${tx.status === "voided" ? "line-through text-slate-400" : "text-slate-900 dark:text-white"}`}>
+                  Rp {tx.total_amount.toLocaleString("id-ID")}
+                </span>
+              ),
+            },
+            {
+              key: "status",
+              label: "Status",
+              align: "center",
+              renderCell: (tx) => (
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
+                  tx.status === "voided"
+                    ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400"
+                    : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400"
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${tx.status === "voided" ? "bg-red-500" : "bg-emerald-500"}`} />
+                  <span>{tx.status === "voided" ? "VOID" : "SUKSES"}</span>
+                </span>
+              ),
+            },
+          ]}
+        />
       </div>
 
     </div>

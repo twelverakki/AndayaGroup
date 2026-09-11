@@ -1,0 +1,95 @@
+Alright Kennan, Jems here. Let's do a brutal, honest, and comprehensive audit on your current system snapshot.
+
+Melihat kondisi fisik repo (`frontend/`, `backend/`, dan kondisi 28 tabel database), sistemmu saat ini berada dalam kondisi **"Working, but on a Fragile Foundation"**. Kode Go dan React-mu memang *clean compile* (`go vet` dan `tsc` lolos 100%), tapi arsitektur data dan *code structure*-nya menyimpan banyak **bom waktu (architectural technical debt)** yang akan meledak begitu bisnis Yasaka dan Gorengan Andalan mulai di-deploy ke lapangan.
+
+Berikut adalah **kajian mendalam 5 kelompok kesalahan fatal** pada sistem eksistingmu saat ini:
+
+---
+
+### 1. Database Layer: "Phantom Tables" & Deadweight Schema
+
+Jika kita cek data riil (`row_count`) pada database 28 tabelmu:
+
+* **10 Tabel Kosong (0 Rows) yang Tidak Pernah Dipakai:**
+`daily_material_logs` (0), `opname_sessions` (0), `opname_items` (0), `override_logs` (0), `production_expenses` (0), `direct_sales` (0), `daily_settlements` (0), `recipes` (0), `recipe_items` (0), `production_runs` (0), `production_material_logs` (0).
+* **Kesalahan Arsitektur:** Lebih dari **35% tabel di database adalah bloatware**. Tabel-tabel BOM (`recipes`, `production_runs`) dibuat padahal proses bisnis FnB-mu tidak membutuhkannya.
+* **Bencana Migrasi Mendatang:** Tabel kosong ini membebani *mental model* tim dan memperlambat pembuatan API karena backend *engineers* bingung data mana yang harus di-*query*.
+
+---
+
+### 2. Frontend Layer: Monolithic Code Smell (`fnb-module.tsx`)
+
+Lihat baris berkas kodedi `frontend/app/features/production/fnb-module.tsx`:
+
+> **`fnb-module.tsx` berukuran 1.494 baris kode dalam 1 file!**
+
+* **Kesalahan Arsitektur:** Ini adalah pelanggaran berat prinsip **Single Responsibility Principle (SRP)**. File ini menampung:
+1. Dashboard alert
+2. Form Produksi
+3. Katalog Master Inventori Gudang
+4. Form Direct Sales
+5. Form Pengeluaran Kas (Expenses)
+6. Form Distribusi & Monitoring Mitra (Thaw + Closing)
+7. CRUD Manajemen Mitra
+
+
+* **Dampak Nyata:**
+* *High Coupling & Re-render Lag:* Setiap kali ada state berubah di form thaw, seluruh dashboard dan tabel re-render.
+* *Maintenance Nightmare:* Dua developer tidak bisa bekerja bersamaan di modul F&B tanpa mengalami *Git Merge Conflict* yang parah.
+
+
+
+---
+
+### 3. Backend Layer: Pola Domain yang Bias & Terisolasi (`bakso/`)
+
+Di struktur backend:
+
+```
+backend/internal/modules/
+├── products/
+├── transactions/
+└── bakso/         <-- MASALAH BESAR
+```
+
+* **Kesalahan Arsitektur (Hardcoded Domain Specificity):**
+Kenapa nama modulnya `bakso`? Ini adalah ERP *multi-tenant* untuk 4 unit bisnis (JnA Mart, Bakso Kang Gemoy, Yasaka Fried Chicken, Gorengan Andalan).
+* **Dampak Nyata:**
+* Ketika kamu nanti mengerjakan **Yasaka Fried Chicken** dan **Gorengan Andalan**, apakah kamu akan membuat `modules/yasaka/` dan `modules/gorengan/`?
+* Itu akan menduplikasi 80% logika distribusi, mutasi bahan harian, dan rekonsiliasi kas!
+* Seharusnya modul ini bernama generik: **`fnb/`** atau **`distribution/`** & **`settlements/`** yang perilakunya dikendalikan oleh konfigurasi `business.type` ('fnb_production', 'fnb_cart', 'fnb_branch').
+
+
+
+---
+
+### 4. Logic Duplication: Pemisahan Buatan Antara Retail POS dan FnB POS
+
+* **Kondisi Sekarang:** `pos-module.tsx` menangani kasir JnA Mart, sementara penjualan eceran/direct frozen pack gudang ditaruh di dalam `fnb-module.tsx` (view ke-4) dan bermuara di tabel yang berbeda (`transactions` vs `direct_sales`).
+* **Kesalahan Logika:**
+* Kasir toko kelontong dan admin gudang yang melayani reseller frozen pack sama-sama melakukan transaksi penerimaan kas (Cash/QRIS) dan pengurangan stok barang.
+* Memisahkan keduanya membuat logika cetak struk, rekonsiliasi shift (`shifts`), dan reporting omzet harian (`sales-report-module.tsx`) terpisah dua jalur. Akibatnya, laporan laba-rugi grup tidak bisa ditarik secara otomatis dalam satu query.
+
+
+
+---
+
+### 5. Inventory Concurrency Risk pada `products` & `ingredients`
+
+* **Kondisi Sekarang:** Tabel `products` (19 baris) dan `ingredients` (5 baris) masih menyimpan saldo di kolom `current_stock`.
+* **Celah Operasional:**
+* Di JnA Mart, jika kasir sedang *checkout* 10 transaksi per menit dan Admin Gudang sedang mengedit harga jual `sell_price` produk, terjadi **database lock contention**.
+* Jika koneksi terputus di tengah jalan saat transaksi offline PWA sinkronisasi ke server, saldo `current_stock` bisa tidak sinkron dengan fisik karena tidak ada *double-entry ledger movements* yang memvalidasi riwayat mutasi dari titik nol.
+
+---
+
+### 📋 Status Eksekusi Refactoring (Update 2026-09-01 WITA)
+
+| Area Refactor | Status Eksekusi | Keterangan & Bukti Fisik |
+|---|---|---|
+| **Phase 0: DB 3NF Normalization** | ✅ Selesai 100% | Tabel `items` (24 baris live), `item_stocks` (25 baris live), `stock_movements`, `daily_settlements` aktif. |
+| **Phase 1: Backend Domain Modules** | ✅ Selesai 100% | Folder bias `bakso/` & `products/` telah dihapus. Modul `items`, `production`, `logistics`, `settlements` aktif (`go vet` Exit Code 0). |
+| **Phase 2: Frontend Domain Packages** | ✅ Selesai 100% | Monolit `fnb-module.tsx` (1.494 baris) dihapus total. Modul `items/`, `production/`, `distribution/`, `settlement/` aktif (`tsc` Exit Code 0). |
+| **Phase 3: Cross-Tenant Isolation & Tests** | ✅ Selesai 100% | Test suite otomatis 5 domain modular lolos 100% (`go test` & `go vet` Exit Code 0, `tsc` Exit Code 0). |
+| **Blueprint Arsitektur Sistem** | ✅ Selesai 100% | Tersimpan di [ARCHITECTURE.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/ARCHITECTURE.md) & [DESIGN_SYSTEM.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/DESIGN_SYSTEM.md) dengan Tree Structure. |
+| **Spesifikasi Menu & CRUD UI** | ✅ Selesai 100% | Tersimpan di [UI_MENU_SPECIFICATION.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/UI_MENU_SPECIFICATION.md). |

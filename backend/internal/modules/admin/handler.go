@@ -23,6 +23,31 @@ type AssignmentsRequest struct {
 	Assignments []AssignmentInput `json:"assignments"`
 }
 
+
+func getActorInfo(c *fiber.Ctx) (*uuid.UUID, string, string, string, string) {
+	var actorID *uuid.UUID
+	if uidStr, ok := c.Locals("user_id").(string); ok && uidStr != "" {
+		if id, err := uuid.Parse(uidStr); err == nil {
+			actorID = &id
+		}
+	}
+	role, _ := c.Locals("role").(string)
+	if role == "" {
+		role = "superadmin"
+	}
+	name, _ := c.Locals("user_name").(string)
+	if name == "" {
+		if role == "superadmin" {
+			name = "Superadmin Central"
+		} else {
+			name = "System Actor"
+		}
+	}
+	ip := c.IP()
+	ua := c.Get("User-Agent")
+	return actorID, name, role, ip, ua
+}
+
 func checkSuperadmin(c *fiber.Ctx) error {
 	role, ok := c.Locals("role").(string)
 	if !ok || role != "superadmin" {
@@ -81,6 +106,14 @@ func HandleCreateUser(c *fiber.Ctx) error {
 		})
 	}
 
+	actorID, actorName, actorRole, ip, ua := getActorInfo(c)
+	targetID := user.ID.String()
+	_ = LogSecurityEvent(c.Context(), actorID, actorName, actorRole, "USER_CREATED", "user", &targetID, map[string]interface{}{
+		"name":   user.Name,
+		"email":  user.PhoneOrEmail,
+		"status": user.Status,
+	}, &ip, &ua)
+
 	return c.Status(fiber.StatusCreated).JSON(user)
 }
 
@@ -119,6 +152,14 @@ func HandleUpdateUser(c *fiber.Ctx) error {
 		})
 	}
 
+	actorID, actorName, actorRole, ip, ua := getActorInfo(c)
+	targetID := user.ID.String()
+	_ = LogSecurityEvent(c.Context(), actorID, actorName, actorRole, "USER_UPDATED", "user", &targetID, map[string]interface{}{
+		"name":   user.Name,
+		"email":  user.PhoneOrEmail,
+		"status": user.Status,
+	}, &ip, &ua)
+
 	return c.JSON(user)
 }
 
@@ -150,6 +191,11 @@ func HandleUpdateUserAssignments(c *fiber.Ctx) error {
 			"error":   err.Error(),
 		})
 	}
+
+	actorID, actorName, actorRole, ip, ua := getActorInfo(c)
+	_ = LogSecurityEvent(c.Context(), actorID, actorName, actorRole, "USER_ASSIGNMENTS_UPDATED", "user", &idStr, map[string]interface{}{
+		"assignments_count": len(req.Assignments),
+	}, &ip, &ua)
 
 	return c.JSON(fiber.Map{
 		"message": "User assignments updated successfully",
@@ -188,4 +234,115 @@ func HandleGetOutlets(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(list)
+}
+
+// HandleGetSecurityAuditLogs handles GET /api/v1/admin/security-logs
+func HandleGetSecurityAuditLogs(c *fiber.Ctx) error {
+	if err := checkSuperadmin(c); err != nil {
+		return err
+	}
+
+	logs, err := ListSecurityAuditLogs(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to load security audit logs",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"data": logs,
+	})
+}
+
+// HandleGetOwnersHierarchy handles GET /api/v1/admin/owners
+func HandleGetOwnersHierarchy(c *fiber.Ctx) error {
+	if err := checkSuperadmin(c); err != nil {
+		return err
+	}
+
+	owners, err := GetOwnersWithBusinesses(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to load owners hierarchy",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"data": owners,
+	})
+}
+
+type CreateOwnerBusinessRequest struct {
+	Name             string  `json:"name"`
+	Type             string  `json:"type"`
+	HasPos           bool    `json:"has_pos"`
+	HasManufacturing bool    `json:"has_manufacturing"`
+	HasLogisticsHub  bool    `json:"has_logistics_hub"`
+	HasEodUsage      bool    `json:"has_eod_usage"`
+	InitialOutlet    *string `json:"initial_outlet_name,omitempty"`
+}
+
+// HandleCreateBusinessForOwner handles POST /api/v1/admin/owners/:id/businesses
+func HandleCreateBusinessForOwner(c *fiber.Ctx) error {
+	if err := checkSuperadmin(c); err != nil {
+		return err
+	}
+
+	ownerIDStr := c.Params("id")
+	ownerID, err := uuid.Parse(ownerIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid owner ID format",
+		})
+	}
+
+	var req CreateOwnerBusinessRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	if req.Name == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Business name is required",
+		})
+	}
+
+	if req.Type == "" {
+		req.Type = "custom"
+	}
+
+	biz, err := CreateBusinessForOwner(
+		c.Context(),
+		ownerID,
+		req.Name,
+		req.Type,
+		req.HasPos,
+		req.HasManufacturing,
+		req.HasLogisticsHub,
+		req.HasEodUsage,
+		req.InitialOutlet,
+	)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to create business for owner",
+			"error":   err.Error(),
+		})
+	}
+
+	actorID, actorName, actorRole, ip, ua := getActorInfo(c)
+	targetID := biz.ID.String()
+	_ = LogSecurityEvent(c.Context(), actorID, actorName, actorRole, "BUSINESS_CREATED", "business", &targetID, map[string]interface{}{
+		"name":              biz.Name,
+		"owner_id":          ownerID.String(),
+		"has_pos":           biz.HasPos,
+		"has_manufacturing": biz.HasManufacturing,
+		"has_logistics_hub": biz.HasLogisticsHub,
+		"has_eod_usage":     biz.HasEodUsage,
+	}, &ip, &ua)
+
+	return c.Status(fiber.StatusCreated).JSON(biz)
 }

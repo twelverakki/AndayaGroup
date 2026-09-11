@@ -1,8 +1,12 @@
-const CACHE_NAME = "andaya-erp-v1";
+const CACHE_NAME = "andaya-erp-v2";
 const ASSETS_TO_CACHE = [
   "/",
   "/manifest.json",
-  "/favicon.ico"
+  "/favicon.ico",
+  "/logo.png",
+  "/logo-darkmode.png",
+  "/icon-192.png",
+  "/icon-512.png"
 ];
 
 // Install Event

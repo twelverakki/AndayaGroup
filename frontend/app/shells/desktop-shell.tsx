@@ -3,12 +3,21 @@ import { useAuthStore } from "../lib/store";
 import { useLanguageStore, translations } from "../lib/i18n";
 import { api } from "../lib/api";
 import { useNavigate } from "react-router";
+import { toast } from "../components/ui/sonner";
 import POSModule from "../features/pos/pos-module";
 import InventoryModule from "../features/inventory/inventory-module";
 import ProcurementModule from "../features/procurement/procurement-module";
 import OpnameModule from "../features/opname/opname-module";
 import SalesReportModule from "../features/sales-report/sales-report-module";
-import { sidebarMenuConfig, isMenuItemAllowed } from "../config/navigation";
+import { ProductionModule } from "../features/production/production-module";
+import { DistributionModule } from "../features/distribution/distribution-module";
+import { SettlementModule } from "../features/settlement/settlement-module";
+import { ItemListModule } from "../features/items/item-list-module";
+import BusinessesListView from "../features/organization/businesses-list-view";
+import UsersManagementView from "../features/admin/users-management-view";
+import SecurityLogsView from "../features/admin/security-logs-view";
+import DashboardView from "../components/DashboardView";
+import { sidebarMenuConfig, isMenuItemAllowed, getDefaultMenuId } from "../config/navigation";
 import SuperadminModule from "../features/superadmin/superadmin-module";
 import { useTheme } from "../hooks/use-theme";
 import { usePOSSettings } from "../hooks/use-pos-settings";
@@ -106,8 +115,28 @@ export default function DesktopShell() {
   // Navigation & Shell States
   const [activeMenu, setActiveMenu] = useState("dashboard");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [inventoryOpen, setInventoryOpen] = useState(true);
-  const [procurementOpen, setProcurementOpen] = useState(true);
+  const [openSubmenus, setOpenSubmenus] = useState<Record<string, boolean>>({
+    inventory: true,
+    procurement: true,
+    organization: true,
+    settlements: true,
+    distribusi: true,
+  });
+
+  const toggleSubmenu = (menuId: string) => {
+    setOpenSubmenus((prev) => ({
+      ...prev,
+      [menuId]: !prev[menuId],
+    }));
+  };
+
+  // Auto-resolve grouped parent menu IDs to default child submenu IDs (e.g. "inventory" -> "inventory-master")
+  useEffect(() => {
+    const resolved = getDefaultMenuId(activeMenu);
+    if (resolved !== activeMenu) {
+      setActiveMenu(resolved);
+    }
+  }, [activeMenu]);
   
   // Popover & Drawer States
   const [showProfilePopover, setShowProfilePopover] = useState(false);
@@ -161,7 +190,7 @@ export default function DesktopShell() {
   // Superadmin default menu toggle
   useEffect(() => {
     if (activeContext?.role === "superadmin") {
-      setActiveMenu("superadmin");
+      setActiveMenu("organization");
     } else {
       setActiveMenu("dashboard");
     }
@@ -249,12 +278,15 @@ export default function DesktopShell() {
       const payload = {
         business_id: ws.business_id || "",
         outlet_id: ws.outlet_id || "",
+        role: ws.role || "",
       };
       const response = await api.post("/auth/switch-business", payload);
-      setActiveMenu("dashboard");
+      setActiveMenu(ws.role === "superadmin" ? "superadmin" : "dashboard");
       updateActiveContext(response.data.active_context);
-    } catch (err) {
+      toast.success(language === "id" ? `Berhasil berpindah ke ${ws.role === "superadmin" ? "Pusat Kontrol Superadmin" : ws.outlet_name || ws.business_name}` : "Workspace switched successfully");
+    } catch (err: any) {
       console.error("Workspace switch failed:", err);
+      toast.error(language === "id" ? "Gagal berpindah workspace" : "Failed to switch workspace");
     }
   };
 
@@ -291,7 +323,25 @@ export default function DesktopShell() {
         <SidebarProvider open={!isSidebarCollapsed} onOpenChange={(open) => setIsSidebarCollapsed(!open)}>
           <Sidebar collapsible="icon" className="border-none bg-transparent">
             {/* 1. Header: Brand Logo & Workspace Switcher & Toggle */}
-            <SidebarHeader className="p-0 mb-4 flex flex-col items-center gap-2">
+            <SidebarHeader className="p-0 mb-4 flex flex-col items-start gap-2">
+              <div className={`flex items-center gap-2.5 px-2 py-1.5 w-full ${isSidebarCollapsed ? "justify-center" : "justify-start"}`}>
+                <img
+                  src="/icon-192.png"
+                  alt="Andaya"
+                  className="w-8 h-8 object-contain rounded-xl shadow-xs shrink-0"
+                />
+                {!isSidebarCollapsed && (
+                  <div className="flex flex-col min-w-0">
+                    <span className={`font-black text-sm tracking-tight leading-none ${isDark ? "text-white" : "text-slate-900"}`}>
+                      ANDAYA GROUP
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-400 tracking-wider uppercase mt-0.5">
+                      Lean ERP
+                    </span>
+                  </div>
+                )}
+              </div>
+
               <div className={`flex items-center justify-between w-full ${isSidebarCollapsed ? "flex-col gap-4" : "flex-row"}`}>
                 <DropdownMenu>
                   <DropdownMenuTrigger className={`w-full flex items-center space-x-3 p-1.5 rounded-xl transition-all cursor-pointer text-left outline-none ${
@@ -311,36 +361,59 @@ export default function DesktopShell() {
                       </div>
                     )}
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-56 rounded-xl" align="start" side="bottom" sideOffset={4}>
-                    <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider px-2 py-1.5">
+                  <DropdownMenuContent className="w-64 rounded-2xl p-2 shadow-xl border z-50 text-left" align="start" side="bottom" sideOffset={4}>
+                    {activeContext?.role !== "superadmin" && workspaces.some((w) => w.role === "superadmin") && (
+                      <DropdownMenuItem
+                        onClick={() => handleSwitchWorkspace({ business_id: "", outlet_id: "", role: "superadmin" })}
+                        className="gap-2.5 p-2.5 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-bold text-xs cursor-pointer rounded-xl mb-1.5 border border-indigo-500/20 hover:bg-indigo-500/20"
+                      >
+                        <Shield className="w-4 h-4 text-indigo-500 shrink-0" />
+                        <span className="truncate">Kembali ke Superadmin</span>
+                      </DropdownMenuItem>
+                    )}
+                    <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider px-2 py-1">
                       {t.menuWorkspaceSelect}
                     </div>
-                    <DropdownMenuSeparator />
-                    {workspaces.map((ws, idx) => {
-                      const isCurrent = 
-                        (ws.business_id && activeContext?.business_id === ws.business_id && !ws.outlet_id && !activeContext.outlet_id) ||
-                        (ws.outlet_id && activeContext?.outlet_id === ws.outlet_id);
+                    <DropdownMenuSeparator className="my-1" />
+                    <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
+                      {workspaces.map((ws, idx) => {
+                        const isCurrent = 
+                          (ws.role === "superadmin" && activeContext?.role === "superadmin") ||
+                          (ws.business_id === activeContext?.business_id && (ws.outlet_id || "") === (activeContext?.outlet_id || "") && ws.role === activeContext?.role);
 
-                      return (
-                        <DropdownMenuItem
-                          key={idx}
-                          onClick={() => handleSwitchWorkspace(ws)}
-                          className={`gap-2 p-2 cursor-pointer flex items-center justify-between rounded-lg ${
-                            isCurrent ? "bg-accent font-medium text-accent-foreground" : ""
-                          }`}
-                        >
-                          <div className="flex flex-col text-left min-w-0">
-                            <span className="text-xs font-semibold truncate">
-                              {ws.outlet_id ? ws.outlet_name : ws.business_name}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground capitalize truncate">
-                              {ws.business_name} • {ws.role === "owner" ? "Owner" : ws.role}
-                            </span>
-                          </div>
-                          {isCurrent && <span className="text-xs text-primary font-bold">✓</span>}
-                        </DropdownMenuItem>
-                      );
-                    })}
+                        return (
+                          <DropdownMenuItem
+                            key={idx}
+                            onClick={() => handleSwitchWorkspace(ws)}
+                            className={`gap-2 p-2 cursor-pointer flex items-center justify-between rounded-xl ${
+                              isCurrent ? "bg-primary/10 border-primary text-foreground ring-1 ring-primary/40 font-semibold" : ""
+                            }`}
+                          >
+                            <div className="flex flex-col text-left min-w-0">
+                              <span className="text-xs font-semibold truncate">
+                                {ws.role === "superadmin" ? ws.business_name : (ws.outlet_id ? ws.outlet_name : ws.business_name)}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground capitalize truncate">
+                                {ws.role === "superadmin"
+                                  ? "Pusat Kontrol Akun Utama"
+                                  : `${ws.business_name} • ${
+                                      ws.role === "owner"
+                                        ? "Owner"
+                                        : ws.role === "manager"
+                                        ? "Manager"
+                                        : ws.role === "staff"
+                                        ? "Staff / Kasir"
+                                        : ws.role === "admin_gudang"
+                                        ? "Admin Gudang"
+                                        : ws.role
+                                    }`}
+                              </span>
+                            </div>
+                            {isCurrent && <span className="text-xs text-primary font-bold">✓</span>}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -378,8 +451,12 @@ export default function DesktopShell() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (menu.id === "inventory") setInventoryOpen(!inventoryOpen);
-                                  if (menu.id === "procurement") setProcurementOpen(!procurementOpen);
+                                  toggleSubmenu(menu.id);
+                                  if (menu.subItems && menu.subItems.length > 0) {
+                                    if (!activeMenu.startsWith(menu.id)) {
+                                      setActiveMenu(menu.subItems[0].id);
+                                    }
+                                  }
                                 }}
                                 className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer ${
                                   activeMenu.startsWith(menu.id)
@@ -395,15 +472,11 @@ export default function DesktopShell() {
                                 </div>
                                 <ChevronDown
                                   className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
-                                    (menu.id === "inventory" && inventoryOpen) ||
-                                    (menu.id === "procurement" && procurementOpen)
-                                      ? "rotate-180"
-                                      : ""
+                                    openSubmenus[menu.id] ? "rotate-180" : ""
                                   }`}
                                 />
                               </button>
-                              {((menu.id === "inventory" && inventoryOpen) ||
-                                (menu.id === "procurement" && procurementOpen)) && (
+                              {openSubmenus[menu.id] && (
                                 <div className="pl-4 space-y-1 mt-1">
                                   {menu.subItems.map((sub) => (
                                     <button
@@ -558,30 +631,28 @@ export default function DesktopShell() {
           <div className={`flex-1 ${activeMenu === "pos" ? "overflow-hidden p-6" : "overflow-y-auto p-8"}`}>
             {activeMenu === "pos" ? (
               <POSModule gridCols={gridCols} showNumpad={showNumpad} />
-            ) : activeMenu === "inventory-master" ? (
-              <InventoryModule
-                view="master"
-                onEditProduct={(p) => {
-                  setEditingProduct(p);
-                  setActiveMenu("inventory-edit");
-                }}
-                onAddNew={() => setActiveMenu("inventory-add")}
-                onNavigate={(sub) => setActiveMenu(sub)}
-              />
+            ) : activeMenu === "inventory-master" || activeMenu === "inventory" || activeMenu === "items-master" || activeMenu === "items" ? (
+              <ItemListModule />
             ) : activeMenu === "inventory-add" ? (
-              <InventoryModule view="new" onSuccess={() => setActiveMenu("inventory-master")} onCancel={() => setActiveMenu("inventory-master")} />
+              <ItemListModule />
             ) : activeMenu === "inventory-discontinued" ? (
-              <InventoryModule view="discontinued" onEditProduct={(p) => { setEditingProduct(p); setActiveMenu("inventory-edit"); }} />
-            ) : activeMenu === "inventory-edit" ? (
-              <InventoryModule view="edit" product={editingProduct} onSuccess={() => setActiveMenu("inventory-master")} onCancel={() => setActiveMenu("inventory-master")} />
+              <ItemListModule />
             ) : activeMenu === "opname" ? (
               <OpnameModule />
             ) : activeMenu === "produksi" ? (
-              <div className="p-6">Produksi Placeholder</div>
-            ) : activeMenu === "distribusi" ? (
-              <div className="p-6">Distribusi Placeholder</div>
+              <ProductionModule />
+            ) : activeMenu === "distribusi" || activeMenu === "distribusi-flow" || activeMenu === "distribusi-mitra" ? (
+              <DistributionModule />
+            ) : activeMenu === "settlements" || activeMenu === "settlements-history" || activeMenu === "settlements-direct" || activeMenu === "bakso-sales" ? (
+              <SettlementModule />
+            ) : activeMenu === "organization" || activeMenu === "organization-businesses" ? (
+              <BusinessesListView />
+            ) : activeMenu === "users" ? (
+              <UsersManagementView onNavigateToBusinesses={() => setActiveMenu("organization")} />
+            ) : activeMenu === "security-logs" ? (
+              <SecurityLogsView />
             ) : activeMenu === "superadmin" ? (
-              <SuperadminModule />
+              <UsersManagementView onNavigateToBusinesses={() => setActiveMenu("organization")} />
             ) : activeMenu === "procurement" || activeMenu === "procurement-history" ? (
               <ProcurementModule view="history" onNavigate={(sub) => setActiveMenu(sub)} />
             ) : activeMenu === "procurement-new" ? (
@@ -594,19 +665,7 @@ export default function DesktopShell() {
             ) : activeMenu === "sales-report" ? (
               <SalesReportModule />
             ) : activeMenu === "dashboard" ? (
-              <div className="max-w-4xl mx-auto space-y-6">
-                {/* Feature Welcome Chunky Card */}
-                <div className={`border rounded-card p-8 shadow-sm transition-colors ${
-                  isDark ? "bg-dark-card-lighter border-dark-border-lighter" : "bg-white border-slate-200"
-                }`}>
-                  <h3 className="text-2xl font-bold mb-3">
-                    Selamat Datang di Andaya ERP!
-                  </h3>
-                  <p className="opacity-80 font-medium leading-relaxed text-sm">
-                    Sistem ERP terpadu untuk retail & F&B. Anda dapat menggunakan tab menu Point of Sale (POS), Inventory, dan Procurement untuk menguji alur operasional, opname Blind Count, serta status pengadaan.
-                  </p>
-                </div>
-              </div>
+              <DashboardView onNavigate={(menuId) => setActiveMenu(menuId)} />
             ) : (
               <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50 rounded-card p-6 flex flex-col items-center justify-center text-center">
                 <Wrench className="w-10 h-10 text-amber-600 dark:text-amber-400 mb-3 stroke-[1.5]" />

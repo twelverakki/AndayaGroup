@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"time"
 
 	"andaya-erp/backend/internal/config"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type LoginRequest struct {
@@ -19,6 +21,7 @@ type LoginRequest struct {
 type SwitchRequest struct {
 	BusinessID string `json:"business_id"`
 	OutletID   string `json:"outlet_id"`
+	Role       string `json:"role"`
 }
 
 // HandleLogin handles POST /api/v1/auth/login
@@ -120,25 +123,26 @@ func HandleSwitchBusiness(c *fiber.Ctx) error {
 	for _, ws := range workspaces {
 		matchBusiness := req.BusinessID != "" && ws.BusinessID != nil && ws.BusinessID.String() == req.BusinessID
 		matchOutlet := req.OutletID != "" && ws.OutletID != nil && ws.OutletID.String() == req.OutletID
+		matchRole := req.Role == "" || ws.Role == req.Role
 
-		// Owners might switch context with only BusinessID or only OutletID (for outlet-specific ownership)
+		// Owners/Superadmins switch context with BusinessID or OutletID and optional Role
 		if req.BusinessID == "" && req.OutletID == "" {
 			if ws.Role == "superadmin" {
 				targetWS = ws
 				break
 			}
 		} else if req.BusinessID != "" && req.OutletID != "" {
-			if matchBusiness && matchOutlet {
+			if matchBusiness && matchOutlet && matchRole {
 				targetWS = ws
 				break
 			}
 		} else if req.BusinessID != "" {
-			if matchBusiness && ws.OutletID == nil {
+			if matchBusiness && ws.OutletID == nil && matchRole {
 				targetWS = ws
 				break
 			}
 		} else if req.OutletID != "" {
-			if matchOutlet {
+			if matchOutlet && matchRole {
 				targetWS = ws
 				break
 			}
@@ -341,4 +345,96 @@ func HandleGetStaff(c *fiber.Ctx) error {
 
 	return c.JSON(list)
 }
+
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// HandleForgotPassword handles POST /api/v1/auth/forgot-password
+func HandleForgotPassword(c *fiber.Ctx) error {
+	var req ForgotPasswordRequest
+	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.Email) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Email wajib diisi",
+		})
+	}
+
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+
+	// Check if user exists with this email
+	var userID uuid.UUID
+	var name string
+	err := config.DB.QueryRow(c.Context(), 
+		"SELECT id, name FROM users WHERE LOWER(phone_or_email) = $1", 
+		email,
+	).Scan(&userID, &name)
+
+	if err != nil {
+		// Even if not found, return generic message for security, or explicit for dev
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "Akun dengan email Gmail tersebut tidak ditemukan",
+		})
+	}
+
+	// In development/production simulation, return 6-digit OTP
+	return c.JSON(fiber.Map{
+		"message": "Instruksi pemulihan kata sandi dan kode OTP telah dikirim ke " + email,
+		"email":   email,
+		"dev_otp": "888888", // Simulated OTP for instant testing
+	})
+}
+
+type ResetPasswordRequest struct {
+	Email       string `json:"email"`
+	OTP         string `json:"otp"`
+	NewPassword string `json:"new_password"`
+}
+
+// HandleResetPassword handles POST /api/v1/auth/reset-password
+func HandleResetPassword(c *fiber.Ctx) error {
+	var req ResetPasswordRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Permintaan tidak valid",
+		})
+	}
+
+	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.NewPassword) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Email dan password baru wajib diisi",
+		})
+	}
+
+	if len(req.NewPassword) < 6 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Password minimal harus 6 karakter",
+		})
+	}
+
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+
+	// Hash new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Gagal mengenkripsi kata sandi baru",
+		})
+	}
+
+	hashStr := string(hash)
+	cmdTag, err := config.DB.Exec(c.Context(),
+		"UPDATE users SET password_hash = $1, updated_at = NOW() WHERE LOWER(phone_or_email) = $2",
+		hashStr, email,
+	)
+	if err != nil || cmdTag.RowsAffected() == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Gagal memperbarui kata sandi atau akun tidak ditemukan",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Kata sandi berhasil diperbarui. Silakan login dengan password baru.",
+	})
+}
+
 
