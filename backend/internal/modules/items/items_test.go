@@ -62,7 +62,7 @@ func TestItemsTenantIsolation(t *testing.T) {
 	}()
 
 	// Query items as Tenant Retail -> must find the item
-	itemsRetail, err := service.GetItems(ctx, tenantRetailUUID, "", nil)
+	itemsRetail, err := service.GetItems(ctx, tenantRetailUUID, nil, "", nil, "")
 	if err != nil {
 		t.Fatalf("Failed to get items for Tenant Retail: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestItemsTenantIsolation(t *testing.T) {
 	}
 
 	// Query items as Tenant Kitchen -> must NOT find Tenant Retail item (Cross-Tenant Isolation)
-	itemsKitchen, err := service.GetItems(ctx, tenantKitchenUUID, "", nil)
+	itemsKitchen, err := service.GetItems(ctx, tenantKitchenUUID, nil, "", nil, "")
 	if err != nil {
 		t.Fatalf("Failed to get items for Tenant Kitchen: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestCategoriesAndWastageScoping(t *testing.T) {
 	service := NewItemsService(config.DB)
 
 	// Fetch categories for Tenant Retail
-	cats, err := service.GetCategories(ctx, tenantRetailUUID)
+	cats, err := service.GetCategories(ctx, tenantRetailUUID, "")
 	if err != nil {
 		t.Fatalf("Failed to get categories: %v", err)
 	}

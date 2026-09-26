@@ -55,9 +55,11 @@ CREATE TABLE IF NOT EXISTS businesses (
     name VARCHAR(100) NOT NULL,
     type business_type NOT NULL,
     has_pos BOOLEAN NOT NULL DEFAULT TRUE,
+    has_multi_outlets BOOLEAN NOT NULL DEFAULT FALSE,
     has_manufacturing BOOLEAN NOT NULL DEFAULT FALSE,
     has_logistics_hub BOOLEAN NOT NULL DEFAULT FALSE,
     has_eod_usage BOOLEAN NOT NULL DEFAULT FALSE,
+    hide_central_stock_from_branches BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -67,6 +69,7 @@ CREATE TABLE IF NOT EXISTS outlets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
+    is_main BOOLEAN NOT NULL DEFAULT FALSE,
     address TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -109,6 +112,7 @@ CREATE TABLE IF NOT EXISTS categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
+    category_type VARCHAR(30) NOT NULL DEFAULT 'finished_good' CHECK (category_type IN ('finished_good', 'semi_finished', 'raw_material', 'consumable', 'fixed_tool')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -120,14 +124,16 @@ CREATE TABLE IF NOT EXISTS items (
     category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
     sku VARCHAR(50),
     name VARCHAR(150) NOT NULL,
-    item_type VARCHAR(30) NOT NULL DEFAULT 'finished_good' CHECK (item_type IN ('finished_good', 'raw_material', 'consumable', 'fixed_tool')),
+    item_type VARCHAR(30) NOT NULL DEFAULT 'finished_good' CHECK (item_type IN ('finished_good', 'semi_finished', 'raw_material', 'consumable', 'fixed_tool')),
     is_sellable BOOLEAN NOT NULL DEFAULT TRUE,
     is_inventory_tracked BOOLEAN NOT NULL DEFAULT TRUE,
     requires_thaw BOOLEAN NOT NULL DEFAULT FALSE,
     base_unit VARCHAR(20) NOT NULL DEFAULT 'pcs',
     box_unit VARCHAR(20),
     conversion_rate NUMERIC(14, 4) NOT NULL DEFAULT 1.0000,
+    price_unit VARCHAR(20) NOT NULL DEFAULT 'base',
     sell_price BIGINT NOT NULL DEFAULT 0,
+    box_sell_price BIGINT NOT NULL DEFAULT 0,
     standard_cost BIGINT NOT NULL DEFAULT 0,
     min_stock_alert NUMERIC(14, 4) DEFAULT 5.0000,
     image_url TEXT,
@@ -146,6 +152,7 @@ CREATE TABLE IF NOT EXISTS products (
     name VARCHAR(150) NOT NULL,
     unit_type unit_type NOT NULL DEFAULT 'pcs',
     inventory_mode inventory_mode NOT NULL DEFAULT 'dry_strict',
+    price_unit VARCHAR(20) NOT NULL DEFAULT 'base',
     purchase_price BIGINT NOT NULL DEFAULT 0,
     sell_price BIGINT NOT NULL DEFAULT 0,
     current_stock NUMERIC(14, 4) NOT NULL DEFAULT 0,
@@ -308,26 +315,61 @@ CREATE TABLE IF NOT EXISTS production_expenses (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 20. DISTRIBUTIONS / STOCK TRANSFERS
-CREATE TABLE IF NOT EXISTS distributions (
+-- 20. STOCK TRANSFERS (Inter-Outlet Delivery Orders / Surat Jalan Header)
+CREATE TABLE IF NOT EXISTS stock_transfers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transfer_no VARCHAR(50) NOT NULL UNIQUE,
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-    item_id UUID REFERENCES items(id) ON DELETE SET NULL,
-    product_id UUID REFERENCES products(id) ON DELETE SET NULL,
-    from_outlet_id UUID REFERENCES outlets(id) ON DELETE SET NULL,
-    to_outlet_id UUID REFERENCES outlets(id) ON DELETE SET NULL,
-    outlet_id UUID REFERENCES outlets(id) ON DELETE SET NULL,
-    sent_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    from_outlet_id UUID NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+    to_outlet_id UUID NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+    sent_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     sent_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     received_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    qty NUMERIC(14, 4) NOT NULL,
-    distribution_type VARCHAR(30) NOT NULL DEFAULT 'outbound',
-    status VARCHAR(30) NOT NULL DEFAULT 'pending',
-    shrinkage_tolerance_pct NUMERIC(5, 2) NOT NULL DEFAULT 0.00,
-    shrinkage_qty NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
+    driver_name VARCHAR(100),
+    driver_phone VARCHAR(30),
+    vehicle_plate VARCHAR(30),
+    carrier_type VARCHAR(30) DEFAULT 'internal_fleet', -- internal_fleet, online_courier, 3rd_party, pickup
+    status VARCHAR(30) NOT NULL DEFAULT 'in_transit', -- draft, in_transit, received, returned, cancelled
+    transfer_type VARCHAR(30) NOT NULL DEFAULT 'outbound', -- outbound, return
+    shipping_cost BIGINT DEFAULT 0,
+    shipping_cost_payer VARCHAR(30) DEFAULT 'origin', -- origin, destination, central
+    shipping_payment_method VARCHAR(30) DEFAULT 'cash', -- cash, bank_transfer, on_account
+    tracking_ref_no VARCHAR(100),
+    shipping_cost_mode VARCHAR(30) DEFAULT 'fixed', -- fixed, driver_claim, free
+    max_claim_budget BIGINT DEFAULT 0,
+    claim_token VARCHAR(64) UNIQUE,
+    claim_status VARCHAR(30) DEFAULT 'none', -- none, pending, approved, rejected
+    claimed_amount BIGINT DEFAULT 0,
+    claimed_notes TEXT,
+    claimed_attachment_url TEXT,
+    claimed_at TIMESTAMPTZ,
+    claim_reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    claim_reviewed_at TIMESTAMPTZ,
+    claim_rejection_reason TEXT,
+    backorder_status VARCHAR(30) DEFAULT 'none', -- none, has_backorder, is_backorder, closed
+    parent_transfer_id UUID REFERENCES stock_transfers(id) ON DELETE SET NULL,
     notes TEXT,
+    sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    received_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    received_at TIMESTAMPTZ
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 21. STOCK TRANSFER ITEMS (Multi-Item Delivery Order Lines)
+CREATE TABLE IF NOT EXISTS stock_transfer_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transfer_id UUID NOT NULL REFERENCES stock_transfers(id) ON DELETE CASCADE,
+    item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    qty_requested_sealed NUMERIC(14, 4) DEFAULT 0.0000,
+    qty_requested_loose NUMERIC(14, 4) DEFAULT 0.0000,
+    qty_sent_sealed NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
+    qty_sent_loose NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
+    qty_received_sealed NUMERIC(14, 4) DEFAULT 0.0000,
+    qty_received_loose NUMERIC(14, 4) DEFAULT 0.0000,
+    shrinkage_qty NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
+    allocation_notes TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 21. EOD MATERIAL USAGES
@@ -516,20 +558,8 @@ ALTER TABLE production_expenses ADD COLUMN IF NOT EXISTS total_cost BIGINT DEFAU
 ALTER TABLE production_expenses ADD COLUMN IF NOT EXISTS qty_used NUMERIC(14,4) DEFAULT 0;
 ALTER TABLE production_expenses ALTER COLUMN ingredient_id DROP NOT NULL;
 
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS item_id UUID REFERENCES items(id) ON DELETE SET NULL;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS outlet_id UUID REFERENCES outlets(id) ON DELETE SET NULL;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS from_outlet_id UUID REFERENCES outlets(id) ON DELETE SET NULL;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS to_outlet_id UUID REFERENCES outlets(id) ON DELETE SET NULL;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS sent_by_user_id UUID REFERENCES users(id) ON DELETE CASCADE;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS sent_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS received_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS distribution_type VARCHAR(30) NOT NULL DEFAULT 'outbound';
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS shrinkage_tolerance_pct NUMERIC(5,2) NOT NULL DEFAULT 0.00;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS shrinkage_qty NUMERIC(14,4) NOT NULL DEFAULT 0.0000;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS notes TEXT;
-ALTER TABLE distributions ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ;
-ALTER TABLE distributions ALTER COLUMN product_id DROP NOT NULL;
+-- Drop legacy flat distributions table in favor of 3NF stock_transfers & stock_transfer_items
+DROP TABLE IF EXISTS distributions CASCADE;
 
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS cashier_id UUID REFERENCES users(id) ON DELETE CASCADE;
@@ -666,6 +696,46 @@ ALTER TABLE daily_settlement_items ADD COLUMN IF NOT EXISTS qty_sold NUMERIC(14,
 ALTER TABLE daily_settlement_items ADD COLUMN IF NOT EXISTS unit_sell_price BIGINT DEFAULT 0;
 ALTER TABLE daily_settlement_items ADD COLUMN IF NOT EXISTS subtotal_target_revenue BIGINT DEFAULT 0;
 
+-- 32. PROMOTIONS & DISCOUNT RULES (The Lean Odoo Way: Rule-Based Pricing Engine)
+CREATE TABLE IF NOT EXISTS promotions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    outlet_id UUID REFERENCES outlets(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    code VARCHAR(50),
+    promo_type VARCHAR(30) NOT NULL DEFAULT 'automatic', -- 'automatic', 'coupon_code', 'catalog_sale', 'manual_select'
+    start_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    end_date TIMESTAMPTZ,
+    active_days INT[] DEFAULT '{0,1,2,3,4,5,6}',
+    active_time_start TIME,
+    active_time_end TIME,
+    min_order_amount BIGINT NOT NULL DEFAULT 0,
+    min_qty NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    usage_limit INT,
+    usage_count INT NOT NULL DEFAULT 0,
+    reward_type VARCHAR(30) NOT NULL DEFAULT 'discount_pct', -- 'discount_pct', 'discount_fixed', 'fixed_price'
+    reward_value NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    max_discount_cap BIGINT,
+    target_scope VARCHAR(30) NOT NULL DEFAULT 'entire_order', -- 'entire_order', 'specific_items', 'specific_categories'
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 33. PROMOTION TARGETS (Specific Item / Category linkages)
+CREATE TABLE IF NOT EXISTS promotion_targets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    promotion_id UUID NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
+    target_type VARCHAR(20) NOT NULL DEFAULT 'item', -- 'item', 'category'
+    target_id UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS promotion_id UUID REFERENCES promotions(id) ON DELETE SET NULL;
+ALTER TABLE transaction_items ADD COLUMN IF NOT EXISTS promotion_id UUID REFERENCES promotions(id) ON DELETE SET NULL;
+ALTER TABLE transaction_items ADD COLUMN IF NOT EXISTS discount_amount BIGINT NOT NULL DEFAULT 0;
+
 -- PERFORMANCE INDEXES (Tenant Scoping & Query Optimization)
 CREATE INDEX IF NOT EXISTS idx_outlets_business_id ON outlets(business_id);
 CREATE INDEX IF NOT EXISTS idx_business_owners_user_id ON business_owners(user_id);
@@ -679,5 +749,9 @@ CREATE INDEX IF NOT EXISTS idx_item_stocks_lookup ON item_stocks(item_id, outlet
 CREATE INDEX IF NOT EXISTS idx_transactions_business_id ON transactions(business_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_outlet_id ON transactions(outlet_id);
 CREATE INDEX IF NOT EXISTS idx_transaction_items_tx_id ON transaction_items(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_promotions_business_id ON promotions(business_id);
+CREATE INDEX IF NOT EXISTS idx_promotions_active_lookup ON promotions(business_id, is_active, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_promotions_code ON promotions(code);
+CREATE INDEX IF NOT EXISTS idx_promotion_targets_promo_id ON promotion_targets(promotion_id);
 CREATE INDEX IF NOT EXISTS idx_daily_settlements_business ON daily_settlements(business_id);
 CREATE INDEX IF NOT EXISTS idx_eod_material_usages_business ON eod_material_usages(business_id);

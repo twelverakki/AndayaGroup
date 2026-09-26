@@ -160,6 +160,16 @@ body {
 	html {
 		@apply font-sans;
 	}
+	/* Remove default browser spinner buttons from number inputs */
+	input[type="number"]::-webkit-outer-spin-button,
+	input[type="number"]::-webkit-inner-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+	input[type="number"] {
+		-moz-appearance: textfield;
+		appearance: textfield;
+	}
 }
 
 @utility scrollbar-thin {
@@ -312,4 +322,37 @@ body {
 [data-slot="sheet-content"][data-side="right"][data-ending-style] {
 	animation: sheet-slide-out-right 400ms cubic-bezier(0.25, 1, 0.5, 1)
 		forwards !important;
+}
+
+/* Direction Arrow Flow Animation */
+@keyframes arrow-flow-down {
+	0%, 100% {
+		transform: translateY(0);
+		opacity: 0.8;
+	}
+	50% {
+		transform: translateY(3px);
+		opacity: 1;
+	}
+}
+
+@keyframes arrow-flow-right {
+	0%, 100% {
+		transform: translateX(0);
+		opacity: 0.8;
+	}
+	50% {
+		transform: translateX(3px);
+		opacity: 1;
+	}
+}
+
+.animate-arrow-flow {
+	animation: arrow-flow-down 1.4s ease-in-out infinite;
+}
+
+@media (min-width: 768px) {
+	.animate-arrow-flow {
+		animation: arrow-flow-right 1.4s ease-in-out infinite;
+	}
 }

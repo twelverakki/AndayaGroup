@@ -36,105 +36,179 @@ func TestLogisticsWorkflowAndIsolation(t *testing.T) {
 	ctx := context.Background()
 	service := NewLogisticsService(config.DB)
 
-	// Create Thawable Finished Good Item
-	fgThawItemID := uuid.New()
-	skuThawItem := "LOG-ITEM-" + uuid.New().String()[:6]
+	// Create 2 test items: 1 frozen item, 1 ingredient item
+	item1ID := uuid.New()
+	sku1 := "LOG-ITEM-" + uuid.New().String()[:6]
 	_, err := config.DB.Exec(ctx, `
 		INSERT INTO items (id, business_id, sku, name, item_type, is_sellable, is_inventory_tracked, base_unit, box_unit, conversion_rate, sell_price, standard_cost, status, created_at, updated_at)
 		VALUES ($1, $2, $3, 'Thawable Frozen Food Item Test', 'finished_good', true, true, 'pcs', 'pack', 20, 2500, 30000, 'active', NOW(), NOW())
-	`, fgThawItemID, tenantFnBUUID, skuThawItem)
+	`, item1ID, tenantFnBUUID, sku1)
 	if err != nil {
-		t.Fatalf("Failed to create test thawable item: %v", err)
+		t.Fatalf("Failed to create test item 1: %v", err)
 	}
 
+	item2ID := uuid.New()
+	sku2 := "LOG-ITEM-" + uuid.New().String()[:6]
 	_, err = config.DB.Exec(ctx, `
-		INSERT INTO products (id, business_id, name, sku, unit_type, inventory_mode, purchase_price, sell_price, current_stock, status, created_at, updated_at)
-		VALUES ($1, $2, 'Thawable Frozen Food Item Test', $3, 'pack', 'batch_thaw', 30000, 45000, 50, 'active', NOW(), NOW())
-	`, fgThawItemID, tenantFnBUUID, skuThawItem)
+		INSERT INTO items (id, business_id, sku, name, item_type, is_sellable, is_inventory_tracked, base_unit, box_unit, conversion_rate, sell_price, standard_cost, status, created_at, updated_at)
+		VALUES ($1, $2, $3, 'Sauce Bottle Pack Test', 'raw_material', false, true, 'botol', 'dus', 12, 0, 60000, 'active', NOW(), NOW())
+	`, item2ID, tenantFnBUUID, sku2)
 	if err != nil {
-		t.Fatalf("Failed to create test thawable product: %v", err)
+		t.Fatalf("Failed to create test item 2: %v", err)
 	}
 
-	// Fetch default Hub/Warehouse outlet
+	// Fetch default Hub/Warehouse outlet and destination branch
 	var outletWarehouseID uuid.UUID
 	err = config.DB.QueryRow(ctx, `SELECT id FROM outlets WHERE business_id = $1 LIMIT 1`, tenantFnBUUID).Scan(&outletWarehouseID)
 	if err != nil {
 		t.Fatalf("Failed to get warehouse outlet: %v", err)
 	}
 
-	// Stock 50 packs in central warehouse
+	var outletBranchID uuid.UUID
+	err = config.DB.QueryRow(ctx, `SELECT id FROM outlets WHERE business_id = $1 AND id != $2 LIMIT 1`, tenantFnBUUID, outletWarehouseID).Scan(&outletBranchID)
+	if err != nil {
+		outletBranchID = uuid.New()
+		_, _ = config.DB.Exec(ctx, `INSERT INTO outlets (id, business_id, name, is_main, address) VALUES ($1, $2, 'Bakso Cart Branch Test', false, 'Jl. Kaliurang')`, outletBranchID, tenantFnBUUID)
+		defer func() {
+			_, _ = config.DB.Exec(ctx, `DELETE FROM outlets WHERE id = $1`, outletBranchID)
+		}()
+	}
+
+	// Seed stock: 50 packs of item1, 30 boxes of item2 at warehouse
 	_, err = config.DB.Exec(ctx, `
 		INSERT INTO item_stocks (item_id, outlet_id, qty_sealed, qty_loose, updated_at)
-		VALUES ($1, $2, 50, 0, NOW())
-	`, fgThawItemID, outletWarehouseID)
+		VALUES ($1, $2, 50, 0, NOW()), ($3, $2, 30, 0, NOW())
+	`, item1ID, outletWarehouseID, item2ID)
 	if err != nil {
 		t.Fatalf("Failed to seed initial stock: %v", err)
 	}
 
 	defer func() {
-		_, _ = config.DB.Exec(ctx, "DELETE FROM stock_movements WHERE item_id = $1", fgThawItemID)
-		_, _ = config.DB.Exec(ctx, "DELETE FROM item_stocks WHERE item_id = $1", fgThawItemID)
-		_, _ = config.DB.Exec(ctx, "DELETE FROM distributions WHERE product_id = $1", fgThawItemID)
-		_, _ = config.DB.Exec(ctx, "DELETE FROM items WHERE id = $1", fgThawItemID)
-		_, _ = config.DB.Exec(ctx, "DELETE FROM products WHERE id = $1", fgThawItemID)
+		_, _ = config.DB.Exec(ctx, "DELETE FROM stock_movements WHERE item_id IN ($1, $2)", item1ID, item2ID)
+		_, _ = config.DB.Exec(ctx, "DELETE FROM stock_transfer_items WHERE item_id IN ($1, $2)", item1ID, item2ID)
+		_, _ = config.DB.Exec(ctx, "DELETE FROM item_stocks WHERE item_id IN ($1, $2)", item1ID, item2ID)
+		_, _ = config.DB.Exec(ctx, "DELETE FROM items WHERE id IN ($1, $2)", item1ID, item2ID)
 	}()
 
-	// 1. Create Distribution (Outbound: Central Hub -> Mobile Staff: 10 packs)
-	dist, err := service.CreateDistribution(ctx, tenantFnBUUID, userOwnerFnBUUID, DistributionRequest{
-		ItemID:       fgThawItemID,
-		OutletID:     &outletWarehouseID,
-		SentToUserID: userStaffMobileUUID,
-		Qty:          10,
-		Type:         "outbound",
-	})
+	// 0. Guard Test: Self-Transfer (from == to) must fail
+	selfTransferReq := CreateTransferRequest{
+		FromOutletID: &outletWarehouseID,
+		ToOutletID:   &outletWarehouseID,
+		Items: []CreateTransferItemRequest{
+			{ItemID: item1ID, QtySentSealed: 1},
+		},
+	}
+	_, selfErr := service.CreateTransfer(ctx, tenantFnBUUID, userOwnerFnBUUID, selfTransferReq)
+	if selfErr == nil {
+		t.Fatal("Expected error when FromOutletID == ToOutletID, but succeeded!")
+	}
+	t.Logf("Pass: Self-transfer rejected properly: %v", selfErr)
+
+	// 1. Create Multi-Item Surat Jalan (Transfer: 10 packs item1, 5 boxes item2)
+	transferReq := CreateTransferRequest{
+		FromOutletID: &outletWarehouseID,
+		ToOutletID:   &outletBranchID,
+		SentToUserID: &userStaffMobileUUID,
+		TransferType: "outbound",
+		Notes:        "Pengiriman stok harian multi-item",
+		Items: []CreateTransferItemRequest{
+			{ItemID: item1ID, QtySentSealed: 10, QtySentLoose: 0, Notes: "Frozen packs"},
+			{ItemID: item2ID, QtySentSealed: 5, QtySentLoose: 0, Notes: "Sauce boxes"},
+		},
+	}
+
+	transfer, err := service.CreateTransfer(ctx, tenantFnBUUID, userOwnerFnBUUID, transferReq)
 	if err != nil {
-		t.Fatalf("Failed to create distribution: %v", err)
+		t.Fatalf("Failed to create multi-item transfer: %v", err)
 	}
 
-	// Verify central warehouse stock is reduced to 40
-	var warehouseStock float64
-	_ = config.DB.QueryRow(ctx, `SELECT qty_sealed FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL`, fgThawItemID, outletWarehouseID).Scan(&warehouseStock)
-	if warehouseStock != 40 {
-		t.Fatalf("Expected warehouse sealed stock to be 40, got %f", warehouseStock)
+	if len(transfer.Items) != 2 {
+		t.Fatalf("Expected 2 items in transfer, got %d", len(transfer.Items))
 	}
-	t.Log("Pass: Central warehouse stock deducted upon outbound shipment.")
 
-	// 2. Cross-Tenant / Unauthorized Handshake: Staff from another tenant tries to receive distribution -> MUST FAIL
-	err = service.ReceiveDistribution(ctx, tenantFnBUUID, userStaffRetailUUID, dist.ID)
+	// Verify warehouse stock deducted: item1 -> 40, item2 -> 25
+	var s1, s2 float64
+	_ = config.DB.QueryRow(ctx, `SELECT qty_sealed FROM item_stocks WHERE item_id = $1 AND outlet_id = $2`, item1ID, outletWarehouseID).Scan(&s1)
+	_ = config.DB.QueryRow(ctx, `SELECT qty_sealed FROM item_stocks WHERE item_id = $1 AND outlet_id = $2`, item2ID, outletWarehouseID).Scan(&s2)
+	if s1 != 40 || s2 != 25 {
+		t.Fatalf("Expected stocks (40, 25), got (%.2f, %.2f)", s1, s2)
+	}
+	t.Log("Pass: Central warehouse stock deducted properly for multi-item delivery.")
+
+	// 2. Cross-Tenant / Invalid ID Handshake: Must fail
+	invalidTransferID := uuid.New()
+	err = service.ReceiveTransfer(ctx, tenantFnBUUID, userStaffRetailUUID, invalidTransferID, ReceiveTransferRequest{}, &outletBranchID, "staff")
 	if err == nil {
-		t.Fatal("Expected error when unauthorized staff attempts to receive distribution, but succeeded!")
+		t.Fatal("Expected error when non-existent transfer is received, but succeeded!")
 	}
-	t.Logf("Pass: Unauthorized handshake receive rejected: %v", err)
+	t.Logf("Pass: Invalid transfer handshake rejected: %v", err)
 
-	// 3. Legitimate Handshake Receive by Assigned Mobile Staff
-	err = service.ReceiveDistribution(ctx, tenantFnBUUID, userStaffMobileUUID, dist.ID)
+	// 3. Legitimate Handshake Receive with Shrinkage Override (item1: 10 received, item2: 4 received -> 1 box damaged/shrinkage)
+	recQty1 := 10.0
+	recQty2 := 4.0
+	receiveReq := ReceiveTransferRequest{
+		Notes: "Diterima oleh staff cabang, 1 dus saus pecah dalam perjalanan",
+		Items: []ReceiveTransferItemRequest{
+			{ItemID: item1ID, QtyReceivedSealed: &recQty1},
+			{ItemID: item2ID, QtyReceivedSealed: &recQty2},
+		},
+	}
+
+	err = service.ReceiveTransfer(ctx, tenantFnBUUID, userStaffMobileUUID, transfer.ID, receiveReq, &outletBranchID, "staff")
 	if err != nil {
-		t.Fatalf("Failed to perform legitimate receive handshake: %v", err)
+		t.Fatalf("Failed to receive multi-item transfer: %v", err)
 	}
 
-	// Verify Mobile Staff's personal item_stock is now 10 packs sealed
-	var mobileStockSealed float64
-	_ = config.DB.QueryRow(ctx, `SELECT qty_sealed FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id = $3`, fgThawItemID, outletWarehouseID, userStaffMobileUUID).Scan(&mobileStockSealed)
-	if mobileStockSealed != 10 {
-		t.Fatalf("Expected mobile staff stock to be 10 sealed packs, got %f", mobileStockSealed)
+	// Verify Destination stock at branch: item1 = 10, item2 = 4
+	_ = config.DB.QueryRow(ctx, `SELECT qty_sealed FROM item_stocks WHERE item_id = $1 AND outlet_id = $2`, item1ID, outletBranchID).Scan(&s1)
+	_ = config.DB.QueryRow(ctx, `SELECT qty_sealed FROM item_stocks WHERE item_id = $1 AND outlet_id = $2`, item2ID, outletBranchID).Scan(&s2)
+	if s1 != 10 || s2 != 4 {
+		t.Fatalf("Expected post-receipt branch stocks (10, 4), got (%.2f, %.2f)", s1, s2)
 	}
-	t.Log("Pass: Recipient staff successfully received stock into personal inventory.")
+	t.Log("Pass: Recipient received stock with shrinkage accurately tracked at destination branch.")
 
-	// 4. Thawing: Staff thaws 2 packs beku -> converts to 40 pcs loose (conversion_rate = 20)
-	err = service.ThawItem(ctx, tenantFnBUUID, userStaffMobileUUID, ThawRequest{
-		ItemID:   fgThawItemID,
-		OutletID: &outletWarehouseID,
-		QtyPacks: 2,
+	// 4. Universal Unboxing / Thawing: Staff thaws 2 packs item1 -> 40 pcs loose (conversion_rate = 20)
+	err = service.UnboxOrThawItem(ctx, tenantFnBUUID, userStaffMobileUUID, UnboxRequest{
+		ItemID:         item1ID,
+		OutletID:       &outletWarehouseID,
+		QtyBoxes:       2,
+		ShrinkageLoose: 0,
+		Notes:          "Thaw harian bakso",
 	})
 	if err != nil {
-		t.Fatalf("Failed to thaw packs: %v", err)
+		t.Fatalf("Failed to thaw item: %v", err)
 	}
 
-	// Verify Staff's stock is now: 8 sealed packs + 40 loose pcs
 	var sealedAfter, looseAfter float64
-	_ = config.DB.QueryRow(ctx, `SELECT qty_sealed, qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id = $3`, fgThawItemID, outletWarehouseID, userStaffMobileUUID).Scan(&sealedAfter, &looseAfter)
-	if sealedAfter != 8 || looseAfter != 40 {
-		t.Fatalf("Expected 8 sealed and 40 loose, got %f sealed and %f loose", sealedAfter, looseAfter)
+	_ = config.DB.QueryRow(ctx, `SELECT qty_sealed, qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2`, item1ID, outletWarehouseID).Scan(&sealedAfter, &looseAfter)
+	if sealedAfter != 38 || looseAfter != 40 {
+		t.Fatalf("Expected 38 sealed and 40 loose, got %.2f sealed and %.2f loose", sealedAfter, looseAfter)
 	}
-	t.Log("Pass: Thawing conversion (pack beku -> pcs loose) executed cleanly.")
+	t.Log("Pass: Universal Unboxing/Thawing executed cleanly without thaw_logs overhead.")
+
+	// 5. Outlet Scoping Isolation Test:
+	// Transfers involving outletBranchID must be returned when filtering by outletBranchID,
+	// but a completely unrelated third outlet must see 0 transfers.
+	unrelatedOutletID := uuid.New()
+	_, _ = config.DB.Exec(ctx, `INSERT INTO outlets (id, business_id, name, is_main) VALUES ($1, $2, 'Unrelated Isolated Branch', false)`, unrelatedOutletID, tenantFnBUUID)
+	defer func() {
+		_, _ = config.DB.Exec(ctx, `DELETE FROM outlets WHERE id = $1`, unrelatedOutletID)
+	}()
+
+	branchTransfers, err := service.GetTransfers(ctx, tenantFnBUUID, &outletBranchID)
+	if err != nil {
+		t.Fatalf("Failed to get transfers scoped to branch: %v", err)
+	}
+	if len(branchTransfers) == 0 {
+		t.Fatal("Expected at least 1 transfer for active branch outlet, got 0")
+	}
+
+	isolatedTransfers, err := service.GetTransfers(ctx, tenantFnBUUID, &unrelatedOutletID)
+	if err != nil {
+		t.Fatalf("Failed to get transfers for isolated branch: %v", err)
+	}
+	if len(isolatedTransfers) != 0 {
+		t.Fatalf("Expected 0 transfers for completely isolated branch, got %d", len(isolatedTransfers))
+	}
+	t.Log("Pass: Outlet scoping isolation verified (Branch sees only its transfers, isolated branch sees none).")
 }

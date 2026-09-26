@@ -136,9 +136,23 @@ func (h *Handler) resolveBusinessContext(c *fiber.Ctx) (uuid.UUID, *uuid.UUID, e
 	return uuid.Nil, nil, fiber.ErrForbidden
 }
 
-// GetAllBusinesses returns all businesses in the holding
+// GetAllBusinesses returns all businesses or businesses scoped to the user
 func (h *Handler) GetAllBusinesses(c *fiber.Ctx) error {
-	businesses, err := h.service.GetAllBusinesses(c.Context())
+	role, _ := c.Locals("role").(string)
+	userIDStr, _ := c.Locals("user_id").(string)
+	businessIDStr, _ := c.Locals("business_id").(string)
+
+	var userID *uuid.UUID
+	if uid, err := uuid.Parse(userIDStr); err == nil {
+		userID = &uid
+	}
+
+	var businessID *uuid.UUID
+	if bid, err := uuid.Parse(businessIDStr); err == nil {
+		businessID = &bid
+	}
+
+	businesses, err := h.service.GetBusinessesForUser(c.Context(), userID, role, businessID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -300,12 +314,13 @@ func (h *Handler) CreateOutlet(c *fiber.Ctx) error {
 	var req struct {
 		Name    string  `json:"name"`
 		Address *string `json:"address,omitempty"`
+		IsMain  bool    `json:"is_main"`
 	}
 	if err := c.BodyParser(&req); err != nil || req.Name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "name is required"})
 	}
 
-	outlet, err := h.service.CreateOutlet(c.Context(), businessID, req.Name, req.Address)
+	outlet, err := h.service.CreateOutlet(c.Context(), businessID, req.Name, req.Address, req.IsMain)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -342,6 +357,7 @@ func (h *Handler) UpdateCapabilities(c *fiber.Ctx) error {
 		"has_manufacturing": req.HasManufacturing,
 		"has_logistics_hub": req.HasLogisticsHub,
 		"has_eod_usage":     req.HasEodUsage,
+		"has_multi_outlets": req.HasMultiOutlets,
 	}, &ip, &ua)
 
 	return c.JSON(fiber.Map{"message": "Business capabilities updated successfully"})
@@ -406,6 +422,7 @@ func (h *Handler) CreateBusiness(c *fiber.Ctx) error {
 		HasManufacturing bool    `json:"has_manufacturing"`
 		HasLogisticsHub  bool    `json:"has_logistics_hub"`
 		HasEodUsage      bool    `json:"has_eod_usage"`
+		HasMultiOutlets  bool    `json:"has_multi_outlets"`
 		InitialOutlet    *string `json:"initial_outlet_name,omitempty"`
 	}
 
@@ -426,6 +443,7 @@ func (h *Handler) CreateBusiness(c *fiber.Ctx) error {
 		req.HasManufacturing,
 		req.HasLogisticsHub,
 		req.HasEodUsage,
+		req.HasMultiOutlets,
 		req.InitialOutlet,
 	)
 	if err != nil {
@@ -440,6 +458,7 @@ func (h *Handler) CreateBusiness(c *fiber.Ctx) error {
 		"has_manufacturing": biz.HasManufacturing,
 		"has_logistics_hub": biz.HasLogisticsHub,
 		"has_eod_usage":     biz.HasEodUsage,
+		"has_multi_outlets": biz.HasMultiOutlets,
 	}, &ip, &ua)
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"data": biz})
@@ -509,13 +528,14 @@ func (h *Handler) UpdateOutletDetails(c *fiber.Ctx) error {
 		Address       *string `json:"address,omitempty"`
 		Phone         *string `json:"phone,omitempty"`
 		ReceiptFooter *string `json:"receipt_footer,omitempty"`
+		IsMain        *bool   `json:"is_main,omitempty"`
 	}
 
 	if err := c.BodyParser(&req); err != nil || req.Name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Outlet name is required"})
 	}
 
-	outlet, err := h.service.UpdateOutlet(c.Context(), businessID, outletID, req.Name, req.Address, req.Phone, req.ReceiptFooter)
+	outlet, err := h.service.UpdateOutlet(c.Context(), businessID, outletID, req.Name, req.Address, req.Phone, req.ReceiptFooter, req.IsMain)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}

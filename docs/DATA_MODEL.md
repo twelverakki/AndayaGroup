@@ -106,6 +106,9 @@ CREATE TABLE businesses (
     has_manufacturing BOOLEAN NOT NULL DEFAULT FALSE,
     has_logistics_hub BOOLEAN NOT NULL DEFAULT FALSE,
     has_eod_usage BOOLEAN NOT NULL DEFAULT FALSE,
+    has_multi_outlets BOOLEAN NOT NULL DEFAULT FALSE,
+    hide_central_stock_from_branches BOOLEAN NOT NULL DEFAULT FALSE, -- Blind Requisition Mode (Sembunyikan Saldo Fisik Pusat dari Kasir/Staff Cabang)
+    allow_cross_branch_stock_view BOOLEAN NOT NULL DEFAULT FALSE,    -- Izinkan staf/kasir cabang memeriksa saldo stok di outlet cabang lain
     
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -115,6 +118,7 @@ CREATE TABLE outlets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
+    is_main BOOLEAN NOT NULL DEFAULT FALSE, -- Penanda Cabang Utama / Central Hub
     address TEXT,                          -- Alamat Lengkap Fisik Cabang
     phone VARCHAR(50),                     -- No. HP / Kontak Cabang Kasir
     receipt_footer TEXT,                   -- Pesan Kaki Struk Kasir POS
@@ -132,6 +136,7 @@ CREATE TABLE categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
+    category_type VARCHAR(30) NOT NULL DEFAULT 'finished_good' CHECK (category_type IN ('finished_good', 'raw_material', 'consumable', 'fixed_tool')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -151,15 +156,16 @@ CREATE TABLE items (
     is_inventory_tracked BOOLEAN NOT NULL DEFAULT TRUE,  -- Dipantau saldonya di stock ledger?
     requires_thaw BOOLEAN NOT NULL DEFAULT FALSE,       -- Perlu alur pencairan beku & QC harian?
     
-    -- Dual-UOM Konfigurasi
+    -- Dual-UOM & Pricing UOM Konfigurasi
     base_unit VARCHAR(20) NOT NULL DEFAULT 'pcs',       -- Satuan eceran (pcs, gram, ml, porsi)
     box_unit VARCHAR(20),                               -- Satuan kemasan besar (dus, pack, karung)
     conversion_rate NUMERIC(14, 4) NOT NULL DEFAULT 1.0000, -- 1 box_unit = N base_unit
+    price_unit VARCHAR(20) NOT NULL DEFAULT 'base',     -- Patokan harga ('base', 'kg', '100g', 'liter')
     
     -- Nilai Finansial
-    sell_price BIGINT NOT NULL DEFAULT 0,               -- Harga eceran
+    sell_price BIGINT NOT NULL DEFAULT 0,               -- Harga eceran sesuai price_unit
     box_sell_price BIGINT DEFAULT 0,                    -- Harga grosir
-    standard_cost BIGINT DEFAULT 0,                     -- Harga modal (HPP baseline)
+    standard_cost BIGINT DEFAULT 0,                     -- Harga modal (HPP baseline sesuai price_unit)
     
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'discontinued')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -311,26 +317,68 @@ CREATE TABLE daily_settlement_items (
 ## 7. Logistics, Transfers & Transit Thawing
 
 ```sql
--- Pengiriman Antar-Lokasi / Mutasi Cabang / Retur (Mirip stock.picking di Odoo)
+-- Pengiriman Antar-Lokasi / Surat Jalan Multi-Item (Mirip stock.picking di Odoo)
 CREATE TABLE stock_transfers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transfer_no VARCHAR(50) NOT NULL UNIQUE,
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
     from_outlet_id UUID NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
     to_outlet_id UUID NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
-    assigned_to_user_id UUID REFERENCES users(id),
+    sent_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sent_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    received_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     
+    -- Armada & Kurir
+    carrier_type VARCHAR(30) DEFAULT 'internal_fleet', -- internal_fleet, online_courier, 3rd_party, pickup
+    driver_name VARCHAR(100),
+    driver_phone VARCHAR(30),
+    vehicle_plate VARCHAR(30),
+
+    -- Ongkir & Biaya Distribusi Logistik
+    shipping_cost BIGINT DEFAULT 0,
+    shipping_cost_payer VARCHAR(30) DEFAULT 'origin', -- origin, destination, central
+    shipping_payment_method VARCHAR(30) DEFAULT 'cash', -- cash, bank_transfer, on_account
+    tracking_ref_no VARCHAR(100),
+    shipping_cost_mode VARCHAR(30) DEFAULT 'fixed', -- fixed, driver_claim, free
+    max_claim_budget BIGINT DEFAULT 0,
+    claim_token VARCHAR(64) UNIQUE,
+    claim_status VARCHAR(30) DEFAULT 'none', -- none, pending, approved, rejected
+    claimed_amount BIGINT DEFAULT 0,
+    claimed_notes TEXT,
+    claimed_attachment_url TEXT,
+    claimed_at TIMESTAMPTZ,
+    claim_reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    claim_reviewed_at TIMESTAMPTZ,
+    claim_rejection_reason TEXT,
+
+    -- Backorder & Chain of Custody
+    backorder_status VARCHAR(20) NOT NULL DEFAULT 'none' CHECK (backorder_status IN ('none', 'has_backorder', 'is_backorder', 'closed')),
+    parent_transfer_id UUID REFERENCES stock_transfers(id) ON DELETE SET NULL,
+
+    status VARCHAR(20) NOT NULL DEFAULT 'in_transit' CHECK (status IN ('draft', 'pending_approval', 'in_transit', 'received', 'returned', 'cancelled')),
+    transfer_type VARCHAR(20) NOT NULL DEFAULT 'outbound' CHECK (transfer_type IN ('outbound', 'return', 'requisition')),
+    notes TEXT,
+    sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    received_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Rincian Multi-Barang dalam Surat Jalan
+CREATE TABLE stock_transfer_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transfer_id UUID NOT NULL REFERENCES stock_transfers(id) ON DELETE CASCADE,
     item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    qty_requested_sealed NUMERIC(14, 4) DEFAULT 0.0000, -- Kuantitas Awal yang Diminta Cabang (Dus)
+    qty_requested_loose NUMERIC(14, 4) DEFAULT 0.0000,  -- Kuantitas Awal yang Diminta Cabang (Pcs/Eceran)
     qty_sent_sealed NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
     qty_sent_loose NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
     qty_received_sealed NUMERIC(14, 4) DEFAULT 0.0000,
     qty_received_loose NUMERIC(14, 4) DEFAULT 0.0000,
-    
-    shrinkage_tolerance_pct NUMERIC(5, 2) NOT NULL DEFAULT 0.00, -- Toleransi susut air (misal 2.5%)
     shrinkage_qty NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
-    
-    status VARCHAR(20) NOT NULL DEFAULT 'in_transit' CHECK (status IN ('in_transit', 'received', 'returned', 'cancelled')),
-    sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    received_at TIMESTAMPTZ
+    allocation_notes TEXT,                              -- Catatan / Preset Alasan Penyesuaian Kuota oleh Gudang Pusat
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Log Pencairan Beku & QC Pagi

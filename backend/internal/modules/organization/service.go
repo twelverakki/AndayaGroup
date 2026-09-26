@@ -16,15 +16,16 @@ import (
 
 type Service interface {
 	GetAllBusinesses(ctx context.Context) ([]*models.Business, error)
-	CreateBusiness(ctx context.Context, ownerID uuid.UUID, name string, bType string, hasPos, hasMfg, hasHub, hasEod bool, initialOutletName *string) (*models.Business, error)
+	GetBusinessesForUser(ctx context.Context, userID *uuid.UUID, role string, activeBizID *uuid.UUID) ([]*models.Business, error)
+	CreateBusiness(ctx context.Context, ownerID uuid.UUID, name string, bType string, hasPos, hasMfg, hasHub, hasEod, hasMulti bool, initialOutletName *string) (*models.Business, error)
 	GetStaffMembers(ctx context.Context, businessID uuid.UUID, outletID *uuid.UUID) ([]models.StaffMember, error)
 	CreateStaffMember(ctx context.Context, businessID uuid.UUID, req models.CreateStaffRequest) (*models.StaffMember, error)
 	UpdateStaffMember(ctx context.Context, businessID uuid.UUID, staffID uuid.UUID, req models.UpdateStaffRequest) error
 	GetOutlets(ctx context.Context, businessID *uuid.UUID) ([]models.Outlet, error)
-	CreateOutlet(ctx context.Context, businessID uuid.UUID, name string, address *string) (*models.Outlet, error)
+	CreateOutlet(ctx context.Context, businessID uuid.UUID, name string, address *string, isMain bool) (*models.Outlet, error)
 	GetBusinessProfile(ctx context.Context, businessID uuid.UUID) (*models.Business, error)
 	UpdateBusinessProfile(ctx context.Context, businessID uuid.UUID, name string, phone, email, taxID *string, taxRatePct float64) (*models.Business, error)
-	UpdateOutlet(ctx context.Context, businessID uuid.UUID, outletID uuid.UUID, name string, address, phone, receiptFooter *string) (*models.Outlet, error)
+	UpdateOutlet(ctx context.Context, businessID uuid.UUID, outletID uuid.UUID, name string, address, phone, receiptFooter *string, isMain *bool) (*models.Outlet, error)
 	UpdateBusinessCapabilities(ctx context.Context, businessID uuid.UUID, req models.UpdateBusinessCapabilitiesRequest) error
 	GetAuditLogs(ctx context.Context, businessID *uuid.UUID) ([]models.OverrideLog, error)
 }
@@ -87,6 +88,22 @@ func (s *service) CreateStaffMember(ctx context.Context, businessID uuid.UUID, r
 			return nil, errors.New("outlet not found or unauthorized")
 		}
 		return nil, err
+	}
+
+	// Single Manager per Outlet Invariant (Domain 9):
+	// An outlet must have at most 1 active Manager.
+	if req.Role == models.RoleManager {
+		var existingManagerName string
+		err = s.db.QueryRow(ctx, `
+			SELECT u.name 
+			FROM outlet_staff os
+			JOIN users u ON os.user_id = u.id
+			WHERE os.outlet_id = $1 AND os.role = 'manager' AND os.status = 'active'
+			LIMIT 1
+		`, req.OutletID).Scan(&existingManagerName)
+		if err == nil {
+			return nil, fmt.Errorf("outlet '%s' sudah memiliki Manajer aktif (%s). Satu outlet hanya boleh memiliki 1 Manajer aktif", outletName, existingManagerName)
+		}
 	}
 
 	passHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -155,18 +172,54 @@ func (s *service) CreateStaffMember(ctx context.Context, businessID uuid.UUID, r
 }
 
 func (s *service) UpdateStaffMember(ctx context.Context, businessID uuid.UUID, staffID uuid.UUID, req models.UpdateStaffRequest) error {
+	var outletStaffID uuid.UUID
 	var userID uuid.UUID
+	var currentOutletID uuid.UUID
+	var currentRole string
+	var currentStatus string
 	err := s.db.QueryRow(ctx, `
-		SELECT os.user_id 
+		SELECT os.id, os.user_id, os.outlet_id, os.role, os.status 
 		FROM outlet_staff os
 		JOIN outlets o ON os.outlet_id = o.id
-		WHERE os.id = $1 AND o.business_id = $2
-	`, staffID, businessID).Scan(&userID)
+		WHERE (os.id = $1 OR os.user_id = $1) AND o.business_id = $2
+		LIMIT 1
+	`, staffID, businessID).Scan(&outletStaffID, &userID, &currentOutletID, &currentRole, &currentStatus)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errors.New("staff member not found or unauthorized")
 		}
 		return err
+	}
+
+	targetOutletID := currentOutletID
+	if req.OutletID != nil {
+		targetOutletID = *req.OutletID
+	}
+	targetRole := currentRole
+	if req.Role != nil {
+		targetRole = string(*req.Role)
+	}
+	targetStatus := currentStatus
+	if req.Status != nil {
+		targetStatus = string(*req.Status)
+	}
+
+	// Single Manager per Outlet Invariant (Domain 9):
+	// Check if target outlet already has an active manager (excluding this user)
+	if targetRole == "manager" && targetStatus == "active" {
+		var existingManagerName string
+		var targetOutletName string
+		_ = s.db.QueryRow(ctx, "SELECT name FROM outlets WHERE id = $1", targetOutletID).Scan(&targetOutletName)
+		err = s.db.QueryRow(ctx, `
+			SELECT u.name 
+			FROM outlet_staff os
+			JOIN users u ON os.user_id = u.id
+			WHERE os.outlet_id = $1 AND os.role = 'manager' AND os.status = 'active' AND os.user_id != $2
+			LIMIT 1
+		`, targetOutletID, userID).Scan(&existingManagerName)
+		if err == nil {
+			return fmt.Errorf("outlet '%s' sudah memiliki Manajer aktif (%s). Satu outlet hanya boleh memiliki 1 Manajer aktif", targetOutletName, existingManagerName)
+		}
 	}
 
 	tx, err := s.db.Begin(ctx)
@@ -176,7 +229,7 @@ func (s *service) UpdateStaffMember(ctx context.Context, businessID uuid.UUID, s
 	defer tx.Rollback(ctx)
 
 	if req.Status != nil {
-		_, err = tx.Exec(ctx, "UPDATE outlet_staff SET status = $1, updated_at = NOW() WHERE id = $2", *req.Status, staffID)
+		_, err = tx.Exec(ctx, "UPDATE outlet_staff SET status = $1, updated_at = NOW() WHERE id = $2", *req.Status, outletStaffID)
 		if err != nil {
 			return err
 		}
@@ -193,21 +246,35 @@ func (s *service) UpdateStaffMember(ctx context.Context, businessID uuid.UUID, s
 		if err != nil || outletCount == 0 {
 			return errors.New("target branch not found or unauthorized")
 		}
-		_, err = tx.Exec(ctx, "UPDATE outlet_staff SET outlet_id = $1, updated_at = NOW() WHERE id = $2", *req.OutletID, staffID)
-		if err != nil {
-			return err
+
+		// Check if user already has a record in the target outlet (avoid unique constraint violation)
+		var existingTargetStaffRecordID uuid.UUID
+		err = tx.QueryRow(ctx, "SELECT id FROM outlet_staff WHERE user_id = $1 AND outlet_id = $2", userID, *req.OutletID).Scan(&existingTargetStaffRecordID)
+		if err == nil {
+			if existingTargetStaffRecordID != outletStaffID {
+				_, _ = tx.Exec(ctx, "DELETE FROM outlet_staff WHERE id = $1", outletStaffID)
+				_, err = tx.Exec(ctx, "UPDATE outlet_staff SET status = 'active', updated_at = NOW() WHERE id = $1", existingTargetStaffRecordID)
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			_, err = tx.Exec(ctx, "UPDATE outlet_staff SET outlet_id = $1, updated_at = NOW() WHERE id = $2", *req.OutletID, outletStaffID)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
 	if req.Role != nil {
-		_, err = tx.Exec(ctx, "UPDATE outlet_staff SET role = $1, updated_at = NOW() WHERE id = $2", *req.Role, staffID)
+		_, err = tx.Exec(ctx, "UPDATE outlet_staff SET role = $1, updated_at = NOW() WHERE id = $2", *req.Role, outletStaffID)
 		if err != nil {
 			return err
 		}
 	}
 
 	if req.CanViewCost != nil {
-		_, err = tx.Exec(ctx, "UPDATE outlet_staff SET can_view_cost = $1, updated_at = NOW() WHERE id = $2", *req.CanViewCost, staffID)
+		_, err = tx.Exec(ctx, "UPDATE outlet_staff SET can_view_cost = $1, updated_at = NOW() WHERE id = $2", *req.CanViewCost, outletStaffID)
 		if err != nil {
 			return err
 		}
@@ -244,7 +311,7 @@ func (s *service) UpdateStaffMember(ctx context.Context, businessID uuid.UUID, s
 
 func (s *service) GetAllBusinesses(ctx context.Context) ([]*models.Business, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id, name, type, phone, email, tax_id, COALESCE(tax_rate_pct, 0), has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, created_at, updated_at
+		SELECT id, name, type, phone, email, tax_id, COALESCE(tax_rate_pct, 0), has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, COALESCE(has_multi_outlets, false), COALESCE(hide_central_stock_from_branches, false), created_at, updated_at
 		FROM businesses
 		ORDER BY name ASC
 	`)
@@ -256,11 +323,58 @@ func (s *service) GetAllBusinesses(ctx context.Context) ([]*models.Business, err
 	var list []*models.Business
 	for rows.Next() {
 		var b models.Business
-		if err := rows.Scan(&b.ID, &b.Name, &b.Type, &b.Phone, &b.Email, &b.TaxID, &b.TaxRatePct, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		if err := rows.Scan(&b.ID, &b.Name, &b.Type, &b.Phone, &b.Email, &b.TaxID, &b.TaxRatePct, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.HasMultiOutlets, &b.HideCentralStockFromBranches, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, &b)
 	}
+	return list, nil
+}
+
+func (s *service) GetBusinessesForUser(ctx context.Context, userID *uuid.UUID, role string, activeBizID *uuid.UUID) ([]*models.Business, error) {
+	if role == "superadmin" {
+		return s.GetAllBusinesses(ctx)
+	}
+
+	var list []*models.Business
+	if userID != nil {
+		rows, err := s.db.Query(ctx, `
+			SELECT DISTINCT b.id, b.name, b.type, b.phone, b.email, b.tax_id, COALESCE(b.tax_rate_pct, 0), b.has_pos, b.has_manufacturing, b.has_logistics_hub, b.has_eod_usage, COALESCE(b.has_multi_outlets, false), COALESCE(b.hide_central_stock_from_branches, false), b.created_at, b.updated_at
+			FROM businesses b
+			JOIN business_owners bo ON bo.business_id = b.id
+			WHERE bo.user_id = $1
+			ORDER BY b.name ASC
+		`, *userID)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var b models.Business
+				if err := rows.Scan(&b.ID, &b.Name, &b.Type, &b.Phone, &b.Email, &b.TaxID, &b.TaxRatePct, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.HasMultiOutlets, &b.HideCentralStockFromBranches, &b.CreatedAt, &b.UpdatedAt); err == nil {
+					list = append(list, &b)
+				}
+			}
+		}
+	}
+
+	// Fallback to activeBizID if business_owners returned empty
+	if len(list) == 0 && activeBizID != nil {
+		rows, err := s.db.Query(ctx, `
+			SELECT id, name, type, phone, email, tax_id, COALESCE(tax_rate_pct, 0), has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, COALESCE(has_multi_outlets, false), COALESCE(hide_central_stock_from_branches, false), created_at, updated_at
+			FROM businesses
+			WHERE id = $1
+			ORDER BY name ASC
+		`, *activeBizID)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var b models.Business
+				if err := rows.Scan(&b.ID, &b.Name, &b.Type, &b.Phone, &b.Email, &b.TaxID, &b.TaxRatePct, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.HasMultiOutlets, &b.HideCentralStockFromBranches, &b.CreatedAt, &b.UpdatedAt); err == nil {
+					list = append(list, &b)
+				}
+			}
+		}
+	}
+
 	return list, nil
 }
 
@@ -270,16 +384,16 @@ func (s *service) GetOutlets(ctx context.Context, businessID *uuid.UUID) ([]mode
 
 	if businessID != nil {
 		rows, err = s.db.Query(ctx, `
-			SELECT id, business_id, name, address, phone, receipt_footer, created_at, updated_at
+			SELECT id, business_id, name, is_main, address, phone, receipt_footer, created_at, updated_at
 			FROM outlets
 			WHERE business_id = $1
-			ORDER BY created_at ASC
+			ORDER BY is_main DESC, created_at ASC
 		`, *businessID)
 	} else {
 		rows, err = s.db.Query(ctx, `
-			SELECT id, business_id, name, address, phone, receipt_footer, created_at, updated_at
+			SELECT id, business_id, name, is_main, address, phone, receipt_footer, created_at, updated_at
 			FROM outlets
-			ORDER BY name ASC
+			ORDER BY is_main DESC, name ASC
 		`)
 	}
 
@@ -291,7 +405,7 @@ func (s *service) GetOutlets(ctx context.Context, businessID *uuid.UUID) ([]mode
 	var outlets []models.Outlet
 	for rows.Next() {
 		var o models.Outlet
-		if err := rows.Scan(&o.ID, &o.BusinessID, &o.Name, &o.Address, &o.Phone, &o.ReceiptFooter, &o.CreatedAt, &o.UpdatedAt); err != nil {
+		if err := rows.Scan(&o.ID, &o.BusinessID, &o.Name, &o.IsMain, &o.Address, &o.Phone, &o.ReceiptFooter, &o.CreatedAt, &o.UpdatedAt); err != nil {
 			return nil, err
 		}
 		outlets = append(outlets, o)
@@ -299,13 +413,26 @@ func (s *service) GetOutlets(ctx context.Context, businessID *uuid.UUID) ([]mode
 	return outlets, nil
 }
 
-func (s *service) CreateOutlet(ctx context.Context, businessID uuid.UUID, name string, address *string) (*models.Outlet, error) {
+func (s *service) CreateOutlet(ctx context.Context, businessID uuid.UUID, name string, address *string, isMain bool) (*models.Outlet, error) {
 	id := uuid.New()
 	now := time.Now()
+
+	// If this outlet is designated as Main, reset other outlets of this business
+	if isMain {
+		_, _ = s.db.Exec(ctx, `UPDATE outlets SET is_main = FALSE, updated_at = NOW() WHERE business_id = $1`, businessID)
+	} else {
+		// Check if this is the very first outlet for this business; if so, make it main automatically
+		var existingCount int
+		_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM outlets WHERE business_id = $1`, businessID).Scan(&existingCount)
+		if existingCount == 0 {
+			isMain = true
+		}
+	}
+
 	_, err := s.db.Exec(ctx, `
-		INSERT INTO outlets (id, business_id, name, address, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, id, businessID, name, address, now, now)
+		INSERT INTO outlets (id, business_id, name, is_main, address, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, id, businessID, name, isMain, address, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -313,6 +440,7 @@ func (s *service) CreateOutlet(ctx context.Context, businessID uuid.UUID, name s
 		ID:         id,
 		BusinessID: businessID,
 		Name:       name,
+		IsMain:     isMain,
 		Address:    address,
 		CreatedAt:  now,
 		UpdatedAt:  now,
@@ -320,7 +448,7 @@ func (s *service) CreateOutlet(ctx context.Context, businessID uuid.UUID, name s
 }
 
 func (s *service) UpdateBusinessCapabilities(ctx context.Context, businessID uuid.UUID, req models.UpdateBusinessCapabilitiesRequest) error {
-	if req.HasPos == nil && req.HasManufacturing == nil && req.HasLogisticsHub == nil && req.HasEodUsage == nil {
+	if req.HasPos == nil && req.HasManufacturing == nil && req.HasLogisticsHub == nil && req.HasEodUsage == nil && req.HasMultiOutlets == nil && req.HideCentralStockFromBranches == nil && req.AllowCrossBranchStockView == nil {
 		return nil
 	}
 
@@ -348,6 +476,21 @@ func (s *service) UpdateBusinessCapabilities(ctx context.Context, businessID uui
 		args = append(args, *req.HasEodUsage)
 		idx++
 	}
+	if req.HasMultiOutlets != nil {
+		query += fmt.Sprintf(", has_multi_outlets = $%d", idx)
+		args = append(args, *req.HasMultiOutlets)
+		idx++
+	}
+	if req.HideCentralStockFromBranches != nil {
+		query += fmt.Sprintf(", hide_central_stock_from_branches = $%d", idx)
+		args = append(args, *req.HideCentralStockFromBranches)
+		idx++
+	}
+	if req.AllowCrossBranchStockView != nil {
+		query += fmt.Sprintf(", allow_cross_branch_stock_view = $%d", idx)
+		args = append(args, *req.AllowCrossBranchStockView)
+		idx++
+	}
 
 	query += fmt.Sprintf(" WHERE id = $%d", idx)
 	args = append(args, businessID)
@@ -359,11 +502,11 @@ func (s *service) UpdateBusinessCapabilities(ctx context.Context, businessID uui
 func (s *service) GetBusinessProfile(ctx context.Context, businessID uuid.UUID) (*models.Business, error) {
 	var b models.Business
 	err := s.db.QueryRow(ctx, `
-		SELECT id, name, type, phone, email, tax_id, COALESCE(tax_rate_pct, 0), has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, created_at, updated_at
+		SELECT id, name, type, phone, email, tax_id, COALESCE(tax_rate_pct, 0), has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, COALESCE(has_multi_outlets, false), COALESCE(hide_central_stock_from_branches, false), COALESCE(allow_cross_branch_stock_view, false), created_at, updated_at
 		FROM businesses
 		WHERE id = $1
 	`, businessID).Scan(
-		&b.ID, &b.Name, &b.Type, &b.Phone, &b.Email, &b.TaxID, &b.TaxRatePct, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.CreatedAt, &b.UpdatedAt,
+		&b.ID, &b.Name, &b.Type, &b.Phone, &b.Email, &b.TaxID, &b.TaxRatePct, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.HasMultiOutlets, &b.HideCentralStockFromBranches, &b.AllowCrossBranchStockView, &b.CreatedAt, &b.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -383,22 +526,32 @@ func (s *service) UpdateBusinessProfile(ctx context.Context, businessID uuid.UUI
 	return s.GetBusinessProfile(ctx, businessID)
 }
 
-func (s *service) UpdateOutlet(ctx context.Context, businessID uuid.UUID, outletID uuid.UUID, name string, address, phone, receiptFooter *string) (*models.Outlet, error) {
-	_, err := s.db.Exec(ctx, `
-		UPDATE outlets
-		SET name = $1, address = $2, phone = $3, receipt_footer = $4, updated_at = NOW()
-		WHERE id = $5 AND business_id = $6
-	`, name, address, phone, receiptFooter, outletID, businessID)
+func (s *service) UpdateOutlet(ctx context.Context, businessID uuid.UUID, outletID uuid.UUID, name string, address, phone, receiptFooter *string, isMain *bool) (*models.Outlet, error) {
+	if isMain != nil && *isMain {
+		// Reset other outlets of this business to false
+		_, _ = s.db.Exec(ctx, `UPDATE outlets SET is_main = FALSE, updated_at = NOW() WHERE business_id = $1 AND id != $2`, businessID, outletID)
+	}
+
+	query := `UPDATE outlets SET name = $1, address = $2, phone = $3, receipt_footer = $4, updated_at = NOW()`
+	args := []interface{}{name, address, phone, receiptFooter, outletID, businessID}
+	if isMain != nil {
+		query += `, is_main = $7 WHERE id = $5 AND business_id = $6`
+		args = append(args, *isMain)
+	} else {
+		query += ` WHERE id = $5 AND business_id = $6`
+	}
+
+	_, err := s.db.Exec(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 
 	var o models.Outlet
 	err = s.db.QueryRow(ctx, `
-		SELECT id, business_id, name, address, phone, receipt_footer, created_at, updated_at
+		SELECT id, business_id, name, is_main, address, phone, receipt_footer, created_at, updated_at
 		FROM outlets
 		WHERE id = $1
-	`, outletID).Scan(&o.ID, &o.BusinessID, &o.Name, &o.Address, &o.Phone, &o.ReceiptFooter, &o.CreatedAt, &o.UpdatedAt)
+	`, outletID).Scan(&o.ID, &o.BusinessID, &o.Name, &o.IsMain, &o.Address, &o.Phone, &o.ReceiptFooter, &o.CreatedAt, &o.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +597,7 @@ func (s *service) GetAuditLogs(ctx context.Context, businessID *uuid.UUID) ([]mo
 	return logs, nil
 }
 
-func (s *service) CreateBusiness(ctx context.Context, ownerID uuid.UUID, name string, bType string, hasPos, hasMfg, hasHub, hasEod bool, initialOutletName *string) (*models.Business, error) {
+func (s *service) CreateBusiness(ctx context.Context, ownerID uuid.UUID, name string, bType string, hasPos, hasMfg, hasHub, hasEod, hasMulti bool, initialOutletName *string) (*models.Business, error) {
 	if bType == "" || bType == "custom" {
 		bType = "retail"
 	}
@@ -459,9 +612,9 @@ func (s *service) CreateBusiness(ctx context.Context, ownerID uuid.UUID, name st
 	now := time.Now()
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO businesses (id, name, type, has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, bizID, name, bType, hasPos, hasMfg, hasHub, hasEod, now, now)
+		INSERT INTO businesses (id, name, type, has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, has_multi_outlets, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, bizID, name, bType, hasPos, hasMfg, hasHub, hasEod, hasMulti, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -499,6 +652,7 @@ func (s *service) CreateBusiness(ctx context.Context, ownerID uuid.UUID, name st
 		HasManufacturing: hasMfg,
 		HasLogisticsHub:  hasHub,
 		HasEodUsage:      hasEod,
+		HasMultiOutlets:  hasMulti,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}, nil

@@ -69,11 +69,18 @@ func HandleLogin(c *fiber.Ctx) error {
 	setTokenCookie(c, token)
 
 	activeContext := &models.ActiveContext{
-		BusinessID: defaultWS.BusinessID,
-		OutletID:   defaultWS.OutletID,
-		Role:       defaultWS.Role,
-		Name:       defaultWS.BusinessName,
-		Type:       defaultWS.BusinessType,
+		BusinessID:                   defaultWS.BusinessID,
+		OutletID:                     defaultWS.OutletID,
+		Role:                         defaultWS.Role,
+		Name:                         defaultWS.BusinessName,
+		Type:                         defaultWS.BusinessType,
+		HasPOS:                       defaultWS.HasPOS,
+		HasManufacturing:             defaultWS.HasManufacturing,
+		HasLogisticsHub:              defaultWS.HasLogisticsHub,
+		HasEODUsage:                  defaultWS.HasEODUsage,
+		HasMultiOutlets:              defaultWS.HasMultiOutlets,
+		HideCentralStockFromBranches: defaultWS.HideCentralStockFromBranches,
+		AllowCrossBranchStockView:    defaultWS.AllowCrossBranchStockView,
 	}
 	if defaultWS.OutletID != nil {
 		activeContext.Name = defaultWS.OutletName
@@ -167,11 +174,18 @@ func HandleSwitchBusiness(c *fiber.Ctx) error {
 	setTokenCookie(c, token)
 
 	activeContext := &models.ActiveContext{
-		BusinessID: targetWS.BusinessID,
-		OutletID:   targetWS.OutletID,
-		Role:       targetWS.Role,
-		Name:       targetWS.BusinessName,
-		Type:       targetWS.BusinessType,
+		BusinessID:                   targetWS.BusinessID,
+		OutletID:                     targetWS.OutletID,
+		Role:                         targetWS.Role,
+		Name:                         targetWS.BusinessName,
+		Type:                         targetWS.BusinessType,
+		HasPOS:                       targetWS.HasPOS,
+		HasManufacturing:             targetWS.HasManufacturing,
+		HasLogisticsHub:              targetWS.HasLogisticsHub,
+		HasEODUsage:                  targetWS.HasEODUsage,
+		HasMultiOutlets:              targetWS.HasMultiOutlets,
+		HideCentralStockFromBranches: targetWS.HideCentralStockFromBranches,
+		AllowCrossBranchStockView:    targetWS.AllowCrossBranchStockView,
 	}
 	if targetWS.OutletID != nil {
 		activeContext.Name = targetWS.OutletName
@@ -227,7 +241,7 @@ func HandleGetMe(c *fiber.Ctx) error {
 		activeContext.OutletID = &oID
 	}
 
-	// Find names and business type for the active context from workspaces list
+	// Find names, business type, and capability flags for the active context from workspaces list
 	for _, ws := range workspaces {
 		matchBusiness := activeContext.BusinessID != nil && ws.BusinessID != nil && *activeContext.BusinessID == *ws.BusinessID
 		matchOutlet := activeContext.OutletID != nil && ws.OutletID != nil && *activeContext.OutletID == *ws.OutletID
@@ -236,18 +250,36 @@ func HandleGetMe(c *fiber.Ctx) error {
 			if matchBusiness && matchOutlet {
 				activeContext.Name = ws.OutletName
 				activeContext.Type = ws.BusinessType
+				activeContext.HasPOS = ws.HasPOS
+				activeContext.HasManufacturing = ws.HasManufacturing
+				activeContext.HasLogisticsHub = ws.HasLogisticsHub
+				activeContext.HasEODUsage = ws.HasEODUsage
+				activeContext.HasMultiOutlets = ws.HasMultiOutlets
+				activeContext.HideCentralStockFromBranches = ws.HideCentralStockFromBranches
 				break
 			}
 		} else if activeContext.BusinessID != nil {
 			if matchBusiness && ws.OutletID == nil {
 				activeContext.Name = ws.BusinessName
 				activeContext.Type = ws.BusinessType
+				activeContext.HasPOS = ws.HasPOS
+				activeContext.HasManufacturing = ws.HasManufacturing
+				activeContext.HasLogisticsHub = ws.HasLogisticsHub
+				activeContext.HasEODUsage = ws.HasEODUsage
+				activeContext.HasMultiOutlets = ws.HasMultiOutlets
+				activeContext.HideCentralStockFromBranches = ws.HideCentralStockFromBranches
 				break
 			}
 		} else if activeContext.OutletID != nil {
 			if matchOutlet {
 				activeContext.Name = ws.OutletName
 				activeContext.Type = ws.BusinessType
+				activeContext.HasPOS = ws.HasPOS
+				activeContext.HasManufacturing = ws.HasManufacturing
+				activeContext.HasLogisticsHub = ws.HasLogisticsHub
+				activeContext.HasEODUsage = ws.HasEODUsage
+				activeContext.HasMultiOutlets = ws.HasMultiOutlets
+				activeContext.HideCentralStockFromBranches = ws.HideCentralStockFromBranches
 				break
 			}
 		}

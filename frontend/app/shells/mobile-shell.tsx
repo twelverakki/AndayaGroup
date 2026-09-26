@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { useAuthStore } from "../lib/store";
+import { useAuthStore, useShellStore } from "../lib/store";
 import { useLanguageStore, translations } from "../lib/i18n";
 import { useTheme } from "../hooks/use-theme";
 import { api } from "../lib/api";
 import { useNavigate } from "react-router";
 import WorkspaceSwitcher from "../components/WorkspaceSwitcher";
+import WorkspaceLauncher from "../components/WorkspaceLauncher";
 import POSSettingsDrawer from "../components/POSSettingsDrawer";
 import POSModule from "../features/pos/pos-module";
 import InventoryModule from "../features/inventory/inventory-module";
@@ -20,14 +21,14 @@ import BusinessesListView from "../features/organization/businesses-list-view";
 import UsersManagementView from "../features/admin/users-management-view";
 import SecurityLogsView from "../features/admin/security-logs-view";
 import SuperadminModule from "../features/superadmin/superadmin-module";
-import { sidebarMenuConfig, isMenuItemAllowed, getDefaultMenuId } from "../config/navigation";
+import { sidebarMenuConfig, isMenuItemAllowed, isSubMenuItemAllowed, getDefaultMenuId } from "../config/navigation";
 import {
   Drawer,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
 } from "../components/ui/drawer";
-import { Sun, Moon, LogOut, Menu, X, ChevronRight, Settings, Search, Plus } from "lucide-react";
+import { Sun, Moon, LogOut, Menu, X, ChevronRight, Settings, Search, Plus, Sparkles } from "lucide-react";
 
 interface MobileShellProps {
   children?: React.ReactNode;
@@ -35,6 +36,7 @@ interface MobileShellProps {
 
 export default function MobileShell({ children }: MobileShellProps) {
   const { user, activeContext, clearSession } = useAuthStore();
+  const { isWorkspaceLauncherOpen, setWorkspaceLauncherOpen } = useShellStore();
   const navigate = useNavigate();
   
   // Shell States
@@ -51,6 +53,8 @@ export default function MobileShell({ children }: MobileShellProps) {
   }, [activeMenu]);
 
   const [productsCount, setProductsCount] = useState(0);
+  const [selectedMasterItem, setSelectedMasterItem] = useState<any>(null);
+  const [masterItemInitialView, setMasterItemInitialView] = useState<"master" | "new" | "wizard" | "edit">("master");
   const [isLeftDrawerOpen, setIsLeftDrawerOpen] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const { isDark, toggleTheme } = useTheme();
@@ -109,13 +113,27 @@ export default function MobileShell({ children }: MobileShellProps) {
     fetchProductsCount();
   }, [activeContext]);
 
+  // Superadmin & Business Capability default menu validation
   useEffect(() => {
-    if (activeContext?.role === "superadmin") {
-      setActiveMenu("superadmin");
-    } else {
-      setActiveMenu("dashboard");
+    if (!activeContext) return;
+    const allowed = sidebarMenuConfig.filter((menu) => isMenuItemAllowed(menu, activeContext));
+    const isCurrentValid = allowed.some((menu) => {
+      if (menu.id === activeMenu) return true;
+      if (menu.subItems?.some((sub) => sub.id === activeMenu)) return true;
+      if (activeMenu.startsWith(menu.id + "-") || activeMenu.startsWith(menu.id)) return true;
+      return false;
+    });
+
+    if (!isCurrentValid && allowed.length > 0) {
+      if (activeContext.role === "superadmin") {
+        setActiveMenu("superadmin");
+      } else {
+        const defaultTarget = allowed.find((m) => m.id === "dashboard") || allowed[0];
+        const targetId = defaultTarget.subItems && defaultTarget.subItems.length > 0 ? defaultTarget.subItems[0].id : defaultTarget.id;
+        setActiveMenu(targetId);
+      }
     }
-  }, [activeContext]);
+  }, [activeContext, activeMenu]);
 
   const handleLogout = async () => {
     try {
@@ -258,18 +276,64 @@ export default function MobileShell({ children }: MobileShellProps) {
         className={`flex-1 ${isFocusPage ? "overflow-hidden p-2 sm:p-4" : "overflow-y-auto p-4 pb-8"}`}
       >
         {activeMenu === "pos" ? (
-          <POSModule />
-        ) : activeMenu.startsWith("inventory") || activeMenu === "items-master" || activeMenu === "items" ? (
-          <ItemListModule />
+          <POSModule onNavigate={(v) => setActiveMenu(v)} />
+        ) : activeMenu === "items" || activeMenu === "items-master" ? (
+          <ItemListModule
+            initialView={masterItemInitialView}
+            initialItem={selectedMasterItem}
+            onNavigate={(v) => {
+              if (v === "items-master" || v === "items") {
+                setSelectedMasterItem(null);
+                setMasterItemInitialView("master");
+              }
+              setActiveMenu(v);
+            }}
+          />
+        ) : activeMenu === "items-add" ? (
+          <ItemListModule
+            initialView="wizard"
+            initialItem={null}
+            onNavigate={(v) => {
+              if (v === "items-master" || v === "items") {
+                setSelectedMasterItem(null);
+                setMasterItemInitialView("master");
+              }
+              setActiveMenu(v);
+            }}
+          />
+        ) : activeMenu === "inventory-matrix" ? (
+          <InventoryModule
+            view="matrix"
+            onNavigate={(v) => {
+              setActiveMenu(v);
+            }}
+          />
+        ) : activeMenu.startsWith("inventory") ? (
+          <InventoryModule
+            view="master"
+            onViewMasterItem={(prod) => {
+              setSelectedMasterItem(prod);
+              setMasterItemInitialView("edit");
+              setActiveMenu("items");
+            }}
+            onNavigate={(v, payload) => {
+              if (v === "items-edit" || v === "items-detail" || v === "items-master") {
+                setSelectedMasterItem(payload || null);
+                setMasterItemInitialView("edit");
+                setActiveMenu("items");
+              } else {
+                setActiveMenu(v);
+              }
+            }}
+          />
         ) : activeMenu.startsWith("procurement") ? (
           <ProcurementModule />
         ) : activeMenu === "opname" ? (
           <OpnameModule />
         ) : activeMenu === "sales-report" ? (
           <SalesReportModule />
-        ) : activeMenu === "items-master" || activeMenu === "items" ? (
-          <ItemListModule />
         ) : activeMenu === "produksi" ? (
+
           <ProductionModule />
         ) : activeMenu.startsWith("distribusi") ? (
           <DistributionModule />
@@ -355,12 +419,14 @@ export default function MobileShell({ children }: MobileShellProps) {
                 const Icon = menu.icon;
                 const isActive = activeMenu === menu.id || activeMenu.startsWith(menu.id + "-");
 
+                const validSubItems = (menu.subItems || []).filter((sub) => isSubMenuItemAllowed(sub, activeContext));
+                const targetId = validSubItems.length > 0 ? validSubItems[0].id : menu.id;
+
                 return (
                   <button
                     key={menu.id}
                     type="button"
                     onClick={() => {
-                      const targetId = menu.subItems && menu.subItems.length > 0 ? menu.subItems[0].id : menu.id;
                       setActiveMenu(targetId);
                       setIsLeftDrawerOpen(false);
                     }}
@@ -370,9 +436,9 @@ export default function MobileShell({ children }: MobileShellProps) {
                         : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 font-medium"
                     }`}
                   >
-                    <Icon className={`w-4.5 h-4.5 ${menu.iconClassName || ""}`} />
+                    <Icon className={`w-4.5 h-4.5 shrink-0 ${isActive ? "text-white dark:text-slate-900" : menu.iconClassName || ""}`} />
                     <span className="flex-1 text-left">{label}</span>
-                    {isActive && <ChevronRight className="w-4 h-4 opacity-75" />}
+                    {isActive && <ChevronRight className="w-4 h-4 opacity-75 shrink-0" />}
                   </button>
                 );
               })}
@@ -385,7 +451,7 @@ export default function MobileShell({ children }: MobileShellProps) {
                 type="button"
                 onClick={() => {
                   setIsLeftDrawerOpen(false);
-                  setSwitcherOpen(true);
+                  setWorkspaceLauncherOpen(true);
                 }}
                 className="w-full flex items-center justify-between p-2.5 rounded-xl border border-slate-200/80 dark:border-[#333338] bg-white dark:bg-[#25252A] text-left cursor-pointer transition-all hover:border-slate-300"
               >
@@ -402,7 +468,7 @@ export default function MobileShell({ children }: MobileShellProps) {
                     </p>
                   </div>
                 </div>
-                <span className="text-xs font-medium text-slate-400">▾</span>
+                <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
               </button>
 
               {/* POS & Shift Settings Trigger Button */}
@@ -446,10 +512,10 @@ export default function MobileShell({ children }: MobileShellProps) {
         </DrawerContent>
       </Drawer>
 
-      {/* Workspace Switcher Modal */}
-      <WorkspaceSwitcher
-        isOpen={switcherOpen}
-        onClose={() => setSwitcherOpen(false)}
+      {/* Workspace Switcher / Launcher Modal */}
+      <WorkspaceLauncher
+        isOpen={isWorkspaceLauncherOpen}
+        onClose={() => setWorkspaceLauncherOpen(false)}
       />
 
       {/* POS & Shift Settings Drawer */}

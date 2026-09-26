@@ -270,6 +270,7 @@ type OwnerBusinessSummary struct {
 	HasManufacturing bool      `json:"has_manufacturing"`
 	HasLogisticsHub  bool      `json:"has_logistics_hub"`
 	HasEodUsage      bool      `json:"has_eod_usage"`
+	HasMultiOutlets  bool      `json:"has_multi_outlets"`
 	OutletCount      int       `json:"outlet_count"`
 	StaffCount       int       `json:"staff_count"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -315,7 +316,7 @@ func GetOwnersWithBusinesses(ctx context.Context) ([]*OwnerHierarchyDetail, erro
 
 	for _, owner := range owners {
 		bRows, err := db.Query(ctx, `
-			SELECT DISTINCT b.id, b.name, b.type, b.phone, b.email, b.tax_id, COALESCE(b.tax_rate_pct, 0), b.has_pos, b.has_manufacturing, b.has_logistics_hub, b.has_eod_usage, b.created_at,
+			SELECT DISTINCT b.id, b.name, b.type, b.phone, b.email, b.tax_id, COALESCE(b.tax_rate_pct, 0), b.has_pos, b.has_manufacturing, b.has_logistics_hub, b.has_eod_usage, COALESCE(b.has_multi_outlets, false), b.created_at,
 			       (SELECT COUNT(*) FROM outlets o WHERE o.business_id = b.id) as outlet_count,
 			       (SELECT COUNT(*) FROM outlet_staff os JOIN outlets o ON os.outlet_id = o.id WHERE o.business_id = b.id) as staff_count
 			FROM businesses b
@@ -326,7 +327,7 @@ func GetOwnersWithBusinesses(ctx context.Context) ([]*OwnerHierarchyDetail, erro
 		if err == nil {
 			for bRows.Next() {
 				var b OwnerBusinessSummary
-				if err := bRows.Scan(&b.ID, &b.Name, &b.Type, &b.Phone, &b.Email, &b.TaxID, &b.TaxRatePct, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.CreatedAt, &b.OutletCount, &b.StaffCount); err == nil {
+				if err := bRows.Scan(&b.ID, &b.Name, &b.Type, &b.Phone, &b.Email, &b.TaxID, &b.TaxRatePct, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.HasMultiOutlets, &b.CreatedAt, &b.OutletCount, &b.StaffCount); err == nil {
 					owner.Businesses = append(owner.Businesses, b)
 				}
 			}
@@ -338,7 +339,7 @@ func GetOwnersWithBusinesses(ctx context.Context) ([]*OwnerHierarchyDetail, erro
 }
 
 // CreateBusinessForOwner creates a new business entity and assigns it to an Owner user
-func CreateBusinessForOwner(ctx context.Context, ownerID uuid.UUID, name string, bType string, hasPos, hasMfg, hasHub, hasEod bool, initialOutletName *string) (*models.Business, error) {
+func CreateBusinessForOwner(ctx context.Context, ownerID uuid.UUID, name string, bType string, hasPos, hasMfg, hasHub, hasEod, hasMulti bool, initialOutletName *string) (*models.Business, error) {
 	db := config.DB
 
 	if bType == "" || bType == "custom" {
@@ -355,9 +356,9 @@ func CreateBusinessForOwner(ctx context.Context, ownerID uuid.UUID, name string,
 	now := time.Now()
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO businesses (id, name, type, has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, bizID, name, bType, hasPos, hasMfg, hasHub, hasEod, now, now)
+		INSERT INTO businesses (id, name, type, has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, has_multi_outlets, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, bizID, name, bType, hasPos, hasMfg, hasHub, hasEod, hasMulti, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -371,16 +372,18 @@ func CreateBusinessForOwner(ctx context.Context, ownerID uuid.UUID, name string,
 		return nil, err
 	}
 
-	// Create initial default branch if requested
+	// Create initial default outlet if specified, or auto create one
+	outletName := "Outlet Utama"
 	if initialOutletName != nil && *initialOutletName != "" {
-		outletID := uuid.New()
-		_, err = tx.Exec(ctx, `
-			INSERT INTO outlets (id, business_id, name, created_at, updated_at)
-			VALUES ($1, $2, $3, NOW(), NOW())
-		`, outletID, bizID, *initialOutletName)
-		if err != nil {
-			return nil, err
-		}
+		outletName = *initialOutletName
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO outlets (id, business_id, name, created_at, updated_at)
+		VALUES ($1, $2, $3, NOW(), NOW())
+	`, uuid.New(), bizID, outletName)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -395,6 +398,7 @@ func CreateBusinessForOwner(ctx context.Context, ownerID uuid.UUID, name string,
 		HasManufacturing: hasMfg,
 		HasLogisticsHub:  hasHub,
 		HasEodUsage:      hasEod,
+		HasMultiOutlets:  hasMulti,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}, nil
@@ -403,7 +407,7 @@ func CreateBusinessForOwner(ctx context.Context, ownerID uuid.UUID, name string,
 // ListAllBusinesses fetches all businesses in the system
 func ListAllBusinesses(ctx context.Context) ([]*models.Business, error) {
 	db := config.DB
-	rows, err := db.Query(ctx, "SELECT id, name, type, has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, created_at, updated_at FROM businesses ORDER BY name ASC")
+	rows, err := db.Query(ctx, "SELECT id, name, type, has_pos, has_manufacturing, has_logistics_hub, has_eod_usage, COALESCE(has_multi_outlets, false), created_at, updated_at FROM businesses ORDER BY name ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +416,7 @@ func ListAllBusinesses(ctx context.Context) ([]*models.Business, error) {
 	var list []*models.Business
 	for rows.Next() {
 		var b models.Business
-		err = rows.Scan(&b.ID, &b.Name, &b.Type, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.CreatedAt, &b.UpdatedAt)
+		err = rows.Scan(&b.ID, &b.Name, &b.Type, &b.HasPos, &b.HasManufacturing, &b.HasLogisticsHub, &b.HasEodUsage, &b.HasMultiOutlets, &b.CreatedAt, &b.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}

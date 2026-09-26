@@ -13,11 +13,12 @@ import { ProductionModule } from "../features/production/production-module";
 import { DistributionModule } from "../features/distribution/distribution-module";
 import { SettlementModule } from "../features/settlement/settlement-module";
 import { ItemListModule } from "../features/items/item-list-module";
+import PromotionsModule from "../features/promotions/promotions-module";
 import BusinessesListView from "../features/organization/businesses-list-view";
 import UsersManagementView from "../features/admin/users-management-view";
 import SecurityLogsView from "../features/admin/security-logs-view";
 import DashboardView from "../components/DashboardView";
-import { sidebarMenuConfig, isMenuItemAllowed, getDefaultMenuId } from "../config/navigation";
+import { sidebarMenuConfig, isMenuItemAllowed, isSubMenuItemAllowed, getDefaultMenuId } from "../config/navigation";
 import SuperadminModule from "../features/superadmin/superadmin-module";
 import { useTheme } from "../hooks/use-theme";
 import { usePOSSettings } from "../hooks/use-pos-settings";
@@ -40,6 +41,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
+import { Switch } from "../components/ui/switch";
 import {
   Drawer,
   DrawerContent,
@@ -72,9 +74,12 @@ import {
   Calculator,
   Layers,
   Shield,
-  Send
+  Send,
+  Sparkles,
 } from "lucide-react";
 import TransactionHistoryDrawer from "../components/TransactionHistoryDrawer";
+import WorkspaceLauncher from "../components/WorkspaceLauncher";
+import { useShellStore } from "../lib/store";
 
 interface Product {
   id: string;
@@ -93,6 +98,7 @@ interface Product {
 
 export default function DesktopShell() {
   const { user, workspaces, activeContext, updateActiveContext, clearSession, activeShift, setActiveShift } = useAuthStore();
+  const { isWorkspaceLauncherOpen, setWorkspaceLauncherOpen } = useShellStore();
   const { language, setLanguage } = useLanguageStore();
   const t = translations[language] || translations.id;
   const navigate = useNavigate();
@@ -114,13 +120,46 @@ export default function DesktopShell() {
   
   // Navigation & Shell States
   const [activeMenu, setActiveMenu] = useState("dashboard");
+  const [selectedMasterItem, setSelectedMasterItem] = useState<any>(null);
+  const [masterItemInitialView, setMasterItemInitialView] = useState<"master" | "new" | "wizard" | "edit">("master");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const saved = localStorage.getItem("desktop_sidebar_width");
+    return saved ? Number(saved) : 260; // 260px provides comfortable breathing room without text wrapping
+  });
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+
+  const startResizingSidebar = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingSidebar(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingSidebar) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.max(220, Math.min(380, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingSidebar(false);
+      localStorage.setItem("desktop_sidebar_width", sidebarWidth.toString());
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingSidebar, sidebarWidth]);
+
   const [openSubmenus, setOpenSubmenus] = useState<Record<string, boolean>>({
     inventory: true,
     procurement: true,
     organization: true,
     settlements: true,
-    distribusi: true,
   });
 
   const toggleSubmenu = (menuId: string) => {
@@ -187,14 +226,27 @@ export default function DesktopShell() {
   // Product Editing state (for inventory sub-view)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Superadmin default menu toggle
+  // Superadmin & Business Capability default menu validation
   useEffect(() => {
-    if (activeContext?.role === "superadmin") {
-      setActiveMenu("organization");
-    } else {
-      setActiveMenu("dashboard");
+    if (!activeContext) return;
+    const allowed = sidebarMenuConfig.filter((menu) => isMenuItemAllowed(menu, activeContext));
+    const isCurrentValid = allowed.some((menu) => {
+      if (menu.id === activeMenu) return true;
+      if (menu.subItems?.some((sub) => sub.id === activeMenu)) return true;
+      if (activeMenu.startsWith(menu.id + "-") || activeMenu.startsWith(menu.id)) return true;
+      return false;
+    });
+
+    if (!isCurrentValid && allowed.length > 0) {
+      if (activeContext.role === "superadmin") {
+        setActiveMenu("organization");
+      } else {
+        const defaultTarget = allowed.find((m) => m.id === "dashboard") || allowed[0];
+        const targetId = defaultTarget.subItems && defaultTarget.subItems.length > 0 ? defaultTarget.subItems[0].id : defaultTarget.id;
+        setActiveMenu(targetId);
+      }
     }
-  }, [activeContext]);
+  }, [activeContext, activeMenu]);
 
   // Global Keyboard Shortcuts (Sidebar Expand/Collapse & Tools Group)
   useEffect(() => {
@@ -320,8 +372,26 @@ export default function DesktopShell() {
       <div className="flex h-screen overflow-hidden">
         
         {/* ================= MODULAR SHADCN LEFT SIDEBAR ================= */}
-        <SidebarProvider open={!isSidebarCollapsed} onOpenChange={(open) => setIsSidebarCollapsed(!open)}>
-          <Sidebar collapsible="icon" className="border-none bg-transparent">
+        <SidebarProvider
+          open={!isSidebarCollapsed}
+          onOpenChange={(open) => setIsSidebarCollapsed(!open)}
+          style={{
+            "--sidebar-width": `${sidebarWidth}px`,
+          } as React.CSSProperties}
+        >
+          <Sidebar collapsible="icon" className="border-none bg-transparent relative">
+            {/* Draggable Resize Handle */}
+            {!isSidebarCollapsed && (
+              <div
+                onMouseDown={startResizingSidebar}
+                className={`absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#3F73F7]/40 active:bg-[#3F73F7] transition-colors z-30 group flex items-center justify-center ${
+                  isResizingSidebar ? "bg-[#3F73F7]" : "bg-transparent"
+                }`}
+                title="Tarik untuk mengubah lebar sidebar"
+              >
+                <div className="w-0.5 h-6 rounded-full bg-slate-400/50 group-hover:bg-[#3F73F7] opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            )}
             {/* 1. Header: Brand Logo & Workspace Switcher & Toggle */}
             <SidebarHeader className="p-0 mb-4 flex flex-col items-start gap-2">
               <div className={`flex items-center gap-2.5 px-2 py-1.5 w-full ${isSidebarCollapsed ? "justify-center" : "justify-start"}`}>
@@ -414,6 +484,14 @@ export default function DesktopShell() {
                         );
                       })}
                     </div>
+                    <DropdownMenuSeparator className="my-1" />
+                    <DropdownMenuItem
+                      onClick={() => setWorkspaceLauncherOpen(true)}
+                      className="gap-2.5 p-2 text-primary font-bold text-xs cursor-pointer rounded-xl hover:bg-primary/10 flex items-center"
+                    >
+                      <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                      <span>{language === "id" ? "Buka Peluncur Workspace" : "Open Workspace Launcher"}</span>
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -444,17 +522,20 @@ export default function DesktopShell() {
                       const label = t[menu.translationKey as keyof typeof t] || menu.defaultLabel;
                       const Icon = menu.icon;
 
+                      const validSubItems = (menu.subItems || []).filter((sub) => isSubMenuItemAllowed(sub, activeContext));
+                      const hasSubmenus = validSubItems.length > 1;
+
                       return (
                         <SidebarMenuItem key={menu.id}>
-                          {menu.subItems && !isSidebarCollapsed ? (
+                          {hasSubmenus && !isSidebarCollapsed ? (
                             <div className="space-y-1">
                               <button
                                 type="button"
                                 onClick={() => {
                                   toggleSubmenu(menu.id);
-                                  if (menu.subItems && menu.subItems.length > 0) {
+                                  if (validSubItems.length > 0) {
                                     if (!activeMenu.startsWith(menu.id)) {
-                                      setActiveMenu(menu.subItems[0].id);
+                                      setActiveMenu(validSubItems[0].id);
                                     }
                                   }
                                 }}
@@ -467,7 +548,7 @@ export default function DesktopShell() {
                                 }`}
                               >
                                 <div className="flex items-center space-x-3">
-                                  <Icon className="w-4 h-4 shrink-0" />
+                                  <Icon className={`w-4 h-4 shrink-0 ${activeMenu.startsWith(menu.id) ? "text-primary-foreground" : menu.iconClassName || ""}`} />
                                   <span>{label}</span>
                                 </div>
                                 <ChevronDown
@@ -478,7 +559,7 @@ export default function DesktopShell() {
                               </button>
                               {openSubmenus[menu.id] && (
                                 <div className="pl-4 space-y-1 mt-1">
-                                  {menu.subItems.map((sub) => (
+                                  {validSubItems.map((sub) => (
                                     <button
                                       key={sub.id}
                                       type="button"
@@ -500,20 +581,20 @@ export default function DesktopShell() {
                           ) : (
                             <SidebarMenuButton
                               isActive={
-                                menu.subItems 
+                                validSubItems.length > 0
                                   ? activeMenu.startsWith(menu.id) 
                                   : activeMenu === menu.id
                               }
                               onClick={() => {
-                                if (menu.subItems) {
-                                  setActiveMenu(menu.subItems[0].id);
+                                if (validSubItems.length > 0) {
+                                  setActiveMenu(validSubItems[0].id);
                                 } else {
                                   setActiveMenu(menu.id);
                                 }
                               }}
                               tooltip={isSidebarCollapsed ? label : undefined}
                             >
-                              <Icon className={menu.iconClassName} />
+                              <Icon className={activeMenu.startsWith(menu.id) || activeMenu === menu.id ? "text-primary-foreground" : menu.iconClassName} />
                               <span>{label}</span>
                             </SidebarMenuButton>
                           )}
@@ -599,16 +680,23 @@ export default function DesktopShell() {
                     )}
                   </DropdownMenuItem>
 
-                  {/* Language Selector Item */}
-                  <DropdownMenuItem
-                    onClick={() => setLanguage(language === "id" ? "en" : "id")}
-                    className="flex items-center gap-2.5 px-2 py-2 text-[11px] font-bold rounded-xl cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                  >
-                    <Globe className="w-4 h-4 text-slate-500" />
-                    <span>
-                      {language === "id" ? "Bahasa: English (EN)" : "Language: Indonesia (ID)"}
-                    </span>
-                  </DropdownMenuItem>
+                  {/* Language Selector Item with Shadcn Switch */}
+                  <div className="flex items-center justify-between px-2.5 py-2 text-[11px] font-bold rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                    <div className="flex items-center gap-2.5">
+                      <Globe className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span>{language === "id" ? "Bahasa (ID / EN)" : "Language (ID / EN)"}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[10px] font-extrabold ${language === "id" ? "text-slate-900 dark:text-white" : "text-slate-400"}`}>ID</span>
+                      <Switch
+                        checked={language === "en"}
+                        onCheckedChange={(checked) => setLanguage(checked ? "en" : "id")}
+                        aria-label="Toggle language"
+                        className="scale-90"
+                      />
+                      <span className={`text-[10px] font-extrabold ${language === "en" ? "text-slate-900 dark:text-white" : "text-slate-400"}`}>EN</span>
+                    </div>
+                  </div>
 
                   <DropdownMenuSeparator className="my-1.5 border-slate-200/40 dark:border-slate-800/40" />
 
@@ -630,14 +718,62 @@ export default function DesktopShell() {
           {/* Inner Content Area */}
           <div className={`flex-1 ${activeMenu === "pos" ? "overflow-hidden p-6" : "overflow-y-auto p-8"}`}>
             {activeMenu === "pos" ? (
-              <POSModule gridCols={gridCols} showNumpad={showNumpad} />
-            ) : activeMenu === "inventory-master" || activeMenu === "inventory" || activeMenu === "items-master" || activeMenu === "items" ? (
-              <ItemListModule />
+              <POSModule gridCols={gridCols} showNumpad={showNumpad} onNavigate={(v) => setActiveMenu(v)} />
+            ) : activeMenu === "items" || activeMenu === "items-master" ? (
+              <ItemListModule
+                initialView={masterItemInitialView}
+                initialItem={selectedMasterItem}
+                onNavigate={(v) => {
+                  if (v === "items-master" || v === "items") {
+                    setSelectedMasterItem(null);
+                    setMasterItemInitialView("master");
+                  }
+                  setActiveMenu(v);
+                }}
+              />
+            ) : activeMenu === "items-add" ? (
+              <ItemListModule
+                initialView="wizard"
+                initialItem={null}
+                onNavigate={(v) => {
+                  if (v === "items-master" || v === "items") {
+                    setSelectedMasterItem(null);
+                    setMasterItemInitialView("master");
+                  }
+                  setActiveMenu(v);
+                }}
+              />
+            ) : activeMenu === "inventory-matrix" ? (
+              <InventoryModule
+                view="matrix"
+                onNavigate={(v) => {
+                  setActiveMenu(v);
+                }}
+              />
+            ) : activeMenu === "inventory" || activeMenu === "inventory-master" ? (
+              <InventoryModule
+                view="master"
+                onViewMasterItem={(prod) => {
+                  setSelectedMasterItem(prod);
+                  setMasterItemInitialView("edit");
+                  setActiveMenu("items");
+                }}
+                onNavigate={(v, payload) => {
+                  if (v === "items-edit" || v === "items-detail" || v === "items-master") {
+                    setSelectedMasterItem(payload || null);
+                    setMasterItemInitialView("edit");
+                    setActiveMenu("items");
+                  } else {
+                    setActiveMenu(v);
+                  }
+                }}
+              />
             ) : activeMenu === "inventory-add" ? (
-              <ItemListModule />
+              <ItemListModule initialView="wizard" onNavigate={(v) => setActiveMenu(v)} />
             ) : activeMenu === "inventory-discontinued" ? (
-              <ItemListModule />
+              <InventoryModule view="discontinued" onNavigate={(v) => setActiveMenu(v)} />
             ) : activeMenu === "opname" ? (
+
               <OpnameModule />
             ) : activeMenu === "produksi" ? (
               <ProductionModule />
@@ -664,6 +800,8 @@ export default function DesktopShell() {
               />
             ) : activeMenu === "sales-report" ? (
               <SalesReportModule />
+            ) : activeMenu === "promotions" ? (
+              <PromotionsModule />
             ) : activeMenu === "dashboard" ? (
               <DashboardView onNavigate={(menuId) => setActiveMenu(menuId)} />
             ) : (
@@ -1096,6 +1234,12 @@ export default function DesktopShell() {
         open={showSettingsHistoryDrawer}
         onOpenChange={setShowSettingsHistoryDrawer}
         isNested
+      />
+
+      {/* Multi-Business Environment Workspace Launcher */}
+      <WorkspaceLauncher
+        isOpen={isWorkspaceLauncherOpen}
+        onClose={() => setWorkspaceLauncherOpen(false)}
       />
 
       </div>

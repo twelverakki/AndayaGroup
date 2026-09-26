@@ -14,8 +14,16 @@ export interface Workspace {
   outlet_id?: string;
   business_name: string;
   outlet_name?: string;
+  is_main_outlet?: boolean;
   role: "owner" | "manager" | "admin_gudang" | "staff" | "superadmin";
   business_type: "retail" | "fnb_production" | "fnb_franchise" | "fnb_branch";
+  has_pos?: boolean;
+  has_manufacturing?: boolean;
+  has_logistics_hub?: boolean;
+  has_eod_usage?: boolean;
+  has_multi_outlets?: boolean;
+  hide_central_stock_from_branches?: boolean;
+  allow_cross_branch_stock_view?: boolean;
 }
 
 export interface ActiveContext {
@@ -23,9 +31,17 @@ export interface ActiveContext {
   outlet_id?: string;
   business_name?: string;
   outlet_name?: string;
+  is_main_outlet?: boolean;
   role: string;
   name: string;
   type?: "retail" | "fnb_production" | "fnb_franchise" | "fnb_branch";
+  has_pos?: boolean;
+  has_manufacturing?: boolean;
+  has_logistics_hub?: boolean;
+  has_eod_usage?: boolean;
+  has_multi_outlets?: boolean;
+  hide_central_stock_from_branches?: boolean;
+  allow_cross_branch_stock_view?: boolean;
 }
 
 export interface ActiveShift {
@@ -81,10 +97,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
 interface ShellState {
   isDesktop: boolean;
+  isWorkspaceLauncherOpen: boolean;
   setDesktop: (isDesktop: boolean) => void;
+  setWorkspaceLauncherOpen: (isOpen: boolean) => void;
 }
 
 export const useShellStore = create<ShellState>((set) => ({
   isDesktop: false,
+  isWorkspaceLauncherOpen: false,
   setDesktop: (isDesktop) => set({ isDesktop }),
+  setWorkspaceLauncherOpen: (isWorkspaceLauncherOpen) => set({ isWorkspaceLauncherOpen }),
 }));

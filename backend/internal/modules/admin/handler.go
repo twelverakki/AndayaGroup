@@ -281,6 +281,7 @@ type CreateOwnerBusinessRequest struct {
 	HasManufacturing bool    `json:"has_manufacturing"`
 	HasLogisticsHub  bool    `json:"has_logistics_hub"`
 	HasEodUsage      bool    `json:"has_eod_usage"`
+	HasMultiOutlets  bool    `json:"has_multi_outlets"`
 	InitialOutlet    *string `json:"initial_outlet_name,omitempty"`
 }
 
@@ -324,6 +325,7 @@ func HandleCreateBusinessForOwner(c *fiber.Ctx) error {
 		req.HasManufacturing,
 		req.HasLogisticsHub,
 		req.HasEodUsage,
+		req.HasMultiOutlets,
 		req.InitialOutlet,
 	)
 	if err != nil {
@@ -342,6 +344,7 @@ func HandleCreateBusinessForOwner(c *fiber.Ctx) error {
 		"has_manufacturing": biz.HasManufacturing,
 		"has_logistics_hub": biz.HasLogisticsHub,
 		"has_eod_usage":     biz.HasEodUsage,
+		"has_multi_outlets": biz.HasMultiOutlets,
 	}, &ip, &ua)
 
 	return c.Status(fiber.StatusCreated).JSON(biz)

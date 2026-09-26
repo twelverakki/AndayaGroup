@@ -11,6 +11,7 @@ import (
 	"andaya-erp/backend/internal/modules/logistics"
 	"andaya-erp/backend/internal/modules/organization"
 	"andaya-erp/backend/internal/modules/production"
+	"andaya-erp/backend/internal/modules/promotions"
 	"andaya-erp/backend/internal/modules/settlements"
 	"andaya-erp/backend/internal/modules/transactions"
 
@@ -92,9 +93,16 @@ func main() {
 	scopedAPI.Post("/upload", itemsHandler.HandleUploadFile)
 	itemsGroup := scopedAPI.Group("/items")
 	itemsGroup.Get("/", itemsHandler.HandleGetItems)
+	itemsGroup.Get("/matrix", itemsHandler.HandleGetStockMatrix)
 	itemsGroup.Post("/", itemsHandler.HandleCreateItem)
 	itemsGroup.Put("/:id", itemsHandler.HandleUpdateItem)
 	itemsGroup.Patch("/:id/status", itemsHandler.HandleUpdateItemStatus)
+	itemsGroup.Post("/:id/unbox", itemsHandler.HandleUnboxItem)
+	itemsGroup.Post("/:id/adjust", itemsHandler.HandleAdjustStock)
+
+	// Inventory Group
+	inventoryGroup := scopedAPI.Group("/inventory")
+	inventoryGroup.Get("/matrix", itemsHandler.HandleGetStockMatrix)
 
 	// Backwards Compatibility Aliases
 	productsGroup := scopedAPI.Group("/products")
@@ -102,6 +110,8 @@ func main() {
 	productsGroup.Post("/", itemsHandler.HandleCreateItem)
 	productsGroup.Put("/:id", itemsHandler.HandleUpdateItem)
 	productsGroup.Patch("/:id/status", itemsHandler.HandleUpdateItemStatus)
+	productsGroup.Post("/:id/unbox", itemsHandler.HandleUnboxItem)
+	productsGroup.Post("/:id/adjust", itemsHandler.HandleAdjustStock)
 
 	ingredientsGroup := scopedAPI.Group("/ingredients")
 	ingredientsGroup.Get("/", itemsHandler.HandleGetItems)
@@ -157,23 +167,68 @@ func main() {
 	productionsGroup.Post("/eod-usages", prodHandler.HandleCreateEodMaterialUsage)
 	productionsGroup.Get("/eod-usages", prodHandler.HandleGetEodMaterialUsages)
 
-	// Transfers & Logistics Endpoints (The Lean Odoo Way)
+	// Transfers & Logistics Endpoints (The Lean Odoo Way: Multi-Item Surat Jalan & Unboxing)
 	transfersGroup := scopedAPI.Group("/transfers")
-	transfersGroup.Post("/", logisticsHandler.HandleCreateDistribution)
-	transfersGroup.Get("/", logisticsHandler.HandleGetDistributions)
-	transfersGroup.Post("/:id/receive", logisticsHandler.HandleReceiveDistribution)
-	transfersGroup.Post("/thaw", logisticsHandler.HandleThaw)
+	transfersGroup.Post("/", logisticsHandler.HandleCreateTransfer)
+	transfersGroup.Post("/bulk-draft", logisticsHandler.HandleCreateBulkDraft)
+	transfersGroup.Get("/", logisticsHandler.HandleGetTransfers)
+	transfersGroup.Get("/suggest-reorder", logisticsHandler.HandleGetSuggestedReorder)
+	transfersGroup.Get("/:id", logisticsHandler.HandleGetTransferByID)
+	transfersGroup.Put("/:id", logisticsHandler.HandleUpdateTransfer)
+	transfersGroup.Patch("/:id", logisticsHandler.HandleUpdateTransfer)
+	transfersGroup.Post("/:id", logisticsHandler.HandleUpdateTransfer)
+	transfersGroup.Post("/:id/update", logisticsHandler.HandleUpdateTransfer)
+	transfersGroup.Post("/:id/edit", logisticsHandler.HandleUpdateTransfer)
+	transfersGroup.Post("/:id/cancel", logisticsHandler.HandleCancelTransfer)
+	transfersGroup.Delete("/:id", logisticsHandler.HandleDeleteTransfer)
+	transfersGroup.Post("/:id/receive", logisticsHandler.HandleReceiveTransfer)
+	transfersGroup.Post("/:id/claim/approve", logisticsHandler.HandleApproveClaim)
+	transfersGroup.Post("/:id/claim/reject", logisticsHandler.HandleRejectClaim)
+	transfersGroup.Post("/unbox", logisticsHandler.HandleUnbox)
+	transfersGroup.Post("/thaw", logisticsHandler.HandleUnbox)
+	transfersGroup.Get("/thaw-logs", logisticsHandler.HandleGetThawLogs)
+
+	// Public Driver Claim Portal Endpoints (Guest Access via Token)
+	claimGroup := api.Group("/claim")
+	claimGroup.Get("/:token", logisticsHandler.HandleGetClaimByToken)
+	claimGroup.Post("/:token", logisticsHandler.HandleSubmitDriverClaim)
+
+	// Promotions & Discount Rules Endpoints (The Lean Odoo Way: Rule-Based Pricing Engine)
+	promotionsHandler := promotions.NewPromotionsHandler(config.DB)
+	promotionsGroup := scopedAPI.Group("/promotions")
+	promotionsGroup.Get("/", promotionsHandler.HandleGetPromotions)
+	promotionsGroup.Post("/", promotionsHandler.HandleCreatePromotion)
+	promotionsGroup.Put("/:id", promotionsHandler.HandleUpdatePromotion)
+	promotionsGroup.Delete("/:id", promotionsHandler.HandleDeletePromotion)
 
 	logisticsGroup := scopedAPI.Group("/logistics")
 	logisticsGroup.Post("/distributions", logisticsHandler.HandleCreateDistribution)
+	logisticsGroup.Post("/distributions/bulk-draft", logisticsHandler.HandleCreateBulkDraft)
+	logisticsGroup.Get("/distributions", logisticsHandler.HandleGetDistributions)
+	logisticsGroup.Get("/distributions/suggest-reorder", logisticsHandler.HandleGetSuggestedReorder)
+	logisticsGroup.Get("/distributions/:id", logisticsHandler.HandleGetTransferByID)
+	logisticsGroup.Put("/distributions/:id", logisticsHandler.HandleUpdateTransfer)
+	logisticsGroup.Patch("/distributions/:id", logisticsHandler.HandleUpdateTransfer)
+	logisticsGroup.Post("/distributions/:id", logisticsHandler.HandleUpdateTransfer)
+	logisticsGroup.Post("/distributions/:id/update", logisticsHandler.HandleUpdateTransfer)
+	logisticsGroup.Post("/distributions/:id/cancel", logisticsHandler.HandleCancelTransfer)
+	logisticsGroup.Delete("/distributions/:id", logisticsHandler.HandleDeleteTransfer)
 	logisticsGroup.Post("/distributions/:id/receive", logisticsHandler.HandleReceiveDistribution)
 	logisticsGroup.Post("/thaw", logisticsHandler.HandleThaw)
-	logisticsGroup.Get("/distributions", logisticsHandler.HandleGetDistributions)
+	logisticsGroup.Get("/thaw-logs", logisticsHandler.HandleGetThawLogs)
 
 	// Deprecated / Backwards Compatible Route Support
 	distributionsGroup := scopedAPI.Group("/distributions")
 	distributionsGroup.Post("/", logisticsHandler.HandleCreateDistribution)
 	distributionsGroup.Get("/", logisticsHandler.HandleGetDistributions)
+	distributionsGroup.Get("/suggest-reorder", logisticsHandler.HandleGetSuggestedReorder)
+	distributionsGroup.Get("/:id", logisticsHandler.HandleGetTransferByID)
+	distributionsGroup.Put("/:id", logisticsHandler.HandleUpdateTransfer)
+	distributionsGroup.Patch("/:id", logisticsHandler.HandleUpdateTransfer)
+	distributionsGroup.Post("/:id", logisticsHandler.HandleUpdateTransfer)
+	distributionsGroup.Post("/:id/update", logisticsHandler.HandleUpdateTransfer)
+	distributionsGroup.Post("/:id/cancel", logisticsHandler.HandleCancelTransfer)
+	distributionsGroup.Delete("/:id", logisticsHandler.HandleDeleteTransfer)
 	distributionsGroup.Post("/:id/receive", logisticsHandler.HandleReceiveDistribution)
 
 	// Settlements & Daily Closing Endpoints (Domain Agnostic)

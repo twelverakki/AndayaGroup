@@ -18,7 +18,8 @@ TRUNCATE TABLE procurements CASCADE;
 TRUNCATE TABLE eod_material_usages CASCADE;
 TRUNCATE TABLE daily_settlement_items CASCADE;
 TRUNCATE TABLE daily_settlements CASCADE;
-TRUNCATE TABLE distributions CASCADE;
+TRUNCATE TABLE stock_transfer_items CASCADE;
+TRUNCATE TABLE stock_transfers CASCADE;
 TRUNCATE TABLE production_expenses CASCADE;
 TRUNCATE TABLE productions CASCADE;
 TRUNCATE TABLE bom_items CASCADE;
@@ -48,45 +49,45 @@ INSERT INTO users (id, name, phone_or_email, password_hash, pin_hash, status) VA
 -- Superadmin Platform (Forgot Password Supported via Superadmin Email)
 ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a10', 'Superadmin Platform', 'superadmin@andaya.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
 -- Owner A: JnA Mart & Gorengan Andalan (Forgot Password Supported via Gmail)
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Hendra Owner (JnA & Gorengan)', 'hendra.owner@gmail.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Hendra Pratama', 'hendra.owner@gmail.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
 -- Owner B: Bakso Kang Gemoy & Yasaka (Forgot Password Supported via Gmail)
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'Budi Owner (Bakso & Yasaka)', 'baksokanggemoy@gmail.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'Budi Santoso', 'baksokanggemoy@gmail.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
 -- Managers (Edge-Case Non-Gmail / Domain Akun)
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'Siti Manager JnA', 'siti@jnamart.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15', 'Dewi Manager Gorengan', 'dewi@gorengan.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a18', 'Rian Manager Yasaka', 'rian@yasaka.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'Siti Rahmawati', 'siti@jnamart.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15', 'Dewi Lestari', 'dewi@gorengan.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a18', 'Rian Hidayat', 'rian@yasaka.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
 -- Staff / Cashiers (Edge-Case PIN-First & Non-Gmail)
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14', 'Adi Kasir JnA', 'adi@jnamart.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a16', 'Eko Staff Gorengan', 'eko@gorengan.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 'Gani Mitra Bakso', 'gani@bakso.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a19', 'Fajar Kasir Yasaka', 'fajar@yasaka.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14', 'Adi Nugroho', 'adi@jnamart.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a16', 'Eko Prasetyo', 'eko@gorengan.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 'Gani Kurniawan', 'gani@bakso.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a19', 'Fajar Ramadhan', 'fajar@yasaka.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active'),
 -- Admin Gudang Pusat
-('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a20', 'Bambang Admin Gudang', 'gudang@andaya.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active');
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a20', 'Bambang Wijaya', 'gudang@andaya.com', '$2a$12$CoEh/d9gsZsz4CsxT3/fiuji6sD.SEmoaXMtdUqOOunwROQxIyjje', '$2a$12$p8pv7vpKjayQuB4N18Mh5uIVaLGy13j2jQjIHRWGqpns5VvITw8Ta', 'active');
 
 -- =========================================================================
 -- 2. BUSINESSES (with Domain Capability Flags)
 -- =========================================================================
-INSERT INTO businesses (id, name, type, has_pos, has_manufacturing, has_logistics_hub, has_eod_usage) VALUES
-('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b11', 'JnA Mart', 'retail', TRUE, FALSE, FALSE, FALSE),
-('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'Bakso Kang Gemoy', 'fnb_production', TRUE, TRUE, TRUE, FALSE),
-('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b13', 'Yasaka Fried Chicken', 'fnb_franchise', TRUE, FALSE, TRUE, FALSE),
-('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b14', 'Gorengan Andalan', 'fnb_branch', TRUE, FALSE, FALSE, TRUE);
+INSERT INTO businesses (id, name, type, has_pos, has_multi_outlets, has_manufacturing, has_logistics_hub, has_eod_usage) VALUES
+('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b11', 'JnA Mart', 'retail', TRUE, FALSE, FALSE, FALSE, FALSE),
+('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'Bakso Kang Gemoy', 'fnb_production', TRUE, TRUE, TRUE, TRUE, FALSE),
+('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b13', 'Yasaka Fried Chicken', 'fnb_franchise', TRUE, TRUE, FALSE, TRUE, FALSE),
+('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b14', 'Gorengan Andalan', 'fnb_branch', TRUE, FALSE, FALSE, FALSE, TRUE);
 
 -- =========================================================================
 -- 3. OUTLETS
 -- =========================================================================
-INSERT INTO outlets (id, business_id, name, address) VALUES
--- JnA Mart
-('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c11', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b11', 'JnA Mart - Toko Utama', 'Jl. Raya Pasar Tradisional No. 12, Sleman'),
--- Bakso Kang Gemoy
-('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'Bakso Kang Gemoy - Gudang Pusat', 'Jl. Magelang KM 8, Sleman'),
-('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c22', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'Bakso Kang Gemoy - Gerobak Titik 1', 'Depan Kampus UGM, Yogyakarta'),
--- Yasaka Fried Chicken
-('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c13', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b13', 'Yasaka - Outlet Kaliurang', 'Jl. Kaliurang KM 5 No. 40, Sleman'),
-('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c23', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b13', 'Yasaka - Outlet Seturan', 'Jl. Seturan Raya No. 18, Sleman'),
--- Gorengan Andalan
-('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c14', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b14', 'Gorengan Andalan - Cabang Gejayan', 'Jl. Affandi Gejayan No. 45, Yogyakarta'),
-('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c15', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b14', 'Gorengan Andalan - Cabang Malioboro', 'Jl. Malioboro No. 88, Yogyakarta');
+INSERT INTO outlets (id, business_id, name, is_main, address) VALUES
+-- JnA Mart (Single-Outlet Utama)
+('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c11', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b11', 'JnA Mart - Toko Utama', TRUE, 'Jl. Raya Pasar Tradisional No. 12, Sleman'),
+-- Bakso Kang Gemoy (Gudang Pusat / Dapur is Main)
+('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'Bakso Kang Gemoy - Gudang Pusat', TRUE, 'Jl. Magelang KM 8, Sleman'),
+('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c22', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'Bakso Kang Gemoy - Gerobak Titik 1', FALSE, 'Depan Kampus UGM, Yogyakarta'),
+-- Yasaka Fried Chicken (Outlet Kaliurang HQ is Main)
+('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c13', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b13', 'Yasaka - Outlet Kaliurang', TRUE, 'Jl. Kaliurang KM 5 No. 40, Sleman'),
+('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c23', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b13', 'Yasaka - Outlet Seturan', FALSE, 'Jl. Seturan Raya No. 18, Sleman'),
+-- Gorengan Andalan (Cabang Gejayan is Main)
+('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c14', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b14', 'Gorengan Andalan - Cabang Gejayan', TRUE, 'Jl. Affandi Gejayan No. 45, Yogyakarta'),
+('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c15', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b14', 'Gorengan Andalan - Cabang Malioboro', FALSE, 'Jl. Malioboro No. 88, Yogyakarta');
 
 -- =========================================================================
 -- 4. BUSINESS OWNERS (Many-to-Many Ownership Assignments)
@@ -258,10 +259,13 @@ INSERT INTO production_expenses (id, production_id, item_id, qty_used, unit_cost
 ('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380114', 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380111', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380e23', 0.5, 45000, 22500);
 
 -- =========================================================================
--- 12. DISTRIBUTIONS / TRANSFERS (Handshake Delivery)
+-- 12. DISTRIBUTIONS / TRANSFERS (Handshake Delivery & Multi-Item Surat Jalan)
 -- =========================================================================
-INSERT INTO distributions (id, business_id, item_id, product_id, from_outlet_id, to_outlet_id, outlet_id, sent_by_user_id, sent_to_user_id, received_by_user_id, qty, distribution_type, status, shrinkage_tolerance_pct, shrinkage_qty, notes, received_at) VALUES
-('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380121', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380e24', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380e24', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c22', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a20', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 10.0, 'outbound', 'received', 2.0, 0.0, 'Pengiriman 10 pack beku ke Gerobak UGM', NOW());
+INSERT INTO stock_transfers (id, transfer_no, business_id, from_outlet_id, to_outlet_id, sent_by_user_id, sent_to_user_id, received_by_user_id, status, transfer_type, notes, sent_at, received_at) VALUES
+('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380121', 'SJ-20260901-001', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c22', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a20', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 'received', 'outbound', 'Pengiriman 10 pack beku ke Gerobak UGM', NOW() - INTERVAL '1 DAY', NOW() - INTERVAL '20 HOURS');
+
+INSERT INTO stock_transfer_items (id, transfer_id, item_id, qty_sent_sealed, qty_sent_loose, qty_received_sealed, qty_received_loose, shrinkage_qty, notes) VALUES
+('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380122', 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380121', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380e24', 0.0000, 10.0000, 0.0000, 10.0000, 0.0000, 'Kondisi beku baik');
 
 -- =========================================================================
 -- 13. POS SHIFTS & TRANSACTIONS
@@ -323,3 +327,20 @@ INSERT INTO opname_items (id, opname_session_id, item_id, product_id, expected_q
 INSERT INTO stock_movements (id, business_id, outlet_id, item_id, movement_type, source_document_type, from_location_type, to_location_type, to_outlet_id, package_form, qty, unit_cost, total_cost, performed_by, created_by, notes) VALUES
 ('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380191', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b11', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c11', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380e11', 'initial_balance', 'initial_balance', 'vendor', 'outlet', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c11', 'loose', 120.0, 2600, 312000, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'Saldo awal sistem'),
 ('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380192', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380e24', 'production', 'production', 'production', 'outlet', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12', 'sealed', 60.0, 30325, 1819500, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a20', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a20', 'Hasil produksi Batch-01');
+
+-- =========================================================================
+-- 19. PROMOTIONS & DISCOUNT RULES SEED DATA
+-- =========================================================================
+INSERT INTO promotions (id, business_id, outlet_id, name, code, promo_type, start_date, end_date, active_days, active_time_start, active_time_end, min_order_amount, min_qty, usage_limit, usage_count, reward_type, reward_value, max_discount_cap, target_scope, is_active, created_by) VALUES
+-- JnA Mart: "Diskon Belanja Hemat 10%" (Auto-applied min Rp 50.000)
+('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380201', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b11', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c11', 'Diskon Belanja Hemat 10%', NULL, 'automatic', NOW() - INTERVAL '1 day', NOW() + INTERVAL '30 days', '{0,1,2,3,4,5,6}', NULL, NULL, 50000, 0, 500, 1, 'discount_pct', 10.00, 15000, 'entire_order', TRUE, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'),
+-- JnA Mart: "Voucher Opening HEMAT5K" (Kupon Tetap Rp 5.000)
+('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380202', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b11', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c11', 'Voucher Opening Toko', 'HEMAT5K', 'coupon_code', NOW() - INTERVAL '1 day', NOW() + INTERVAL '60 days', '{0,1,2,3,4,5,6}', NULL, NULL, 30000, 0, 100, 0, 'discount_fixed', 5000.00, 5000, 'entire_order', TRUE, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'),
+-- Yasaka Fried Chicken: "Happy Hour Siang 15%" (Pukul 14:00 - 17:00)
+('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380203', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b13', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c13', 'Happy Hour Siang 15%', NULL, 'automatic', NOW() - INTERVAL '1 day', NOW() + INTERVAL '365 days', '{1,2,3,4,5}', '14:00:00', '17:00:00', 0, 0, NULL, 0, 'discount_pct', 15.00, 20000, 'entire_order', TRUE, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12'),
+-- Bakso Kang Gemoy: "Promo Cuci Stok Frozen" (Diskon Rp 2.000 per pack Bakso Beku)
+('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380204', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380c12', 'Promo Bakso Frozen', NULL, 'manual_select', NOW() - INTERVAL '1 day', NOW() + INTERVAL '14 days', '{0,1,2,3,4,5,6}', NULL, NULL, 0, 1, 200, 0, 'discount_fixed', 2000.00, 10000, 'specific_items', TRUE, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12');
+
+INSERT INTO promotion_targets (id, promotion_id, target_type, target_id) VALUES
+('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380205', 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380204', 'item', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380e24');
+

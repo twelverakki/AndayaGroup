@@ -1,0 +1,75 @@
+# ==========================================
+# ANDAYA GROUP ERP — ROOT .GITIGNORE
+# ==========================================
+
+# 1. Environment & Secret Configs
+.env
+.env.*
+!.env.example
+*.local
+
+# 2. Uploaded Media & User Content
+uploads/
+**/uploads/*
+!**/uploads/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
+frontend/public/uploads/*
+!frontend/public/uploads/.gitkeep
+
+# 3. Binaries & Executables
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+backend/backend.exe
+backend/erp-api.exe
+backend/tmp/main.exe
+main.exe
+*.bin
+
+# 4. Temporary & Log Files
+*.log
+logs/
+*.tmp
+*.temp
+tmp/
+**/tmp/
+backend/tmp/
+.temp/
+
+# 5. Node.js & Frontend Build Outputs
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+**/build/
+.next/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 6. Go Build Artifacts
+backend/bin/
+bin/
+vendor/
+
+# 7. OS & Editor Generated Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 8. AI Agent System Logs & Temp Artifacts
+.gemini/
+.agents/scratch/
+brain/

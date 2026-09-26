@@ -48,19 +48,22 @@ type User struct {
 
 // Business represents a tenant brand/business entity
 type Business struct {
-	ID               uuid.UUID    `json:"id"`
-	Name             string       `json:"name"`
-	Type             BusinessType `json:"type"`
-	Phone            *string      `json:"phone,omitempty"`
-	Email            *string      `json:"email,omitempty"`
-	TaxID            *string      `json:"tax_id,omitempty"`
-	TaxRatePct       float64      `json:"tax_rate_pct"`
-	HasPos           bool         `json:"has_pos"`
-	HasManufacturing bool         `json:"has_manufacturing"`
-	HasLogisticsHub  bool         `json:"has_logistics_hub"`
-	HasEodUsage      bool         `json:"has_eod_usage"`
-	CreatedAt        time.Time    `json:"created_at"`
-	UpdatedAt        time.Time    `json:"updated_at"`
+	ID                           uuid.UUID    `json:"id"`
+	Name                         string       `json:"name"`
+	Type                         BusinessType `json:"type"`
+	Phone                        *string      `json:"phone,omitempty"`
+	Email                        *string      `json:"email,omitempty"`
+	TaxID                        *string      `json:"tax_id,omitempty"`
+	TaxRatePct                   float64      `json:"tax_rate_pct"`
+	HasPos                       bool         `json:"has_pos"`
+	HasManufacturing             bool         `json:"has_manufacturing"`
+	HasLogisticsHub              bool         `json:"has_logistics_hub"`
+	HasEodUsage                  bool         `json:"has_eod_usage"`
+	HasMultiOutlets              bool         `json:"has_multi_outlets"`
+	HideCentralStockFromBranches bool         `json:"hide_central_stock_from_branches"`
+	AllowCrossBranchStockView    bool         `json:"allow_cross_branch_stock_view"`
+	CreatedAt                    time.Time    `json:"created_at"`
+	UpdatedAt                    time.Time    `json:"updated_at"`
 }
 
 // Outlet represents a physical branch/location under a business
@@ -68,6 +71,7 @@ type Outlet struct {
 	ID            uuid.UUID `json:"id"`
 	BusinessID    uuid.UUID `json:"business_id"`
 	Name          string    `json:"name"`
+	IsMain        bool      `json:"is_main"`
 	Address       *string   `json:"address,omitempty"`
 	Phone         *string   `json:"phone,omitempty"`
 	ReceiptFooter *string   `json:"receipt_footer,omitempty"`
@@ -107,11 +111,18 @@ type ManagerPIN struct {
 
 // ActiveContext represents the current active tenant workspace after user login/switch
 type ActiveContext struct {
-	BusinessID *uuid.UUID   `json:"business_id"`
-	OutletID   *uuid.UUID   `json:"outlet_id"`
-	Role       string       `json:"role"` // "owner", "manager", "admin_gudang", "staff"
-	Name       string       `json:"name"`
-	Type       BusinessType `json:"type,omitempty"`
+	BusinessID                   *uuid.UUID   `json:"business_id"`
+	OutletID                     *uuid.UUID   `json:"outlet_id"`
+	Role                         string       `json:"role"` // "owner", "manager", "admin_gudang", "staff", "superadmin"
+	Name                         string       `json:"name"`
+	Type                         BusinessType `json:"type"`
+	HasPOS                       bool         `json:"has_pos"`
+	HasManufacturing             bool         `json:"has_manufacturing"`
+	HasLogisticsHub              bool         `json:"has_logistics_hub"`
+	HasEODUsage                  bool         `json:"has_eod_usage"`
+	HasMultiOutlets              bool         `json:"has_multi_outlets"`
+	HideCentralStockFromBranches bool         `json:"hide_central_stock_from_branches"`
+	AllowCrossBranchStockView    bool         `json:"allow_cross_branch_stock_view"`
 }
 
 // UserClaims holds JWT structure
@@ -227,11 +238,13 @@ const (
 
 // Category represents a product category
 type Category struct {
-	ID         uuid.UUID `json:"id"`
-	BusinessID uuid.UUID `json:"business_id"`
-	Name       string    `json:"name"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID           uuid.UUID `json:"id"`
+	BusinessID   uuid.UUID `json:"business_id"`
+	Name         string    `json:"name"`
+	CategoryType string    `json:"category_type"`
+	ItemCount    int       `json:"item_count"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // Product represents a product
@@ -388,31 +401,36 @@ type Shift struct {
 
 // Transaction represents a sale, void, or internal take transaction
 type Transaction struct {
-	ID            uuid.UUID         `json:"id"`
-	BusinessID    uuid.UUID         `json:"business_id"`
-	OutletID      uuid.UUID         `json:"outlet_id"`
-	ShiftID       *uuid.UUID        `json:"shift_id,omitempty"`
-	StaffID       uuid.UUID         `json:"staff_id"`
-	Type          TransactionType   `json:"type"`
-	Channel       string            `json:"channel"`
-	TotalAmount   int64             `json:"total_amount"`
-	PaymentMethod PaymentMethod     `json:"payment_method"`
-	Status        TransactionStatus `json:"status"`
-	ClientUUID    uuid.UUID         `json:"client_uuid"`
-	SyncedAt      *time.Time        `json:"synced_at,omitempty"`
-	CreatedAt     time.Time         `json:"created_at"`
-	UpdatedAt     time.Time         `json:"updated_at"`
+	ID             uuid.UUID         `json:"id"`
+	BusinessID     uuid.UUID         `json:"business_id"`
+	OutletID       uuid.UUID         `json:"outlet_id"`
+	ShiftID        *uuid.UUID        `json:"shift_id,omitempty"`
+	StaffID        uuid.UUID         `json:"staff_id"`
+	Type           TransactionType   `json:"type"`
+	Channel        string            `json:"channel"`
+	TotalAmount    int64             `json:"total_amount"`
+	Subtotal       int64             `json:"subtotal"`
+	DiscountAmount int64             `json:"discount_amount"`
+	PromotionID    *uuid.UUID        `json:"promotion_id,omitempty"`
+	PaymentMethod  PaymentMethod     `json:"payment_method"`
+	Status         TransactionStatus `json:"status"`
+	ClientUUID     uuid.UUID         `json:"client_uuid"`
+	SyncedAt       *time.Time        `json:"synced_at,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
 }
 
 // TransactionItem represents an item within a transaction
 type TransactionItem struct {
-	ID            uuid.UUID `json:"id"`
-	TransactionID uuid.UUID `json:"transaction_id"`
-	ProductID     uuid.UUID `json:"product_id"`
-	Qty           float64   `json:"qty"`
-	UnitPrice     int64     `json:"unit_price"`
-	Subtotal      int64     `json:"subtotal"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID             uuid.UUID  `json:"id"`
+	TransactionID  uuid.UUID  `json:"transaction_id"`
+	ProductID      uuid.UUID  `json:"product_id"`
+	Qty            float64    `json:"qty"`
+	UnitPrice      int64      `json:"unit_price"`
+	Subtotal       int64      `json:"subtotal"`
+	DiscountAmount int64      `json:"discount_amount"`
+	PromotionID    *uuid.UUID `json:"promotion_id,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // OverrideLog represents a log of manager authorization for cashier override (e.g. void)
@@ -483,8 +501,11 @@ type Production struct {
 type DistributionStatus string
 
 const (
-	DistSent     DistributionStatus = "sent"
-	DistReceived DistributionStatus = "received"
+	DistInTransit DistributionStatus = "in_transit"
+	DistSent      DistributionStatus = "sent"
+	DistReceived  DistributionStatus = "received"
+	DistReturned  DistributionStatus = "returned"
+	DistCancelled DistributionStatus = "cancelled"
 )
 
 // DistributionType ENUM type
@@ -495,21 +516,71 @@ const (
 	TypeReturn   DistributionType = "return"
 )
 
-// Distribution represents stock distribution from gudang to cart/staff (or return)
+// Distribution represents stock distribution / inter-outlet transfer
 type Distribution struct {
 	ID                    uuid.UUID          `json:"id"`
+	TransferNo            string             `json:"transfer_no,omitempty"`
 	BusinessID            uuid.UUID          `json:"business_id"`
-	ProductID             uuid.UUID          `json:"product_id"`
-	SentToUserID          uuid.UUID          `json:"sent_to_user_id"`
+	ItemID                *uuid.UUID         `json:"item_id,omitempty"`
+	ProductID             *uuid.UUID         `json:"product_id,omitempty"`
+	FromOutletID          *uuid.UUID         `json:"from_outlet_id,omitempty"`
+	ToOutletID            *uuid.UUID         `json:"to_outlet_id,omitempty"`
+	OutletID              *uuid.UUID         `json:"outlet_id,omitempty"`
+	SentByUserID          *uuid.UUID         `json:"sent_by_user_id,omitempty"`
+	SentToUserID          *uuid.UUID         `json:"sent_to_user_id,omitempty"`
+	ReceivedByUserID      *uuid.UUID         `json:"received_by_user_id,omitempty"`
 	Qty                   float64            `json:"qty"`
+	QtySealed             float64            `json:"qty_sealed"`
+	QtyLoose              float64            `json:"qty_loose"`
+	QtyReceivedSealed     float64            `json:"qty_received_sealed"`
+	QtyReceivedLoose      float64            `json:"qty_received_loose"`
 	Status                DistributionStatus `json:"status"`
 	Type                  DistributionType   `json:"type"`
+	DistributionType      string             `json:"distribution_type,omitempty"`
 	ShrinkageTolerancePct float64            `json:"shrinkage_tolerance_pct"`
 	ShrinkageQty          float64            `json:"shrinkage_qty"`
+	Notes                 string             `json:"notes,omitempty"`
 	ProductionID          *uuid.UUID         `json:"production_id,omitempty"`
 	SentAt                time.Time          `json:"sent_at"`
 	ReceivedAt            *time.Time         `json:"received_at,omitempty"`
 	CreatedAt             time.Time          `json:"created_at"`
+
+	// Joined Display Helpers
+	ItemName         string  `json:"item_name,omitempty"`
+	ItemSKU          string  `json:"item_sku,omitempty"`
+	BaseUnit         string  `json:"base_unit,omitempty"`
+	BoxUnit          string  `json:"box_unit,omitempty"`
+	ConversionRate   float64 `json:"conversion_rate,omitempty"`
+	FromOutletName   string  `json:"from_outlet_name,omitempty"`
+	ToOutletName     string  `json:"to_outlet_name,omitempty"`
+	SentByUserName   string  `json:"sent_by_user_name,omitempty"`
+	SentToUserName   string  `json:"sent_to_user_name,omitempty"`
+	ReceivedUserName string  `json:"received_by_user_name,omitempty"`
+}
+
+// ThawLog represents a thaw and QC operation record
+type ThawLog struct {
+	ID                 uuid.UUID `json:"id"`
+	BusinessID         uuid.UUID `json:"business_id"`
+	OutletID           uuid.UUID `json:"outlet_id"`
+	ItemID             uuid.UUID `json:"item_id"`
+	UserID             uuid.UUID `json:"user_id"`
+	QtySealedThawed    float64   `json:"qty_sealed_thawed"`
+	QtyLooseProduced   float64   `json:"qty_loose_produced"`
+	ShrinkageLossLoose float64   `json:"shrinkage_loss_loose"`
+	QCStatus           string    `json:"qc_status"`
+	Notes              string    `json:"notes,omitempty"`
+	ThawedAt           time.Time `json:"thawed_at"`
+	CreatedAt          time.Time `json:"created_at"`
+
+	// Joined Display Helpers
+	ItemName       string  `json:"item_name,omitempty"`
+	ItemSKU        string  `json:"item_sku,omitempty"`
+	BaseUnit       string  `json:"base_unit,omitempty"`
+	BoxUnit        string  `json:"box_unit,omitempty"`
+	ConversionRate float64 `json:"conversion_rate,omitempty"`
+	OutletName     string  `json:"outlet_name,omitempty"`
+	UserName       string  `json:"user_name,omitempty"`
 }
 
 // IngredientCategory ENUM type
@@ -612,10 +683,11 @@ type ProductionRun struct {
 type ItemType string
 
 const (
-	ItemFinishedGood ItemType = "finished_good"
-	ItemRawMaterial  ItemType = "raw_material"
-	ItemConsumable   ItemType = "consumable"
-	ItemFixedTool    ItemType = "fixed_tool"
+	ItemFinishedGood   ItemType = "finished_good"
+	ItemSemiFinished   ItemType = "semi_finished"
+	ItemRawMaterial    ItemType = "raw_material"
+	ItemConsumable     ItemType = "consumable"
+	ItemFixedTool      ItemType = "fixed_tool"
 )
 
 // Item represents the Unified Item Master catalog (Products, Ingredients, Tools)
@@ -628,13 +700,20 @@ type Item struct {
 	ItemType           ItemType   `json:"item_type"`
 	IsSellable         bool       `json:"is_sellable"`
 	IsInventoryTracked bool       `json:"is_inventory_tracked"`
-	RequiresThaw       bool       `json:"requires_thaw"`
+	IsTrackingStock    bool       `json:"is_tracking_stock"` // Unified alias
+	IsProduced         bool       `json:"is_produced"`
+	IsPurchasable      bool       `json:"is_purchasable"`
+	IsThawable         bool       `json:"is_thawable"`
+	RequiresThaw       bool       `json:"requires_thaw"` // Backward compatibility alias
 	BaseUnit           string     `json:"base_unit"`
 	BoxUnit            string     `json:"box_unit"`
 	ConversionRate     float64    `json:"conversion_rate"`
+	PriceUnit          string     `json:"price_unit"`
 	SellPrice          int64      `json:"sell_price"`
 	BoxSellPrice       int64      `json:"box_sell_price"`
 	StandardCost       int64      `json:"standard_cost"`
+	MinStockAlert      float64    `json:"min_stock_alert"`
+	ImageURL           *string    `json:"image_url,omitempty"`
 	Status             string     `json:"status"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
@@ -754,10 +833,13 @@ type UpdateStaffRequest struct {
 
 // UpdateBusinessCapabilitiesRequest represents payload for Owner to configure active modules
 type UpdateBusinessCapabilitiesRequest struct {
-	HasPos           *bool `json:"has_pos,omitempty"`
-	HasManufacturing *bool `json:"has_manufacturing,omitempty"`
-	HasLogisticsHub  *bool `json:"has_logistics_hub,omitempty"`
-	HasEodUsage      *bool `json:"has_eod_usage,omitempty"`
+	HasPos                       *bool `json:"has_pos,omitempty"`
+	HasManufacturing             *bool `json:"has_manufacturing,omitempty"`
+	HasLogisticsHub              *bool `json:"has_logistics_hub,omitempty"`
+	HasEodUsage                  *bool `json:"has_eod_usage,omitempty"`
+	HasMultiOutlets              *bool `json:"has_multi_outlets,omitempty"`
+	HideCentralStockFromBranches *bool `json:"hide_central_stock_from_branches,omitempty"`
+	AllowCrossBranchStockView    *bool `json:"allow_cross_branch_stock_view,omitempty"`
 }
 
 // SecurityAuditLog represents sensitive system security & auth audit events
@@ -775,6 +857,153 @@ type SecurityAuditLog struct {
 	CreatedAt time.Time              `json:"created_at"`
 }
 
+// Promotion represents a rule-based promotional discount program
+type Promotion struct {
+	ID              uuid.UUID        `json:"id"`
+	BusinessID      uuid.UUID        `json:"business_id"`
+	OutletID        *uuid.UUID       `json:"outlet_id,omitempty"`
+	OutletName      *string          `json:"outlet_name,omitempty"`
+	Name            string           `json:"name"`
+	Code            *string          `json:"code,omitempty"`
+	PromoType       string           `json:"promo_type"` // 'automatic', 'coupon_code', 'catalog_sale', 'manual_select'
+	StartDate       time.Time        `json:"start_date"`
+	EndDate         *time.Time       `json:"end_date,omitempty"`
+	ActiveDays      []int            `json:"active_days"`
+	ActiveTimeStart *string          `json:"active_time_start,omitempty"`
+	ActiveTimeEnd   *string          `json:"active_time_end,omitempty"`
+	MinOrderAmount  int64            `json:"min_order_amount"`
+	MinQty          float64          `json:"min_qty"`
+	UsageLimit      *int             `json:"usage_limit,omitempty"`
+	UsageCount      int              `json:"usage_count"`
+	RewardType      string           `json:"reward_type"` // 'discount_pct', 'discount_fixed', 'fixed_price'
+	RewardValue     float64          `json:"reward_value"`
+	MaxDiscountCap  *int64           `json:"max_discount_cap,omitempty"`
+	TargetScope     string           `json:"target_scope"` // 'entire_order', 'specific_items', 'specific_categories'
+	IsActive        bool             `json:"is_active"`
+	CreatedBy       *uuid.UUID       `json:"created_by,omitempty"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
+	TargetIDs       []uuid.UUID      `json:"target_ids,omitempty"`
+	TargetItems     []TargetItemInfo `json:"target_items,omitempty"`
+}
 
+type TargetItemInfo struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+	SKU  string    `json:"sku,omitempty"`
+}
 
+// CreatePromotionRequest represents payload to create a new promotion
+type CreatePromotionRequest struct {
+	OutletID        *uuid.UUID  `json:"outlet_id,omitempty"`
+	Name            string      `json:"name" validate:"required"`
+	Code            *string     `json:"code,omitempty"`
+	PromoType       string      `json:"promo_type" validate:"required"`
+	StartDate       time.Time   `json:"start_date"`
+	EndDate         *time.Time  `json:"end_date,omitempty"`
+	ActiveDays      []int       `json:"active_days"`
+	ActiveTimeStart *string     `json:"active_time_start,omitempty"`
+	ActiveTimeEnd   *string     `json:"active_time_end,omitempty"`
+	MinOrderAmount  int64       `json:"min_order_amount"`
+	MinQty          float64     `json:"min_qty"`
+	UsageLimit      *int        `json:"usage_limit,omitempty"`
+	RewardType      string      `json:"reward_type" validate:"required"`
+	RewardValue     float64     `json:"reward_value" validate:"required"`
+	MaxDiscountCap  *int64      `json:"max_discount_cap,omitempty"`
+	TargetScope     string      `json:"target_scope" validate:"required"`
+	IsActive        bool        `json:"is_active"`
+	TargetIDs       []uuid.UUID `json:"target_ids,omitempty"`
+}
 
+// UpdatePromotionRequest represents payload to update an existing promotion
+type UpdatePromotionRequest struct {
+	OutletID        *uuid.UUID  `json:"outlet_id,omitempty"`
+	Name            *string     `json:"name,omitempty"`
+	Code            *string     `json:"code,omitempty"`
+	PromoType       *string     `json:"promo_type,omitempty"`
+	StartDate       *time.Time  `json:"start_date,omitempty"`
+	EndDate         *time.Time  `json:"end_date,omitempty"`
+	ActiveDays      []int       `json:"active_days,omitempty"`
+	ActiveTimeStart *string     `json:"active_time_start,omitempty"`
+	ActiveTimeEnd   *string     `json:"active_time_end,omitempty"`
+	MinOrderAmount  *int64      `json:"min_order_amount,omitempty"`
+	MinQty          *float64    `json:"min_qty,omitempty"`
+	UsageLimit      *int        `json:"usage_limit,omitempty"`
+	RewardType      *string     `json:"reward_type,omitempty"`
+	RewardValue     *float64    `json:"reward_value,omitempty"`
+	MaxDiscountCap  *int64      `json:"max_discount_cap,omitempty"`
+	TargetScope     *string     `json:"target_scope,omitempty"`
+	IsActive        *bool       `json:"is_active,omitempty"`
+	TargetIDs       []uuid.UUID `json:"target_ids,omitempty"`
+}
+
+// =========================================================================
+// STOCK TRANSFERS & LOGISTICS (Multi-Item Delivery Orders / Surat Jalan)
+// =========================================================================
+
+type StockTransfer struct {
+	ID                 uuid.UUID           `json:"id"`
+	TransferNo         string              `json:"transfer_no"`
+	BusinessID         uuid.UUID           `json:"business_id"`
+	FromOutletID       uuid.UUID           `json:"from_outlet_id"`
+	FromOutletName     string              `json:"from_outlet_name,omitempty"`
+	ToOutletID         uuid.UUID           `json:"to_outlet_id"`
+	ToOutletName       string              `json:"to_outlet_name,omitempty"`
+	SentByUserID       uuid.UUID           `json:"sent_by_user_id"`
+	SentByUserName     string              `json:"sent_by_user_name,omitempty"`
+	SentToUserID       *uuid.UUID          `json:"sent_to_user_id,omitempty"`
+	SentToUserName     string              `json:"sent_to_user_name,omitempty"`
+	ReceivedByUserID   *uuid.UUID          `json:"received_by_user_id,omitempty"`
+	ReceivedByUserName string              `json:"received_by_user_name,omitempty"`
+	DriverName            *string             `json:"driver_name,omitempty"`
+	DriverPhone           *string             `json:"driver_phone,omitempty"`
+	VehiclePlate          *string             `json:"vehicle_plate,omitempty"`
+	CarrierType           string              `json:"carrier_type,omitempty"` // internal_fleet, online_courier, 3rd_party, pickup
+	ShippingCost          int64               `json:"shipping_cost"`
+	ShippingCostPayer     string              `json:"shipping_cost_payer,omitempty"`
+	ShippingPaymentMethod string              `json:"shipping_payment_method,omitempty"`
+	TrackingRefNo         *string             `json:"tracking_ref_no,omitempty"`
+	ShippingCostMode      string              `json:"shipping_cost_mode,omitempty"` // fixed, driver_claim, free
+	MaxClaimBudget        int64               `json:"max_claim_budget,omitempty"`
+	ClaimToken            *string             `json:"claim_token,omitempty"`
+	ClaimStatus           string              `json:"claim_status,omitempty"` // none, pending, approved, rejected
+	ClaimedAmount         int64               `json:"claimed_amount,omitempty"`
+	ClaimedNotes          *string             `json:"claimed_notes,omitempty"`
+	ClaimedAttachmentURL  *string             `json:"claimed_attachment_url,omitempty"`
+	ClaimedAt             *time.Time          `json:"claimed_at,omitempty"`
+	ClaimReviewedBy       *uuid.UUID          `json:"claim_reviewed_by,omitempty"`
+	ClaimReviewedByName   string              `json:"claim_reviewed_by_name,omitempty"`
+	ClaimReviewedAt       *time.Time          `json:"claim_reviewed_at,omitempty"`
+	ClaimRejectionReason  *string             `json:"claim_rejection_reason,omitempty"`
+	BackorderStatus       string              `json:"backorder_status,omitempty"` // none, has_backorder, is_backorder, closed
+	ParentTransferID      *uuid.UUID          `json:"parent_transfer_id,omitempty"`
+	Status                string              `json:"status"` // draft, pending_approval, in_transit, received, returned, cancelled
+	TransferType          string              `json:"transfer_type"` // outbound, return, requisition
+	Notes                 *string             `json:"notes,omitempty"`
+	SentAt                time.Time           `json:"sent_at"`
+	ReceivedAt            *time.Time          `json:"received_at,omitempty"`
+	CreatedAt             time.Time           `json:"created_at"`
+	UpdatedAt             time.Time           `json:"updated_at"`
+	Items                 []StockTransferItem `json:"items,omitempty"`
+}
+
+type StockTransferItem struct {
+	ID                 uuid.UUID `json:"id"`
+	TransferID         uuid.UUID `json:"transfer_id"`
+	ItemID             uuid.UUID `json:"item_id"`
+	ItemName           string    `json:"item_name,omitempty"`
+	ItemSKU            string    `json:"item_sku,omitempty"`
+	BaseUnit           string    `json:"base_unit,omitempty"`
+	BoxUnit            string    `json:"box_unit,omitempty"`
+	ConversionRate     float64   `json:"conversion_rate,omitempty"`
+	QtyRequestedSealed float64   `json:"qty_requested_sealed"`
+	QtyRequestedLoose  float64   `json:"qty_requested_loose"`
+	QtySentSealed      float64   `json:"qty_sent_sealed"`
+	QtySentLoose       float64   `json:"qty_sent_loose"`
+	QtyReceivedSealed  float64   `json:"qty_received_sealed"`
+	QtyReceivedLoose   float64   `json:"qty_received_loose"`
+	ShrinkageQty       float64   `json:"shrinkage_qty"`
+	AllocationNotes    *string   `json:"allocation_notes,omitempty"`
+	Notes              *string   `json:"notes,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+}

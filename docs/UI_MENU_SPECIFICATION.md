@@ -17,7 +17,8 @@ Sidebar-Navigation/
 │   └── Tambah Item Baru (`items-add`)
 │
 ├── 3. Inventory & Stok (`inventory`)
-│   ├── Saldo Stok Real-time (`inventory-master`)
+│   ├── Master Inventory (`inventory-master` - Saldo Fisik & Aksi Bongkar Dus)
+│   ├── Matrik Stok (`inventory-matrix` - Saldo Komparatif Multi-Cabang & Bulk Dispatcher)
 │   ├── Buku Besar Mutasi / Audit Trail (`inventory-movements`)
 │   └── Penyesuaian Stok / Scrap (`inventory-adjustments`)
 │
@@ -26,9 +27,9 @@ Sidebar-Navigation/
 │   └── Manajemen Sesi Kasir (`pos-sessions`)
 │
 ├── 5. Mutasi & Logistik Transfer (`transfers`)
-│   ├── Riwayat Pengiriman & Transfer Antar-Lokasi (`transfers-history`)
-│   ├── Transfer Baru / Kirim Stok (`transfers-new`)
-│   └── Pencairan Beku / Transit Thawing (`transfers-thawing`)
+│   ├── Riwayat Pengiriman & Surat Jalan (`transfers-history`)
+│   ├── Penerbitan Surat Jalan Baru (`transfers-new`)
+│   └── Draf Rencana Distribusi (`transfers-drafts`)
 │
 ├── 6. Pabrikasi & Dapur Produksi (`production`)
 │   ├── Riwayat Batch Produksi (`production-list`)

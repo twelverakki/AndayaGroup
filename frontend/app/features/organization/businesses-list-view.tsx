@@ -85,6 +85,7 @@ export default function BusinessesListView() {
   const [hasMfg, setHasMfg] = useState(false);
   const [hasHub, setHasHub] = useState(false);
   const [hasEod, setHasEod] = useState(false);
+  const [hasMultiOutlets, setHasMultiOutlets] = useState(false);
   const [initialOutletName, setInitialOutletName] = useState("");
   const [submittingBusiness, setSubmittingBusiness] = useState(false);
 
@@ -127,6 +128,7 @@ export default function BusinessesListView() {
             has_manufacturing: b.has_manufacturing ?? false,
             has_logistics_hub: b.has_logistics_hub ?? false,
             has_eod_usage: b.has_eod_usage ?? false,
+            has_multi_outlets: b.has_multi_outlets ?? false,
             outlet_count: b.outlet_count || 1,
             staff_count: b.staff_count || 1,
             created_at: b.created_at,
@@ -134,8 +136,9 @@ export default function BusinessesListView() {
         };
         setOwners([singleOwnerObj]);
         setSelectedOwner(singleOwnerObj);
-        if (!activeBusinessId && singleOwnerObj.businesses.length > 0) {
-          setActiveBusinessId(singleOwnerObj.businesses[0].id);
+        if (singleOwnerObj.businesses.length > 0) {
+          const matchContextBiz = singleOwnerObj.businesses.find((b) => b.id === activeContext?.business_id);
+          setActiveBusinessId(matchContextBiz ? matchContextBiz.id : singleOwnerObj.businesses[0].id);
         }
       }
     } catch (err: any) {
@@ -193,24 +196,28 @@ export default function BusinessesListView() {
         setHasMfg(false);
         setHasHub(false);
         setHasEod(false);
+        setHasMultiOutlets(false);
         break;
       case "fnb_production":
         setHasPos(true);
         setHasMfg(true);
         setHasHub(true);
         setHasEod(false);
+        setHasMultiOutlets(true);
         break;
       case "fnb_franchise":
         setHasPos(true);
         setHasMfg(false);
         setHasHub(true);
         setHasEod(false);
+        setHasMultiOutlets(true);
         break;
       case "fnb_street_food":
         setHasPos(true);
         setHasMfg(false);
         setHasHub(false);
         setHasEod(true);
+        setHasMultiOutlets(false);
         break;
       case "custom":
       default:
@@ -260,6 +267,7 @@ export default function BusinessesListView() {
         const hasMfgFlag = newOwnerBizType === "fnb_production";
         const hasHubFlag = newOwnerBizType === "fnb_production" || newOwnerBizType === "fnb_franchise";
         const hasEodFlag = newOwnerBizType === "fnb_street_food";
+        const hasMultiFlag = newOwnerBizType === "fnb_production" || newOwnerBizType === "fnb_franchise";
 
         await api.post("/admin/owners/" + newUserId + "/businesses", {
           name: newOwnerBizName.trim(),
@@ -268,6 +276,7 @@ export default function BusinessesListView() {
           has_manufacturing: hasMfgFlag,
           has_logistics_hub: hasHubFlag,
           has_eod_usage: hasEodFlag,
+          has_multi_outlets: hasMultiFlag,
           initial_outlet_name: "Cabang Utama",
         });
       }
@@ -324,6 +333,7 @@ export default function BusinessesListView() {
       has_manufacturing: hasMfg,
       has_logistics_hub: hasHub,
       has_eod_usage: hasEod,
+      has_multi_outlets: hasMultiOutlets,
       initial_outlet_name: initialOutletName.trim() || undefined,
     });
 
@@ -339,6 +349,7 @@ export default function BusinessesListView() {
         setHasMfg(false);
         setHasHub(false);
         setHasEod(false);
+        setHasMultiOutlets(false);
         loadData();
         if (newBizId) {
           setActiveBusinessId(newBizId);
@@ -755,6 +766,24 @@ export default function BusinessesListView() {
                     <p className="text-[11px] text-slate-400">
                       {t.orgInitialOutletHint || "Cabang perdana akan otomatis dibuat untuk transaksi kasir."}
                     </p>
+                  </div>
+
+                  <div className="p-3 rounded-2xl border border-slate-200/80 dark:border-[#2E2E34] bg-slate-50/50 dark:bg-white/[0.02] flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-teal-500/10 flex items-center justify-center text-teal-600 shrink-0">
+                        <Building className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <h6 className="text-xs font-bold text-slate-900 dark:text-white">Multi-Cabang & Distribusi</h6>
+                        <p className="text-[10px] text-slate-400 leading-tight">Aktifkan jika bisnis memiliki multi-cabang/gerobak.</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={hasMultiOutlets}
+                      onChange={(e) => setHasMultiOutlets(e.target.checked)}
+                      className="w-4 h-4 rounded text-primary accent-[#E2FF66] cursor-pointer shrink-0"
+                    />
                   </div>
                 </div>
               </div>

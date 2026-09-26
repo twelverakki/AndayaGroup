@@ -8,6 +8,7 @@ import { Input } from "../../components/ui/input";
 import { ErpDataTable, type ColumnDef } from "../../components/ErpDataTable";
 import { ErpSearchBar } from "../../components/ErpSearchBar";
 import { Label } from "../../components/ui/label";
+import { Switch } from "../../components/ui/switch";
 import {
   Drawer,
   DrawerContent,
@@ -16,6 +17,14 @@ import {
   DrawerDescription,
   DrawerFooter,
 } from "../../components/ui/drawer";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "../../components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -65,6 +74,9 @@ import {
   Store as BranchIcon,
   BookOpen,
   SlidersHorizontal,
+  Building,
+  GitBranch,
+  Crown,
 } from "lucide-react";
 
 export interface BusinessItemData {
@@ -79,6 +91,9 @@ export interface BusinessItemData {
   has_manufacturing: boolean;
   has_logistics_hub: boolean;
   has_eod_usage: boolean;
+  has_multi_outlets?: boolean;
+  hide_central_stock_from_branches?: boolean;
+  allow_cross_branch_stock_view?: boolean;
   outlet_count: number;
   staff_count: number;
   created_at?: string;
@@ -88,6 +103,7 @@ interface OutletItem {
   id: string;
   business_id: string;
   name: string;
+  is_main?: boolean;
   address?: string;
   phone?: string;
   receipt_footer?: string;
@@ -139,6 +155,164 @@ const getInitials = (name: string) => {
   return (name.slice(0, 2) || "U").toUpperCase();
 };
 
+interface BranchDropTargetCardProps {
+  outlet: OutletItem;
+  branchStaff: StaffItem[];
+  language: string;
+  onEditOutlet: (outlet: OutletItem) => void;
+  onDropStaff: (staffId: string, targetOutlet: OutletItem) => void;
+}
+
+function BranchDropTargetCard({
+  outlet: o,
+  branchStaff,
+  language,
+  onEditOutlet,
+  onDropStaff,
+}: BranchDropTargetCardProps) {
+  const [isOver, setIsOver] = useState(false);
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        if (!isOver) setIsOver(true);
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        setIsOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsOver(false);
+        const staffId = e.dataTransfer.getData("text/plain");
+        if (staffId) {
+          onDropStaff(staffId, o);
+        }
+      }}
+      className={
+        "p-4 rounded-2xl border transition-all flex flex-col justify-between " +
+        (isOver
+          ? "bg-primary/10 border-primary shadow-md scale-[1.02] ring-2 ring-primary/30"
+          : o.is_main
+          ? "bg-white dark:bg-[#1E1E22] border-amber-300 dark:border-amber-600/60 ring-2 ring-amber-400/20 shadow-xs"
+          : "bg-white dark:bg-[#1E1E22] border-slate-200/80 dark:border-[#2E2E34] hover:border-slate-300 dark:hover:border-slate-700 shadow-xs")
+      }
+    >
+      <div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                o.is_main
+                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                  : "bg-blue-500/10 text-blue-500"
+              }`}
+            >
+              {o.is_main ? <Crown className="w-4 h-4 text-amber-500" /> : <BranchIcon className="w-4 h-4" />}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h5 className="font-extrabold text-xs text-slate-900 dark:text-white leading-tight truncate">
+                  {o.name}
+                </h5>
+                {o.is_main && (
+                  <Badge className="text-[8px] font-black px-1.5 py-0 bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border-amber-300 dark:border-amber-700">
+                    Utama
+                  </Badge>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                {o.address || (o.is_main ? "Kantor Pusat / Hub Distribusi" : "Lokasi operasional")}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <Badge variant="outline" className="text-[9px] font-mono px-2 py-0.5 rounded-full shrink-0">
+              {branchStaff.length} Staf
+            </Badge>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditOutlet(o);
+              }}
+              className="w-6 h-6 rounded-full inline-flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer"
+              title={language === "id" ? "Edit Data Cabang" : "Edit Branch"}
+            >
+              <Edit3 className="w-3 h-3 text-slate-500" />
+            </button>
+          </div>
+        </div>
+
+        {/* Branch Phone & Receipt Footer Badges */}
+        {(o.phone || o.receipt_footer) && (
+          <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-[#2A2A30]/60 space-y-1">
+            {o.phone && (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                <Phone className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                <span className="truncate">{o.phone}</span>
+              </div>
+            )}
+            {o.receipt_footer && (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 italic">
+                <Receipt className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
+                <span className="truncate">"{o.receipt_footer}"</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* OVERLAPPING AVATAR STACK */}
+        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-[#2A2A30]/80">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Tim Cabang:
+            </span>
+
+            {branchStaff.length > 0 ? (
+              <div className="flex items-center -space-x-2 overflow-hidden py-0.5">
+                {branchStaff.slice(0, 4).map((staffMember) => (
+                  <div
+                    key={staffMember.id}
+                    title={staffMember.name + " (" + staffMember.role + ")"}
+                    className={
+                      "inline-flex items-center justify-center w-6 h-6 rounded-full text-[9px] font-black ring-2 ring-white dark:ring-[#1E1E22] shadow-xs cursor-pointer " +
+                      getAvatarBg(staffMember.name)
+                    }
+                  >
+                    {getInitials(staffMember.name)}
+                  </div>
+                ))}
+                {branchStaff.length > 4 && (
+                  <div className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[9px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 ring-2 ring-white dark:ring-[#1E1E22]">
+                    +{branchStaff.length - 4}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="text-[10px] italic text-slate-400">Kosong</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Drop Zone Visual Hint */}
+      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-[#2A2A30] flex items-center justify-between text-[10px] text-slate-400">
+        <span className="flex items-center gap-1">
+          <ArrowRightLeft
+            className={"w-3 h-3 " + (isOver ? "text-primary animate-pulse" : "text-slate-400")}
+          />
+          <span className={isOver ? "font-bold text-primary" : ""}>
+            {isOver ? "Lepas untuk pindahkan staf" : "Drop staf di sini"}
+          </span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function BusinessExpandableCard({
   business,
   isFrameless = true,
@@ -164,6 +338,9 @@ export function BusinessExpandableCard({
   const [hasMfg, setHasMfg] = useState(business.has_manufacturing);
   const [hasHub, setHasHub] = useState(business.has_logistics_hub);
   const [hasEod, setHasEod] = useState(business.has_eod_usage);
+  const [hasMultiOutlets, setHasMultiOutlets] = useState(business.has_multi_outlets ?? false);
+  const [hideCentralStock, setHideCentralStock] = useState(business.hide_central_stock_from_branches ?? false);
+  const [allowCrossBranch, setAllowCrossBranch] = useState(business.allow_cross_branch_stock_view ?? false);
 
   const handleOpenEditProfile = () => {
     setBizProfileName(currentBiz.name);
@@ -175,6 +352,9 @@ export function BusinessExpandableCard({
     setHasMfg(currentBiz.has_manufacturing);
     setHasHub(currentBiz.has_logistics_hub);
     setHasEod(currentBiz.has_eod_usage);
+    setHasMultiOutlets(currentBiz.has_multi_outlets ?? false);
+    setHideCentralStock(currentBiz.hide_central_stock_from_branches ?? false);
+    setAllowCrossBranch(currentBiz.allow_cross_branch_stock_view ?? false);
     setActiveDrawer("edit_profile");
   };
 
@@ -201,6 +381,9 @@ export function BusinessExpandableCard({
       has_manufacturing: hasMfg,
       has_logistics_hub: hasHub,
       has_eod_usage: hasEod,
+      has_multi_outlets: hasMultiOutlets,
+      hide_central_stock_from_branches: hideCentralStock,
+      allow_cross_branch_stock_view: allowCrossBranch,
     };
 
     const fullPayload = { ...profilePayload, ...capPayload };
@@ -238,6 +421,7 @@ export function BusinessExpandableCard({
     setEditOutletAddress(outlet.address || "");
     setEditOutletPhone(outlet.phone || "");
     setEditOutletReceiptFooter(outlet.receipt_footer || "");
+    setEditOutletIsMain(!!outlet.is_main);
     setActiveDrawer("edit_outlet");
   };
 
@@ -257,10 +441,20 @@ export function BusinessExpandableCard({
       address: editOutletAddress.trim() || undefined,
       phone: editOutletPhone.trim() || undefined,
       receipt_footer: editOutletReceiptFooter.trim() || undefined,
+      is_main: editOutletIsMain,
     };
 
     setOutlets((prev) =>
-      prev.map((o) => (o.id === targetOutletId ? { ...o, ...payload } : o))
+      prev.map((o) => {
+        if (o.id === targetOutletId) {
+          return { ...o, ...payload };
+        }
+        // If this outlet is set to main, others become non-main
+        if (editOutletIsMain) {
+          return { ...o, is_main: false };
+        }
+        return o;
+      })
     );
 
     toast.promise(
@@ -300,11 +494,13 @@ export function BusinessExpandableCard({
   const [editOutletAddress, setEditOutletAddress] = useState("");
   const [editOutletPhone, setEditOutletPhone] = useState("");
   const [editOutletReceiptFooter, setEditOutletReceiptFooter] = useState("");
+  const [editOutletIsMain, setEditOutletIsMain] = useState(false);
   const [submittingEditOutlet, setSubmittingEditOutlet] = useState(false);
 
   // Add Outlet Form
   const [outletName, setOutletName] = useState("");
   const [outletAddress, setOutletAddress] = useState("");
+  const [outletIsMain, setOutletIsMain] = useState(false);
   const [submittingOutlet, setSubmittingOutlet] = useState(false);
 
   // Add / Edit Staff Form
@@ -322,9 +518,18 @@ export function BusinessExpandableCard({
   const [newPin, setNewPin] = useState("");
   const [submittingPin, setSubmittingPin] = useState(false);
 
-  // Drag and Drop Placement State
-  const [draggedStaffId, setDraggedStaffId] = useState<string | null>(null);
-  const [dragOverOutletId, setDragOverOutletId] = useState<string | null>(null);
+  // Transfer with Delegation Confirmation Modal
+  const [delegationModal, setDelegationModal] = useState<{
+    isOpen: boolean;
+    staff: StaffItem | null;
+    targetOutlet: OutletItem | null;
+    selectedRole: "staff" | "manager";
+  }>({
+    isOpen: false,
+    staff: null,
+    targetOutlet: null,
+    selectedRole: "staff",
+  });
 
   const isGmail = (val: string) => val.trim().toLowerCase().endsWith("@gmail.com");
 
@@ -334,7 +539,18 @@ export function BusinessExpandableCard({
     setHasMfg(business.has_manufacturing);
     setHasHub(business.has_logistics_hub);
     setHasEod(business.has_eod_usage);
-  }, [business.has_pos, business.has_manufacturing, business.has_logistics_hub, business.has_eod_usage]);
+    setHasMultiOutlets(business.has_multi_outlets ?? false);
+    setHideCentralStock(business.hide_central_stock_from_branches ?? false);
+    setAllowCrossBranch(business.allow_cross_branch_stock_view ?? false);
+  }, [
+    business.has_pos,
+    business.has_manufacturing,
+    business.has_logistics_hub,
+    business.has_eod_usage,
+    business.has_multi_outlets,
+    business.hide_central_stock_from_branches,
+    business.allow_cross_branch_stock_view,
+  ]);
 
   // Load detailed sub-entities (with silent sync support to prevent jarring UI re-render)
   const loadSubDetails = async (isInitial = false) => {
@@ -375,6 +591,7 @@ export function BusinessExpandableCard({
     const promise = api.post("/organization/outlets?business_id=" + business.id, {
       name: outletName.trim(),
       address: outletAddress.trim() || undefined,
+      is_main: outletIsMain,
     });
 
     toast.promise(promise, {
@@ -383,6 +600,7 @@ export function BusinessExpandableCard({
         setSubmittingOutlet(false);
         setOutletName("");
         setOutletAddress("");
+        setOutletIsMain(false);
         loadSubDetails(false);
         onBusinessUpdated({ outlet_count: (currentBiz.outlet_count || 0) + 1 });
         return t.orgCreateBranchSuccess || "Cabang baru berhasil didaftarkan!";
@@ -439,6 +657,27 @@ export function BusinessExpandableCard({
     if (!staffOutletId) {
       toast.error(language === "id" ? "Pilih cabang penempatan staf" : "Please select assigned branch");
       return;
+    }
+
+    // Single active manager invariant per outlet
+    if (staffRole === "manager") {
+      const existingManager = staffList.find(
+        (s) =>
+          s.outlet_id === staffOutletId &&
+          s.role === "manager" &&
+          s.status === "active" &&
+          s.id !== editingStaff?.id &&
+          s.user_id !== editingStaff?.user_id
+      );
+      if (existingManager) {
+        const outletObj = outlets.find((o) => o.id === staffOutletId);
+        toast.error(
+          language === "id"
+            ? `Cabang ${outletObj?.name || ""} sudah memiliki 1 Manager aktif (${existingManager.name}). 1 Cabang hanya boleh memiliki 1 Manager.`
+            : `Branch ${outletObj?.name || ""} already has an active Manager (${existingManager.name}). Only 1 Manager allowed per branch.`
+        );
+        return;
+      }
     }
 
     if (!editingStaff) {
@@ -589,50 +828,49 @@ export function BusinessExpandableCard({
   };
 
   // ════════════════════════════════════════════════════════════════
-  // DRAG AND DROP REASSIGNMENT LOGIC
+  // DRAG AND DROP REASSIGNMENT LOGIC (WITH DELEGATION PROMOTION)
   // ════════════════════════════════════════════════════════════════
-  const handleDragStart = (e: React.DragEvent, staffId: string) => {
-    e.dataTransfer.setData("text/plain", staffId);
-    setDraggedStaffId(staffId);
-  };
-
-  const handleDragOver = (e: React.DragEvent, outletId: string) => {
-    e.preventDefault();
-    setDragOverOutletId(outletId);
-  };
-
-  const handleDragLeave = () => {
-    setDragOverOutletId(null);
-  };
-
-  const handleDropStaffOnOutlet = async (e: React.DragEvent, targetOutlet: OutletItem) => {
-    e.preventDefault();
-    const staffId = e.dataTransfer.getData("text/plain") || draggedStaffId;
-    setDraggedStaffId(null);
-    setDragOverOutletId(null);
-
-    if (!staffId) return;
-    const staff = staffList.find((s) => s.id === staffId);
-    if (!staff || staff.outlet_id === targetOutlet.id) return;
-
+  const executeTransferStaff = async (
+    staff: StaffItem,
+    targetOutlet: OutletItem,
+    newRole: string
+  ) => {
     const previousOutletId = staff.outlet_id;
     const previousOutletName = staff.outlet_name;
+    const previousRole = staff.role;
 
+    // Optimistic UI update
     setStaffList((prev) =>
       prev.map((s) =>
-        s.id === staffId
-          ? { ...s, outlet_id: targetOutlet.id, outlet_name: targetOutlet.name }
+        s.id === staff.id
+          ? {
+              ...s,
+              outlet_id: targetOutlet.id,
+              outlet_name: targetOutlet.name,
+              role: newRole,
+            }
           : s
       )
     );
 
-    const promise = api.put("/organization/staff/" + staff.id + "?business_id=" + business.id, {
-      outlet_id: targetOutlet.id,
-    });
+    const promise = api.put(
+      "/organization/staff/" + staff.id + "?business_id=" + business.id,
+      {
+        outlet_id: targetOutlet.id,
+        role: newRole,
+        can_view_cost: newRole === "manager",
+      }
+    );
 
     toast.promise(promise, {
       loading: language === "id" ? "Memindahkan penempatan staf..." : "Reassigning staff...",
       success: () => {
+        loadSubDetails(false); // Silently sync branch counters and stack
+        if (newRole === "manager" && previousRole !== "manager") {
+          return language === "id"
+            ? `${staff.name} berhasil dipindahkan dan diangkat sebagai Manager di ${targetOutlet.name}!`
+            : `${staff.name} promoted to Manager at ${targetOutlet.name}!`;
+        }
         return (
           (t.orgMoveStaffSuccess || "Staf berhasil dipindahkan ke cabang") + " " + targetOutlet.name
         );
@@ -640,8 +878,13 @@ export function BusinessExpandableCard({
       error: (err: any) => {
         setStaffList((prev) =>
           prev.map((s) =>
-            s.id === staffId
-              ? { ...s, outlet_id: previousOutletId, outlet_name: previousOutletName }
+            s.id === staff.id
+              ? {
+                  ...s,
+                  outlet_id: previousOutletId,
+                  outlet_name: previousOutletName,
+                  role: previousRole,
+                }
               : s
           )
         );
@@ -651,6 +894,52 @@ export function BusinessExpandableCard({
         );
       },
     });
+  };
+
+  const handleDropStaffOnOutlet = async (staffId: string, targetOutlet: OutletItem) => {
+    if (!staffId) return;
+    const staff = staffList.find((s) => s.id === staffId || s.user_id === staffId);
+    if (!staff || staff.outlet_id === targetOutlet.id) return;
+
+    // Single active manager check on target outlet
+    const existingManager = staffList.find(
+      (s) =>
+        s.outlet_id === targetOutlet.id &&
+        s.role === "manager" &&
+        s.status === "active" &&
+        s.id !== staff.id &&
+        s.user_id !== staff.user_id
+    );
+
+    // Kasus 1: Staf yang dipindahkan adalah Manager
+    if (staff.role === "manager" && staff.status === "active") {
+      if (existingManager) {
+        toast.error(
+          language === "id"
+            ? `Cabang ${targetOutlet.name} sudah memiliki Manager aktif (${existingManager.name}). 1 Cabang hanya boleh memiliki 1 Manager.`
+            : `Branch ${targetOutlet.name} already has an active Manager (${existingManager.name}). Only 1 Manager allowed per branch.`
+        );
+        return;
+      }
+      // Pindahkan langsung sebagai manager di cabang baru
+      executeTransferStaff(staff, targetOutlet, "manager");
+      return;
+    }
+
+    // Kasus 2: Staf yang dipindahkan adalah Kasir/Staff biasa, dan target cabang BELUM MEMILIKI MANAGER
+    if (!existingManager) {
+      // Buka dialog delegasi promosi: tanyakan apakah tetap sebagai kasir atau diangkat jadi Manager
+      setDelegationModal({
+        isOpen: true,
+        staff,
+        targetOutlet,
+        selectedRole: "staff",
+      });
+      return;
+    }
+
+    // Kasus 3: Target cabang SUDAH memiliki manager dan staf yang dipindah adalah staf biasa
+    executeTransferStaff(staff, targetOutlet, staff.role);
   };
 
   const [staffSearchQuery, setStaffSearchQuery] = useState("");
@@ -675,7 +964,10 @@ export function BusinessExpandableCard({
       renderCell: (s) => (
         <div
           draggable
-          onDragStart={(e) => handleDragStart(e, s.id)}
+          onDragStart={(e) => {
+            e.dataTransfer.setData("text/plain", s.id);
+            e.dataTransfer.effectAllowed = "move";
+          }}
           title={language === "id" ? "Tarik ke kotak cabang di atas untuk memindahkan penempatan" : "Drag to branch card above to reassign"}
           className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 inline-flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
         >
@@ -689,7 +981,10 @@ export function BusinessExpandableCard({
       renderCell: (s) => (
         <div
           draggable
-          onDragStart={(e) => handleDragStart(e, s.id)}
+          onDragStart={(e) => {
+            e.dataTransfer.setData("text/plain", s.id);
+            e.dataTransfer.effectAllowed = "move";
+          }}
           className="flex items-center gap-3 cursor-grab active:cursor-grabbing"
         >
           <div className={"w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0 shadow-xs " + getAvatarBg(s.name)}>
@@ -928,7 +1223,7 @@ export function BusinessExpandableCard({
         </div>
 
         {/* Read-Only Status Badges Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className={"p-3.5 rounded-2xl border flex items-center justify-between transition-all " + (
             business.has_pos
               ? "bg-white dark:bg-[#1E1E22] border-emerald-200 dark:border-emerald-800/40 shadow-xs"
@@ -992,153 +1287,110 @@ export function BusinessExpandableCard({
               {business.has_eod_usage ? "Aktif" : "Mati"}
             </Badge>
           </div>
+
+          <div className={"p-3.5 rounded-2xl border flex items-center justify-between transition-all " + (
+            business.has_multi_outlets
+              ? "bg-white dark:bg-[#1E1E22] border-teal-200 dark:border-teal-800/40 shadow-xs"
+              : "bg-slate-100/60 dark:bg-[#18181B] border-dashed border-slate-200 dark:border-slate-800 opacity-60"
+          )}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={"w-8 h-8 rounded-xl flex items-center justify-center shrink-0 " + (business.has_multi_outlets ? "bg-teal-500/10 text-teal-600 dark:text-teal-400" : "bg-slate-200 dark:bg-slate-800 text-slate-400")}>
+                <Building className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">Multi-Cabang</span>
+            </div>
+            <Badge variant={business.has_multi_outlets ? "default" : "secondary"} className={"text-[9px] font-bold rounded-full " + (business.has_multi_outlets ? "bg-teal-600 text-white" : "")}>
+              {business.has_multi_outlets ? "Multi" : "Single"}
+            </Badge>
+          </div>
         </div>
       </div>
 
       {/* ── SECTION 2: PHYSICAL BRANCHES & DROP ZONES ── */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-blue-500" />
-            <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              {language === "id" ? "2. Cabang & Penempatan Staf" : "2. Branches & Assigned Staff"} ({outlets.length})
-            </h4>
-          </div>
-          <Button
-            onClick={() => {
-              setOutletName("");
-              setOutletAddress("");
-              setActiveDrawer("add_outlet");
-            }}
-            className="rounded-full bg-[#E2FF66] hover:bg-[#D5F54E] text-slate-900 font-bold text-xs h-8 px-3.5 gap-1.5 shadow-sm cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{t.orgAddBranch || "Tambah Cabang"}</span>
-          </Button>
-        </div>
-
-        {loadingDetails ? (
-          <div className="p-6 text-center">
-            <Loader2 className="w-5 h-5 animate-spin text-primary mx-auto mb-1" />
-            <p className="text-xs text-slate-400">Memuat cabang & profil staf...</p>
-          </div>
-        ) : outlets.length === 0 ? (
-          <div className="p-5 text-center rounded-2xl bg-white dark:bg-[#1E1E22] border border-slate-200/80 dark:border-[#2E2E34]">
-            <p className="text-xs text-slate-500">{t.orgNoBranches || "Belum ada cabang terdaftar."}</p>
+        {business.has_multi_outlets === false ? (
+          /* Single-Outlet Streamlined Card */
+          <div className="p-5 rounded-2xl bg-slate-50/80 dark:bg-white/5 border border-slate-200/80 dark:border-[#2E2E34] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                <Building className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h5 className="font-extrabold text-xs text-slate-900 dark:text-white">
+                    {language === "id" ? "2. Mode Single-Outlet Aktif" : "2. Single-Outlet Mode Active"}
+                  </h5>
+                  <Badge variant="outline" className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/40 text-[9px] font-bold">
+                    {language === "id" ? "Bypass Multi-Cabang" : "Multi-Branch Bypassed"}
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-xl">
+                  {language === "id"
+                    ? "Bisnis ini beroperasi dengan 1 lokasi mandiri utama. Seluruh alur kasir, mutasi stok, dan laporan otomatis terikat langsung ke outlet ini tanpa pemisahan antar-cabang."
+                    : "This business operates as a single standalone location. All sales, inventory ledgers, and reports bind directly to this primary outlet without inter-branch segregation."}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                onClick={handleOpenAddStaff}
+                className="rounded-full bg-[#E2FF66] hover:bg-[#D5F54E] text-slate-900 font-bold text-xs h-8 px-3.5 gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t.orgAddStaff || "Tambah Staf"}</span>
+              </Button>
+            </div>
           </div>
         ) : (
+          /* Multi-Outlet Interactive Branches & Drop Zones */
+          <>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-blue-500" />
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  {language === "id" ? "2. Cabang & Penempatan Staf" : "2. Branches & Assigned Staff"} ({outlets.length})
+                </h4>
+              </div>
+              <Button
+                onClick={() => {
+                  setOutletName("");
+                  setOutletAddress("");
+                  setActiveDrawer("add_outlet");
+                }}
+                className="rounded-full bg-[#E2FF66] hover:bg-[#D5F54E] text-slate-900 font-bold text-xs h-8 px-3.5 gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t.orgAddBranch || "Tambah Cabang"}</span>
+              </Button>
+            </div>
+
+            {loadingDetails ? (
+              <div className="p-6 text-center">
+                <Loader2 className="w-5 h-5 animate-spin text-primary mx-auto mb-1" />
+                <p className="text-xs text-slate-400">Memuat cabang & profil staf...</p>
+              </div>
+            ) : outlets.length === 0 ? (
+              <div className="p-5 text-center rounded-2xl bg-white dark:bg-[#1E1E22] border border-slate-200/80 dark:border-[#2E2E34]">
+                <p className="text-xs text-slate-500">{t.orgNoBranches || "Belum ada cabang terdaftar."}</p>
+              </div>
+            ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
             {outlets.map((o) => {
               const branchStaff = staffList.filter((s) => s.outlet_id === o.id);
-              const isDropTarget = dragOverOutletId === o.id;
-
               return (
-                <div
+                <BranchDropTargetCard
                   key={o.id}
-                  onDragOver={(e) => handleDragOver(e, o.id)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDropStaffOnOutlet(e, o)}
-                  className={"p-4 rounded-2xl border transition-all flex flex-col justify-between " + (
-                    isDropTarget
-                      ? "bg-primary/10 border-primary shadow-md scale-[1.02] ring-2 ring-primary/30"
-                      : "bg-white dark:bg-[#1E1E22] border-slate-200/80 dark:border-[#2E2E34] hover:border-slate-300 dark:hover:border-slate-700 shadow-xs"
-                  )}
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500 shrink-0">
-                          <BranchIcon className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <h5 className="font-extrabold text-xs text-slate-900 dark:text-white leading-tight truncate">
-                            {o.name}
-                          </h5>
-                          <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                            {o.address || "Lokasi operasional"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Badge variant="outline" className="text-[9px] font-mono px-2 py-0.5 rounded-full shrink-0">
-                          {branchStaff.length} Staf
-                        </Badge>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEditOutlet(o);
-                          }}
-                          className="w-6 h-6 rounded-full inline-flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer"
-                          title={language === "id" ? "Edit Data Cabang" : "Edit Branch"}
-                        >
-                          <Edit3 className="w-3 h-3 text-slate-500" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Branch Phone & Receipt Footer Badges */}
-                    {(o.phone || o.receipt_footer) && (
-                      <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-[#2A2A30]/60 space-y-1">
-                        {o.phone && (
-                          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
-                            <Phone className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
-                            <span className="truncate">{o.phone}</span>
-                          </div>
-                        )}
-                        {o.receipt_footer && (
-                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 italic">
-                            <Receipt className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
-                            <span className="truncate">"{o.receipt_footer}"</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* OVERLAPPING AVATAR STACK */}
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-[#2A2A30]/80">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          Tim Cabang:
-                        </span>
-
-                        {branchStaff.length > 0 ? (
-                          <div className="flex items-center -space-x-2 overflow-hidden py-0.5">
-                            {branchStaff.slice(0, 4).map((staffMember) => (
-                              <div
-                                key={staffMember.id}
-                                title={staffMember.name + " (" + staffMember.role + ")"}
-                                className={"inline-flex items-center justify-center w-6 h-6 rounded-full text-[9px] font-black ring-2 ring-white dark:ring-[#1E1E22] shadow-xs cursor-pointer " + getAvatarBg(staffMember.name)}
-                              >
-                                {getInitials(staffMember.name)}
-                              </div>
-                            ))}
-                            {branchStaff.length > 4 && (
-                              <div className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[9px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 ring-2 ring-white dark:ring-[#1E1E22]">
-                                +{branchStaff.length - 4}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-[10px] italic text-slate-400">Kosong</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Drop Zone Visual Hint */}
-                  <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-[#2A2A30] flex items-center justify-between text-[10px] text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <ArrowRightLeft className={"w-3 h-3 " + (isDropTarget ? "text-primary animate-pulse" : "text-slate-400")} />
-                      <span className={isDropTarget ? "font-bold text-primary" : ""}>
-                        {isDropTarget ? "Lepas untuk pindahkan staf" : "Drop staf di sini"}
-                      </span>
-                    </span>
-                  </div>
-                </div>
+                  outlet={o}
+                  branchStaff={branchStaff}
+                  language={language}
+                  onEditOutlet={handleOpenEditOutlet}
+                  onDropStaff={handleDropStaffOnOutlet}
+                />
               );
             })}
           </div>
+        )}
+          </>
         )}
       </div>
 
@@ -1188,7 +1440,10 @@ export function BusinessExpandableCard({
           renderMobileItem={(s) => (
             <div
               draggable
-              onDragStart={(e) => handleDragStart(e, s.id)}
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/plain", s.id);
+                e.dataTransfer.effectAllowed = "move";
+              }}
               className="p-4 bg-white dark:bg-[#1E1E22] rounded-2xl border border-slate-200/80 dark:border-[#2E2E34] space-y-3 shadow-xs"
             >
               <div className="flex items-start justify-between gap-2">
@@ -1281,6 +1536,25 @@ export function BusinessExpandableCard({
                     onChange={(e) => setOutletAddress(e.target.value)}
                     placeholder="Contoh: Jl. Sudirman No. 12"
                     className="h-10 rounded-xl text-xs"
+                  />
+                </div>
+
+                {/* Saklar Cabang Utama */}
+                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-[#24242A] border border-slate-200/80 dark:border-[#2E2E34]">
+                  <div className="space-y-0.5 pr-2">
+                    <Label className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                      <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span>{language === "id" ? "Jadikan Cabang Utama (Central Hub)" : "Set as Main Branch / Hub"}</span>
+                    </Label>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {language === "id"
+                        ? "Menjadikan cabang ini pusat logistik holding & monitoring stok multi-cabang."
+                        : "Designate this outlet as central distribution hub."}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={outletIsMain}
+                    onCheckedChange={setOutletIsMain}
                   />
                 </div>
               </div>
@@ -1473,6 +1747,34 @@ export function BusinessExpandableCard({
                     })}
                   </div>
                 </div>
+
+                {/* SINGLE ACTIVE MANAGER WARNING BANNER */}
+                {staffRole === "manager" && staffOutletId && (() => {
+                  const existingMgr = staffList.find(
+                    (s) =>
+                      s.outlet_id === staffOutletId &&
+                      s.role === "manager" &&
+                      s.status === "active" &&
+                      s.id !== editingStaff?.id &&
+                      s.user_id !== editingStaff?.user_id
+                  );
+                  if (!existingMgr) return null;
+                  return (
+                    <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2.5 animate-in fade-in">
+                      <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <p className="font-bold">
+                          {language === "id" ? "Cabang Sudah Memiliki Manager" : "Branch Already Has a Manager"}
+                        </p>
+                        <p className="text-[11px] opacity-90 leading-relaxed">
+                          {language === "id"
+                            ? `Cabang ini sudah memiliki 1 Manager aktif (${existingMgr.name}). Satu cabang hanya boleh dipimpin oleh 1 Manager aktif. Silakan pilih role lain atau pindahkan posisi manager sebelumnya terlebih dahulu.`
+                            : `This branch already has an active Manager (${existingMgr.name}). Each branch can only have 1 active Manager. Please select another role or reassign the current manager first.`}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* PIN KASIR */}
                 <div className="space-y-2 pt-1">
@@ -1780,6 +2082,111 @@ export function BusinessExpandableCard({
                         className="w-4 h-4 rounded text-primary accent-[#E2FF66] cursor-pointer shrink-0"
                       />
                     </div>
+
+                    <div className="p-3 rounded-2xl border border-slate-200/80 dark:border-[#2E2E34] bg-slate-50/50 dark:bg-white/[0.02] flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-teal-500/10 flex items-center justify-center text-teal-600 shrink-0">
+                          <Building className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <h6 className="text-xs font-bold text-slate-900 dark:text-white">Multi-Cabang & Distribusi</h6>
+                          <p className="text-[10px] text-slate-400 leading-tight">Mendukung multi-lokasi cabang & transfer surat jalan.</p>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={hasMultiOutlets}
+                        onChange={(e) => setHasMultiOutlets(e.target.checked)}
+                        className="w-4 h-4 rounded text-primary accent-[#E2FF66] cursor-pointer shrink-0"
+                      />
+                    </div>
+
+                    {/* TATA KELOLA VISIBILITAS STOK (THE LEAN ODOO WAY) */}
+                    <div className="p-3 rounded-2xl border border-slate-200/80 dark:border-[#2E2E34] bg-slate-50/50 dark:bg-white/[0.02] flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-600 shrink-0">
+                          <GitBranch className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <h6 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                              {t.orgFlagCrossBranchStock || "Visibilitas Stok Lintas Cabang"}
+                            </h6>
+                            <Popover>
+                              <PopoverTrigger
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-0.5"
+                                title="Pelajari Selengkapnya"
+                              >
+                                <Info className="w-3.5 h-3.5" />
+                              </PopoverTrigger>
+                              <PopoverContent className="w-72 p-3 text-xs bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#2E2E34] rounded-2xl shadow-xl space-y-1.5 z-50">
+                                <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                  <GitBranch className="w-3.5 h-3.5 text-purple-500" />
+                                  <span>{t.orgFlagCrossBranchStock || "Visibilitas Stok Lintas Cabang"}</span>
+                                </p>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                                  {language === "id"
+                                    ? "Bila aktif, kasir dan staf cabang diizinkan memeriksa sisa stok outlet lain dari menu matriks/katalog. Bila nonaktif, setiap cabang terisolasi hanya dapat melihat stok cabangnya sendiri."
+                                    : "When active, cashiers and branch staff can view stock levels at other branches. When inactive, staff only see their assigned branch inventory."}
+                                </p>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                          <p className="text-[10px] text-slate-400 leading-tight">
+                            {t.orgFlagCrossBranchStockDesc || "Izinkan staf cabang memeriksa stok outlet lain."}
+                          </p>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={allowCrossBranch}
+                        onChange={(e) => setAllowCrossBranch(e.target.checked)}
+                        className="w-4 h-4 rounded text-primary accent-[#E2FF66] cursor-pointer shrink-0"
+                      />
+                    </div>
+
+                    <div className="p-3 rounded-2xl border border-slate-200/80 dark:border-[#2E2E34] bg-slate-50/50 dark:bg-white/[0.02] flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-600 shrink-0">
+                          <Store className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <h6 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                              {language === "id" ? "Blind Requisition (Sembunyikan Stok Pusat)" : "Blind Requisition (Hide Central Stock)"}
+                            </h6>
+                            <Popover>
+                              <PopoverTrigger
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-0.5"
+                                title="Pelajari Selengkapnya"
+                              >
+                                <Info className="w-3.5 h-3.5" />
+                              </PopoverTrigger>
+                              <PopoverContent className="w-72 p-3 text-xs bg-white dark:bg-[#1E1E22] border-slate-200 dark:border-[#2E2E34] rounded-2xl shadow-xl space-y-1.5 z-50">
+                                <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                  <Store className="w-3.5 h-3.5 text-amber-500" />
+                                  <span>{language === "id" ? "Blind Requisition" : "Blind Requisition"}</span>
+                                </p>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                                  {language === "id"
+                                    ? "Menyembunyikan angka kuantitas stok gudang pusat saat cabang mengajukan permintaan pasokan, sehingga cabang mengajukan kebutuhan riil tanpa spekulasi ketersediaan gudang."
+                                    : "Hides central warehouse quantities from branches during requisition, encouraging branches to submit their genuine demand."}
+                                </p>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                          <p className="text-[10px] text-slate-400 leading-tight">
+                            {language === "id" ? "Cabang meminta barang tanpa melihat saldo gudang pusat." : "Branches order based on real needs without viewing central stock."}
+                          </p>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={hideCentralStock}
+                        onChange={(e) => setHideCentralStock(e.target.checked)}
+                        className="w-4 h-4 rounded text-primary accent-[#E2FF66] cursor-pointer shrink-0"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1882,6 +2289,25 @@ export function BusinessExpandableCard({
                     className="h-10 rounded-xl text-xs"
                   />
                 </div>
+
+                {/* Saklar Cabang Utama */}
+                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-[#24242A] border border-slate-200/80 dark:border-[#2E2E34]">
+                  <div className="space-y-0.5 pr-2">
+                    <Label className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                      <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span>{language === "id" ? "Jadikan Cabang Utama (Central Hub)" : "Set as Main Branch / Hub"}</span>
+                    </Label>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {language === "id"
+                        ? "Menjadikan cabang ini pusat logistik holding & monitoring stok multi-cabang."
+                        : "Designate this outlet as central distribution hub."}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={editOutletIsMain}
+                    onCheckedChange={setEditOutletIsMain}
+                  />
+                </div>
               </div>
             </div>
 
@@ -1906,6 +2332,147 @@ export function BusinessExpandableCard({
           </form>
         </DrawerContent>
       </Drawer>
+
+      {/* ════════════════════════════════════════════════════════════════
+          DIALOG: TRANSFER & DELEGATION CONFIRMATION MODAL
+      ════════════════════════════════════════════════════════════════ */}
+      <Dialog
+        open={delegationModal.isOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDelegationModal((prev) => ({ ...prev, isOpen: false }));
+          }
+        }}
+      >
+        <DialogContent className="max-w-md p-6 rounded-3xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Crown className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <DialogTitle className="text-base font-black text-slate-900 dark:text-white">
+                  {language === "id" ? "Penempatan & Delegasi Peran Cabang" : "Branch Reassignment & Role Delegation"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-400 mt-0.5">
+                  {language === "id"
+                    ? `Pindahkan ${delegationModal.staff?.name} ke cabang ${delegationModal.targetOutlet?.name}.`
+                    : `Transfer ${delegationModal.staff?.name} to branch ${delegationModal.targetOutlet?.name}.`}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3.5 my-1 text-left">
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">
+                  {language === "id" ? "Cabang Belum Memiliki Manager" : "Branch Currently Has No Manager"}
+                </p>
+                <p className="text-[11px] opacity-90 leading-relaxed mt-0.5">
+                  {language === "id"
+                    ? `Cabang ${delegationModal.targetOutlet?.name} saat ini belum memiliki Manager aktif. Anda dapat mempertahankan peran staf atau mendelegasikan wewenang Manager kepada ${delegationModal.staff?.name}.`
+                    : `Branch ${delegationModal.targetOutlet?.name} does not have an active Manager. You can keep them as staff or promote them to Manager.`}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                {language === "id" ? "Pilih Peran Staf di Cabang Baru:" : "Select Role in New Branch:"}
+              </Label>
+
+              {/* Opsi 1: Tetap sebagai Staff / Kasir */}
+              <button
+                type="button"
+                onClick={() => setDelegationModal((prev) => ({ ...prev, selectedRole: "staff" }))}
+                className={"w-full p-3.5 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer " + (
+                  delegationModal.selectedRole === "staff"
+                    ? "bg-primary/10 border-primary ring-1 ring-primary shadow-xs"
+                    : "bg-white dark:bg-[#1E1E22] border-slate-200/80 dark:border-[#2E2E34] hover:bg-slate-50 dark:hover:bg-white/[0.02]"
+                )}
+              >
+                <div className={"w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 " + (delegationModal.selectedRole === "staff" ? "bg-primary text-slate-900" : "bg-slate-100 dark:bg-[#2A2A30] text-slate-500")}>
+                  <ShoppingCart className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-xs text-slate-900 dark:text-white">
+                      {language === "id" ? "Tetap sebagai Staff / Kasir" : "Remain as Staff / Cashier"}
+                    </p>
+                    <span className={"w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 " + (delegationModal.selectedRole === "staff" ? "border-primary bg-primary" : "border-slate-300")}>
+                      {delegationModal.selectedRole === "staff" && <span className="w-1.5 h-1.5 rounded-full bg-slate-900" />}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                    {language === "id"
+                      ? "Staf melayani transaksi kasir biasa. Otorisasi void PIN dan persetujuan opname cabang diselia langsung oleh Owner."
+                      : "Staff performs cashier duties. Void authorization and opname approvals are handled directly by Owner."}
+                  </p>
+                </div>
+              </button>
+
+              {/* Opsi 2: Angkat Menjadi Manager */}
+              <button
+                type="button"
+                onClick={() => setDelegationModal((prev) => ({ ...prev, selectedRole: "manager" }))}
+                className={"w-full p-3.5 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer " + (
+                  delegationModal.selectedRole === "manager"
+                    ? "bg-primary/10 border-primary ring-1 ring-primary shadow-xs"
+                    : "bg-white dark:bg-[#1E1E22] border-slate-200/80 dark:border-[#2E2E34] hover:bg-slate-50 dark:hover:bg-white/[0.02]"
+                )}
+              >
+                <div className={"w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 " + (delegationModal.selectedRole === "manager" ? "bg-primary text-slate-900" : "bg-slate-100 dark:bg-[#2A2A30] text-slate-500")}>
+                  <UserCheck className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-xs text-slate-900 dark:text-white">
+                      {language === "id" ? "Promosikan Menjadi Manager Cabang" : "Promote to Branch Manager"}
+                    </p>
+                    <span className={"w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 " + (delegationModal.selectedRole === "manager" ? "border-primary bg-primary" : "border-slate-300")}>
+                      {delegationModal.selectedRole === "manager" && <span className="w-1.5 h-1.5 rounded-full bg-slate-900" />}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                    {language === "id"
+                      ? `Delegasikan wewenang penuh sebagai pimpinan cabang ${delegationModal.targetOutlet?.name} (PIN Otorisasi Void Kasir & Persetujuan Opname).`
+                      : `Delegate full branch leadership authority (PIN void authorization & opname approval).`}
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-row gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDelegationModal((prev) => ({ ...prev, isOpen: false }))}
+              className="flex-1 rounded-full text-xs h-10 cursor-pointer"
+            >
+              {t.cancel || "Batal"}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (delegationModal.staff && delegationModal.targetOutlet) {
+                  const staffObj = delegationModal.staff;
+                  const targetObj = delegationModal.targetOutlet;
+                  const roleToApply = delegationModal.selectedRole;
+                  setDelegationModal((prev) => ({ ...prev, isOpen: false }));
+                  executeTransferStaff(staffObj, targetObj, roleToApply);
+                }
+              }}
+              className="flex-1 rounded-full bg-[#E2FF66] hover:bg-[#D5F54E] text-slate-900 font-bold text-xs h-10 gap-1.5 cursor-pointer"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{language === "id" ? "Konfirmasi & Pindahkan" : "Confirm Transfer"}</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

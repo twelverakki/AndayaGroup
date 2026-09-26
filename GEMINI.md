@@ -91,6 +91,10 @@ Gunakan berkas spesifikasi di folder [docs/](file:///D:/laragon/www/Andaya-Group
     * Gunakan pendekatan **Optimistic Update** pada state lokal komponen (seperti `useState` atau mutate store) seketika saat tombol ditekan bersamaan dengan `toast.promise()`.
     * Data yang di-update di server cukup disinkronkan melalui fetching API granular pada sub-komponen terkait (`loadSubDetails()` atau callback `onUpdated(payload)`), bukan memanggil fungsi fetch master level atas yang memicu loading spinner satu halaman penuh.
 
+17. **Header Page DILARANG Dalam Bentuk Card (Frameless Page Header Only)**:
+    * Header halaman (judul halaman, deskripsi, icon modul, dan action button utama level atas) **DILARANG KERAS dibungkus di dalam elemen card/kotak terisolasi** (`Card`, `border rounded-3xl p-6 bg-white shadow-sm`, dll.).
+    * Header halaman WAJIB berformat **Frameless / Header Menyatu** dengan garis pembatas bawah tipis (`flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200/80 dark:border-[#2E2E34] gap-4`) langsung di atas konten utama demi estetika bersih, luas, dan konsisten.
+
 ---
 
 ## 4. Standar UI/UX & Aturan Coding Frontend
@@ -119,8 +123,9 @@ Detail lengkap aturan visual dan interaksi dikelola di [.agents/rules/general_ru
   * Bahasa Kode, Variabel, & Skema DB: **Bahasa Inggris**
 * **Pengembangan Bertahap**: Lakukan commit/PR secara granular per-slice fitur, bukan dalam satu commit raksasa di akhir fase.
 * **Sinkronisasi Skema**: Setiap penambahan tabel baru wajib disinkronkan ke dalam berkas [DATA_MODEL.md](file:///D:/laragon/www/Andaya-Group/AndayaGroup/DATA_MODEL.md) pada commit yang sama.
-* **Dev Server Port & Terminal Sesi**:
-  * **Backend Go Server** berjalan di direktori `backend` (port `8080`).
-  * **Frontend Vite Server** berjalan di direktori `frontend` (port `5173`).
-  * **PENTING**: Kedua server ini sudah dijalankan secara mandiri oleh user. **Agent dilarang keras menjalankan ulang perintah start server** (`go run main.go`, `npm run dev`) di background demi mencegah konflik port.
-  * Gunakan perintah non-blocking dan non-server untuk pengetesan, seperti `go vet ./...` atau `npx tsc --noEmit`.
+* **Prosedur Penutupan Sesi & Istirahat (Mandatory Git Sync)**:
+  * Setiap kali user menginstruksikan untuk menyudahi sesi kerja, menghentikan pekerjaan, atau menyatakan ingin istirahat (*"aku mau istirahat"*, *"selesai sesi ini"*, dll.), Agent **WAJIB** melakukan prosedur penutupan terstandar:
+    1. Memperbarui catatan serah terima di [`.agents/SESSION_NOTES.md`](file:///D:/laragon/www/Andaya-Group/.agents/SESSION_NOTES.md).
+    2. Menjalankan sinkronisasi penuh ke remote repository Git/GitHub (`git add .`, `git commit -m "..."`, dan `git push origin <branch>`).
+    3. Memastikan repositori bersih dan aman sebelum mengakhiri sesi.
+

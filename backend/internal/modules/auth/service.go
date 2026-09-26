@@ -15,12 +15,20 @@ import (
 )
 
 type Workspace struct {
-	BusinessID   *uuid.UUID          `json:"business_id,omitempty"`
-	OutletID     *uuid.UUID          `json:"outlet_id,omitempty"`
-	BusinessName string              `json:"business_name"`
-	OutletName   string              `json:"outlet_name,omitempty"`
-	Role         string              `json:"role"` // "owner", "manager", "admin_gudang", "staff"
-	BusinessType models.BusinessType `json:"business_type"`
+	BusinessID                   *uuid.UUID          `json:"business_id,omitempty"`
+	OutletID                     *uuid.UUID          `json:"outlet_id,omitempty"`
+	BusinessName                 string              `json:"business_name"`
+	OutletName                   string              `json:"outlet_name,omitempty"`
+	Role                         string              `json:"role"` // "owner", "manager", "admin_gudang", "staff", "superadmin"
+	BusinessType                 models.BusinessType `json:"business_type"`
+	IsMainOutlet                 bool                `json:"is_main_outlet"`
+	HasPOS                       bool                `json:"has_pos"`
+	HasManufacturing             bool                `json:"has_manufacturing"`
+	HasLogisticsHub              bool                `json:"has_logistics_hub"`
+	HasEODUsage                  bool                `json:"has_eod_usage"`
+	HasMultiOutlets              bool                `json:"has_multi_outlets"`
+	HideCentralStockFromBranches bool                `json:"hide_central_stock_from_branches"`
+	AllowCrossBranchStockView    bool                `json:"allow_cross_branch_stock_view"`
 }
 
 type LoginResponse struct {
@@ -48,24 +56,21 @@ func AuthenticateUser(ctx context.Context, phoneOrEmail, password, pin string) (
 		// We'll search for the active user who matches the PIN hash. Since we have to scan all, we check PINs.
 		// Note: In production, you would fetch active staff PIN hashes and verify. For simplicity in MVP, 
 		// we query users and verify. Or we can ask for phone_or_email + PIN.
-		// Let's support searching by PIN hash if bcrypt allows or by retrieving all active users with a PIN.
-		rows, err := db.Query(ctx, "SELECT id, name, phone_or_email, password_hash, pin_hash, status, created_at, updated_at FROM users WHERE pin_hash IS NOT NULL AND status = 'active'")
-		if err != nil {
-			return nil, err
+		rows, qErr := db.Query(ctx, "SELECT id, name, phone_or_email, password_hash, pin_hash, status, created_at, updated_at FROM users WHERE status = 'active'")
+		if qErr != nil {
+			return nil, qErr
 		}
 		defer rows.Close()
 
-		var found bool
+		found := false
 		for rows.Next() {
 			var u models.User
-			err = rows.Scan(&u.ID, &u.Name, &u.PhoneOrEmail, &u.PasswordHash, &u.PinHash, &u.Status, &u.CreatedAt, &u.UpdatedAt)
-			if err != nil {
-				continue
-			}
-			if u.PinHash != nil && bcrypt.CompareHashAndPassword([]byte(*u.PinHash), []byte(pin)) == nil {
-				user = u
-				found = true
-				break
+			if scanErr := rows.Scan(&u.ID, &u.Name, &u.PhoneOrEmail, &u.PasswordHash, &u.PinHash, &u.Status, &u.CreatedAt, &u.UpdatedAt); scanErr == nil {
+				if u.PinHash != nil && bcrypt.CompareHashAndPassword([]byte(*u.PinHash), []byte(pin)) == nil {
+					user = u
+					found = true
+					break
+				}
 			}
 		}
 
@@ -122,24 +127,37 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 
 	if isSuperAdmin {
 		workspaces = append(workspaces, &Workspace{
-			BusinessName: "Superadmin Control Center",
-			Role:         "superadmin",
-			BusinessType: "retail",
+			BusinessName:     "Superadmin Control Center",
+			Role:             "superadmin",
+			BusinessType:     "retail",
+			HasPOS:           true,
+			HasManufacturing: true,
+			HasLogisticsHub:  true,
+			HasEODUsage:      true,
+			HasMultiOutlets:  true,
 		})
 
 		// Fetch all businesses as owner role
-		bRows, err := db.Query(ctx, "SELECT id, name, type FROM businesses")
+		bRows, err := db.Query(ctx, "SELECT id, name, type, COALESCE(has_pos, true), COALESCE(has_manufacturing, false), COALESCE(has_logistics_hub, false), COALESCE(has_eod_usage, false), COALESCE(has_multi_outlets, false), COALESCE(hide_central_stock_from_branches, false), COALESCE(allow_cross_branch_stock_view, false) FROM businesses")
 		if err == nil {
 			for bRows.Next() {
 				var ws Workspace
 				var bID uuid.UUID
 				var bName string
 				var bType models.BusinessType
-				if err := bRows.Scan(&bID, &bName, &bType); err == nil {
+				var hasPOS, hasMfg, hasHub, hasEOD, hasMulti, hideStock, allowCrossStock bool
+				if err := bRows.Scan(&bID, &bName, &bType, &hasPOS, &hasMfg, &hasHub, &hasEOD, &hasMulti, &hideStock, &allowCrossStock); err == nil {
 					ws.BusinessID = &bID
 					ws.BusinessName = bName
 					ws.Role = "owner"
 					ws.BusinessType = bType
+					ws.HasPOS = hasPOS
+					ws.HasManufacturing = hasMfg
+					ws.HasLogisticsHub = hasHub
+					ws.HasEODUsage = hasEOD
+					ws.HasMultiOutlets = hasMulti
+					ws.HideCentralStockFromBranches = hideStock
+					ws.AllowCrossBranchStockView = allowCrossStock
 					workspaces = append(workspaces, &ws)
 				}
 			}
@@ -148,7 +166,11 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 
 		// Fetch all outlets with manager, staff, and admin_gudang roles for Superadmin impersonation
 		oRows, err := db.Query(ctx, `
-			SELECT o.id, o.name, o.business_id, b.name, b.type 
+			SELECT o.id, o.name, o.is_main, o.business_id, b.name, b.type, 
+			       COALESCE(b.has_pos, true), COALESCE(b.has_manufacturing, false), 
+			       COALESCE(b.has_logistics_hub, false), COALESCE(b.has_eod_usage, false),
+			       COALESCE(b.has_multi_outlets, false), COALESCE(b.hide_central_stock_from_branches, false),
+			       COALESCE(b.allow_cross_branch_stock_view, false)
 			FROM outlets o
 			JOIN businesses b ON o.business_id = b.id
 		`)
@@ -156,34 +178,58 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 			for oRows.Next() {
 				var oID uuid.UUID
 				var oName string
+				var isMain bool
 				var bID uuid.UUID
 				var bName string
 				var bType models.BusinessType
-				if err := oRows.Scan(&oID, &oName, &bID, &bName, &bType); err == nil {
+				var hasPOS, hasMfg, hasHub, hasEOD, hasMulti, hideStock, allowCrossStock bool
+				if err := oRows.Scan(&oID, &oName, &isMain, &bID, &bName, &bType, &hasPOS, &hasMfg, &hasHub, &hasEOD, &hasMulti, &hideStock, &allowCrossStock); err == nil {
 					workspaces = append(workspaces, &Workspace{
-						OutletID:     &oID,
-						OutletName:   oName,
-						BusinessID:   &bID,
-						BusinessName: bName,
-						Role:         "manager",
-						BusinessType: bType,
+						OutletID:                     &oID,
+						OutletName:                   oName,
+						IsMainOutlet:                 isMain,
+						BusinessID:                   &bID,
+						BusinessName:                 bName,
+						Role:                         "manager",
+						BusinessType:                 bType,
+						HasPOS:                       hasPOS,
+						HasManufacturing:             hasMfg,
+						HasLogisticsHub:              hasHub,
+						HasEODUsage:                  hasEOD,
+						HasMultiOutlets:              hasMulti,
+						HideCentralStockFromBranches: hideStock,
+						AllowCrossBranchStockView:    allowCrossStock,
 					})
 					workspaces = append(workspaces, &Workspace{
-						OutletID:     &oID,
-						OutletName:   oName,
-						BusinessID:   &bID,
-						BusinessName: bName,
-						Role:         "staff",
-						BusinessType: bType,
+						OutletID:                     &oID,
+						OutletName:                   oName,
+						BusinessID:                   &bID,
+						BusinessName:                 bName,
+						Role:                         "staff",
+						BusinessType:                 bType,
+						HasPOS:                       hasPOS,
+						HasManufacturing:             hasMfg,
+						HasLogisticsHub:              hasHub,
+						HasEODUsage:                  hasEOD,
+						HasMultiOutlets:              hasMulti,
+						HideCentralStockFromBranches: hideStock,
+						AllowCrossBranchStockView:    allowCrossStock,
 					})
-					if bType == "fnb_production" {
+					if bType == "fnb_production" || hasMfg || hasHub {
 						workspaces = append(workspaces, &Workspace{
-							OutletID:     &oID,
-							OutletName:   oName,
-							BusinessID:   &bID,
-							BusinessName: bName,
-							Role:         "admin_gudang",
-							BusinessType: bType,
+							OutletID:                     &oID,
+							OutletName:                   oName,
+							BusinessID:                   &bID,
+							BusinessName:                 bName,
+							Role:                         "admin_gudang",
+							BusinessType:                 bType,
+							HasPOS:                       hasPOS,
+							HasManufacturing:             hasMfg,
+							HasLogisticsHub:              hasHub,
+							HasEODUsage:                  hasEOD,
+							HasMultiOutlets:              hasMulti,
+							HideCentralStockFromBranches: hideStock,
+							AllowCrossBranchStockView:    allowCrossStock,
 						})
 					}
 				}
@@ -197,7 +243,12 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 
 	// 1. Fetch Owner businesses (many-to-many business_owners)
 	rows, err := db.Query(ctx, `
-		SELECT bo.business_id, bo.outlet_id, b.name, b.type, o.name
+		SELECT bo.business_id, bo.outlet_id, b.name, b.type, 
+		       COALESCE(b.has_pos, true), COALESCE(b.has_manufacturing, false), 
+		       COALESCE(b.has_logistics_hub, false), COALESCE(b.has_eod_usage, false), 
+		       COALESCE(b.has_multi_outlets, false), COALESCE(b.hide_central_stock_from_branches, false),
+		       COALESCE(b.allow_cross_branch_stock_view, false),
+		       o.name
 		FROM business_owners bo
 		LEFT JOIN businesses b ON bo.business_id = b.id
 		LEFT JOIN outlets o ON bo.outlet_id = o.id
@@ -213,8 +264,9 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 		var bName *string
 		var oName *string
 		var bType *models.BusinessType
+		var hasPOS, hasMfg, hasHub, hasEOD, hasMulti, hideStock, allowCrossStock *bool
 
-		err = rows.Scan(&ws.BusinessID, &ws.OutletID, &bName, &bType, &oName)
+		err = rows.Scan(&ws.BusinessID, &ws.OutletID, &bName, &bType, &hasPOS, &hasMfg, &hasHub, &hasEOD, &hasMulti, &hideStock, &allowCrossStock, &oName)
 		if err != nil {
 			return nil, err
 		}
@@ -229,6 +281,29 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 		if bType != nil {
 			ws.BusinessType = *bType
 		}
+		if hasPOS != nil {
+			ws.HasPOS = *hasPOS
+		} else {
+			ws.HasPOS = true
+		}
+		if hasMfg != nil {
+			ws.HasManufacturing = *hasMfg
+		}
+		if hasHub != nil {
+			ws.HasLogisticsHub = *hasHub
+		}
+		if hasEOD != nil {
+			ws.HasEODUsage = *hasEOD
+		}
+		if hasMulti != nil {
+			ws.HasMultiOutlets = *hasMulti
+		}
+		if hideStock != nil {
+			ws.HideCentralStockFromBranches = *hideStock
+		}
+		if allowCrossStock != nil {
+			ws.AllowCrossBranchStockView = *allowCrossStock
+		}
 
 		// Special case: If ownership is assigned at outlet level (e.g. Yasaka franchise)
 		if ws.BusinessID == nil && ws.OutletID != nil {
@@ -236,15 +311,28 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 			var pBusID uuid.UUID
 			var pBusName string
 			var pBusType models.BusinessType
+			var pHasPOS, pHasMfg, pHasHub, pHasEOD, pHasMulti, pHideStock, pAllowCross bool
 			err = db.QueryRow(ctx, `
-				SELECT b.id, b.name, b.type FROM outlets o 
+				SELECT b.id, b.name, b.type, 
+				       COALESCE(b.has_pos, true), COALESCE(b.has_manufacturing, false), 
+				       COALESCE(b.has_logistics_hub, false), COALESCE(b.has_eod_usage, false),
+				       COALESCE(b.has_multi_outlets, false), COALESCE(b.hide_central_stock_from_branches, false),
+				       COALESCE(b.allow_cross_branch_stock_view, false)
+				FROM outlets o 
 				JOIN businesses b ON o.business_id = b.id 
 				WHERE o.id = $1
-			`, *ws.OutletID).Scan(&pBusID, &pBusName, &pBusType)
+			`, *ws.OutletID).Scan(&pBusID, &pBusName, &pBusType, &pHasPOS, &pHasMfg, &pHasHub, &pHasEOD, &pHasMulti, &pHideStock, &pAllowCross)
 			if err == nil {
 				ws.BusinessID = &pBusID
 				ws.BusinessName = pBusName
 				ws.BusinessType = pBusType
+				ws.HasPOS = pHasPOS
+				ws.HasManufacturing = pHasMfg
+				ws.HasLogisticsHub = pHasHub
+				ws.HasEODUsage = pHasEOD
+				ws.HasMultiOutlets = pHasMulti
+				ws.HideCentralStockFromBranches = pHideStock
+				ws.AllowCrossBranchStockView = pAllowCross
 			}
 		}
 
@@ -253,7 +341,11 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 
 	// 2. Fetch Staff/Manager businesses (outlet_staff)
 	sRows, err := db.Query(ctx, `
-		SELECT os.outlet_id, os.role, o.name, b.id, b.name, b.type
+		SELECT os.outlet_id, os.role, o.name, o.is_main, b.id, b.name, b.type,
+		       COALESCE(b.has_pos, true), COALESCE(b.has_manufacturing, false), 
+		       COALESCE(b.has_logistics_hub, false), COALESCE(b.has_eod_usage, false),
+		       COALESCE(b.has_multi_outlets, false), COALESCE(b.hide_central_stock_from_branches, false),
+		       COALESCE(b.allow_cross_branch_stock_view, false)
 		FROM outlet_staff os
 		JOIN outlets o ON os.outlet_id = o.id
 		JOIN businesses b ON o.business_id = b.id
@@ -268,16 +360,26 @@ func GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*Workspace, err
 		var ws Workspace
 		var role models.StaffRole
 		var oID uuid.UUID
+		var isMain bool
 		var bID uuid.UUID
+		var hasPOS, hasMfg, hasHub, hasEOD, hasMulti, hideStock, allowCrossStock bool
 
-		err = sRows.Scan(&oID, &role, &ws.OutletName, &bID, &ws.BusinessName, &ws.BusinessType)
+		err = sRows.Scan(&oID, &role, &ws.OutletName, &isMain, &bID, &ws.BusinessName, &ws.BusinessType, &hasPOS, &hasMfg, &hasHub, &hasEOD, &hasMulti, &hideStock, &allowCrossStock)
 		if err != nil {
 			return nil, err
 		}
 
 		ws.OutletID = &oID
+		ws.IsMainOutlet = isMain
 		ws.BusinessID = &bID
 		ws.Role = string(role)
+		ws.HasPOS = hasPOS
+		ws.HasManufacturing = hasMfg
+		ws.HasLogisticsHub = hasHub
+		ws.HasEODUsage = hasEOD
+		ws.HasMultiOutlets = hasMulti
+		ws.HideCentralStockFromBranches = hideStock
+		ws.AllowCrossBranchStockView = allowCrossStock
 		workspaces = append(workspaces, &ws)
 	}
 

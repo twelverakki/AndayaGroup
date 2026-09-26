@@ -2,6 +2,7 @@ import {
 	LayoutDashboard,
 	ShoppingCart,
 	Package,
+	Boxes,
 	ClipboardCheck,
 	Layers,
 	Send,
@@ -14,8 +15,27 @@ import {
 	Users,
 	Building2,
 	ShieldCheck,
+	Tag,
 } from "lucide-react";
 import React from "react";
+
+export type CapabilityFlag =
+	| "has_pos"
+	| "has_manufacturing"
+	| "has_logistics_hub"
+	| "has_eod_usage"
+	| "has_multi_outlets"
+	| "allow_cross_branch_stock_view";
+
+export interface SubMenuItem {
+	id: string;
+	translationKey: string;
+	defaultLabel: string;
+	allowedRoles?: string[];
+	excludeRoles?: string[];
+	requireCapability?: CapabilityFlag;
+	requireCrossBranchStock?: boolean;
+}
 
 export interface MenuItem {
 	id: string;
@@ -29,7 +49,8 @@ export interface MenuItem {
 	excludeTypes?: string[];
 	onlyTypes?: string[];
 	requiredRoles?: string[];
-	subItems?: { id: string; translationKey: string; defaultLabel: string }[];
+	requireCapability?: CapabilityFlag;
+	subItems?: SubMenuItem[];
 }
 
 export const sidebarMenuConfig: MenuItem[] = [
@@ -38,6 +59,7 @@ export const sidebarMenuConfig: MenuItem[] = [
 		translationKey: "menuDashboard",
 		defaultLabel: "Dashboard",
 		icon: LayoutDashboard,
+		iconClassName: "text-slate-600 dark:text-slate-300",
 		allowedRoles: [
 			"owner",
 			"manager",
@@ -49,28 +71,50 @@ export const sidebarMenuConfig: MenuItem[] = [
 	{
 		id: "pos",
 		translationKey: "menuPos",
-		defaultLabel: "Point of Sale",
+		defaultLabel: "Kasir (POS)",
 		icon: ShoppingCart,
+		iconClassName: "text-emerald-500",
+		requireCapability: "has_pos",
 		allowedRoles: ["owner", "manager", "staff"],
 		excludeRoles: ["superadmin", "admin_gudang"],
 	},
 	{
+		id: "promotions",
+		translationKey: "promotionsTitle",
+		defaultLabel: "Diskon & Promo",
+		icon: Tag,
+		iconClassName: "text-rose-500",
+		allowedRoles: ["owner", "manager"],
+		excludeRoles: ["superadmin", "admin_gudang"],
+	},
+	{
+		id: "items",
+		translationKey: "menuItems",
+		defaultLabel: "Master Item",
+		icon: Package,
+		iconClassName: "text-blue-500",
+		allowedRoles: ["owner", "manager", "admin_gudang"],
+		excludeRoles: ["superadmin"],
+	},
+	{
 		id: "inventory",
 		translationKey: "menuInventory",
-		defaultLabel: "Inventory",
-		icon: Package,
+		defaultLabel: "Inventori",
+		icon: Boxes,
+		iconClassName: "text-cyan-500",
 		allowedRoles: ["owner", "manager", "admin_gudang"],
 		excludeRoles: ["superadmin"],
 		subItems: [
 			{
 				id: "inventory-master",
-				translationKey: "menuMasterProduct",
-				defaultLabel: "Master Produk",
+				translationKey: "menuInventoryMaster",
+				defaultLabel: "Master Inventori",
 			},
 			{
-				id: "inventory-add",
-				translationKey: "menuAddNewProduct",
-				defaultLabel: "Tambah Produk",
+				id: "inventory-matrix",
+				translationKey: "menuInventoryMatrix",
+				defaultLabel: "Matrik Stok",
+				requireCrossBranchStock: true,
 			},
 		],
 	},
@@ -79,112 +123,105 @@ export const sidebarMenuConfig: MenuItem[] = [
 		translationKey: "menuOpname",
 		defaultLabel: "Opname Fisik",
 		icon: ClipboardCheck,
+		iconClassName: "text-purple-500",
 		allowedRoles: ["owner", "manager", "staff", "admin_gudang"],
 		excludeRoles: ["superadmin"],
 	},
 	{
 		id: "produksi",
 		translationKey: "menuProduksi",
-		defaultLabel: "Produksi F&B",
+		defaultLabel: "Produksi Dapur",
 		icon: Layers,
 		iconClassName: "text-amber-500",
-		allowedRoles: ["owner", "admin_gudang"],
+		requireCapability: "has_manufacturing",
+		allowedRoles: ["owner", "admin_gudang", "manager"],
 		excludeRoles: ["superadmin"],
 	},
 	{
 		id: "settlements",
 		translationKey: "menuSettlements",
-		defaultLabel: "Pendapatan & Setoran",
+		defaultLabel: "Setoran & Kas",
 		icon: Coins,
-		iconClassName: "text-emerald-500",
-		allowedRoles: ["owner", "admin_gudang", "staff"],
+		iconClassName: "text-teal-500",
+		requireCapability: "has_eod_usage",
+		allowedRoles: ["owner", "admin_gudang", "staff", "manager"],
 		excludeRoles: ["superadmin"],
 		subItems: [
 			{
 				id: "settlements-history",
 				translationKey: "menuSalesSettlements",
-				defaultLabel: "Riwayat Setoran Closing",
+				defaultLabel: "Setoran Closing",
 			},
 			{
 				id: "settlements-direct",
 				translationKey: "menuSalesDirect",
-				defaultLabel: "Riwayat Penjualan Direct",
+				defaultLabel: "Penjualan Direct",
 			},
 		],
 	},
 	{
 		id: "distribusi",
 		translationKey: "menuTransfers",
-		defaultLabel: "Transfer & Distribusi",
+		defaultLabel: "Distribusi Kirim",
 		icon: Send,
-		iconClassName: "text-blue-500",
-		allowedRoles: ["owner", "admin_gudang", "staff"],
+		iconClassName: "text-sky-500",
+		requireCapability: "has_logistics_hub",
+		allowedRoles: ["owner", "admin_gudang", "staff", "manager"],
 		excludeRoles: ["superadmin"],
-		subItems: [
-			{
-				id: "distribusi-flow",
-				translationKey: "menuDistribusiFlow",
-				defaultLabel: "Riwayat / Alur Kirim",
-			},
-			{
-				id: "distribusi-mitra",
-				translationKey: "menuDistribusiMitra",
-				defaultLabel: "Stok & Handshake",
-			},
-		],
 	},
 	{
 		id: "procurement",
 		translationKey: "menuProcurement",
 		defaultLabel: "Procurement",
 		icon: FileSpreadsheet,
-		allowedRoles: ["owner", "manager"],
-		excludeRoles: ["superadmin", "admin_gudang"],
+		iconClassName: "text-orange-500",
+		allowedRoles: ["owner", "manager", "admin_gudang"],
+		excludeRoles: ["superadmin"],
 		subItems: [
 			{
 				id: "procurement-history",
 				translationKey: "menuProcurementHistory",
-				defaultLabel: "Riwayat Pembelian",
+				defaultLabel: "Riwayat Order",
 			},
 			{
 				id: "procurement-new",
 				translationKey: "menuProcurementNew",
-				defaultLabel: "Pembelian Baru",
+				defaultLabel: "Order Baru",
 			},
 		],
 	},
 	{
 		id: "organization",
 		translationKey: "menuOrganization",
-		defaultLabel: "Organisasi & Bisnis",
+		defaultLabel: "Unit Bisnis",
 		icon: Building2,
 		iconClassName: "text-indigo-500",
-		allowedRoles: ["superadmin"],
-		requiredRoles: ["superadmin"],
+		allowedRoles: ["superadmin", "owner"],
 	},
 	{
 		id: "users",
 		translationKey: "menuUsers",
-		defaultLabel: "Manajemen Pengguna",
+		defaultLabel: "Kelola User",
 		icon: Users,
-		iconClassName: "text-blue-500",
+		iconClassName: "text-violet-500",
 		allowedRoles: ["superadmin"],
 		requiredRoles: ["superadmin"],
 	},
 	{
 		id: "security-logs",
 		translationKey: "menuSecurityLogs",
-		defaultLabel: "Log Keamanan Sistem",
+		defaultLabel: "Log Keamanan",
 		icon: ShieldCheck,
-		iconClassName: "text-amber-500",
+		iconClassName: "text-red-500",
 		allowedRoles: ["superadmin"],
 		requiredRoles: ["superadmin"],
 	},
 	{
 		id: "sales-report",
 		translationKey: "menuSalesReport",
-		defaultLabel: "Laporan Penjualan",
+		defaultLabel: "Laporan Omset",
 		icon: TrendingUp,
+		iconClassName: "text-green-500",
 		allowedRoles: ["owner", "manager"],
 		excludeRoles: ["superadmin", "admin_gudang"],
 	},
@@ -193,6 +230,7 @@ export const sidebarMenuConfig: MenuItem[] = [
 		translationKey: "menuAnalytics",
 		defaultLabel: "Analisis Bisnis",
 		icon: BarChart3,
+		iconClassName: "text-fuchsia-500",
 		allowedRoles: ["owner"],
 		excludeRoles: ["superadmin", "admin_gudang"],
 	},
@@ -200,13 +238,22 @@ export const sidebarMenuConfig: MenuItem[] = [
 
 export function isMenuItemAllowed(
 	menu: MenuItem,
-	activeContext: { role?: string; type?: string } | null,
+	activeContext: {
+		role?: string;
+		type?: string;
+		has_pos?: boolean;
+		has_manufacturing?: boolean;
+		has_logistics_hub?: boolean;
+		has_eod_usage?: boolean;
+		has_multi_outlets?: boolean;
+		allow_cross_branch_stock_view?: boolean;
+	} | null,
 ): boolean {
 	if (!activeContext) return false;
 	const userRole = activeContext.role || "";
 	const businessType = activeContext.type || "";
 
-	// 1. Required Roles Check (e.g. Superadmin menu)
+	// 1. Required Roles Check (e.g. Superadmin-only menu)
 	if (menu.requiredRoles && !menu.requiredRoles.includes(userRole)) {
 		return false;
 	}
@@ -221,16 +268,63 @@ export function isMenuItemAllowed(
 		return false;
 	}
 
-	// 4. Only Business Types Check
+	// 4. Superadmin default filter: Superadmin in control center only gets superadmin tools & organization
+	if (userRole === "superadmin" && !menu.requiredRoles?.includes("superadmin") && menu.id !== "organization" && menu.id !== "dashboard") {
+		return false;
+	}
+
+	// 5. Capability Flag Check (The Lean Odoo Way)
+	if (menu.requireCapability) {
+		// If capability is required, it must be explicitly active for this business context
+		if (!activeContext[menu.requireCapability]) {
+			return false;
+		}
+	}
+
+	// 6. Only Business Types Check
 	if (menu.onlyTypes && !menu.onlyTypes.includes(businessType)) {
 		return false;
 	}
 
-	// 5. Excluded Business Types Check
+	// 7. Excluded Business Types Check
 	if (menu.excludeTypes && menu.excludeTypes.includes(businessType)) {
 		return false;
 	}
 
+	return true;
+}
+
+export function isSubMenuItemAllowed(
+	subItem: SubMenuItem,
+	activeContext: {
+		role?: string;
+		type?: string;
+		has_pos?: boolean;
+		has_manufacturing?: boolean;
+		has_logistics_hub?: boolean;
+		has_eod_usage?: boolean;
+		has_multi_outlets?: boolean;
+		allow_cross_branch_stock_view?: boolean;
+	} | null,
+): boolean {
+	if (!activeContext) return false;
+	const userRole = activeContext.role || "";
+
+	if (subItem.allowedRoles && !subItem.allowedRoles.includes(userRole)) {
+		return false;
+	}
+	if (subItem.excludeRoles && subItem.excludeRoles.includes(userRole)) {
+		return false;
+	}
+	if (subItem.requireCapability && !activeContext[subItem.requireCapability]) {
+		return false;
+	}
+	if (subItem.requireCrossBranchStock) {
+		const isGlobalAdmin = userRole === "owner" || userRole === "superadmin" || userRole === "admin_gudang";
+		if (!isGlobalAdmin && !activeContext.allow_cross_branch_stock_view) {
+			return false;
+		}
+	}
 	return true;
 }
 

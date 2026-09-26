@@ -14,7 +14,10 @@
 4. **Pemisahan Eksekusi vs Pengesahan (Anti-Fraud)**:
    - Staff yang menghitung fisik saat opname **dilarang** mengesahkan koreksi stoknya sendiri (*Blind Count*).
    - Kasir yang melakukan kesalahan input transaksi **wajib** meminta otorisasi PIN Manager untuk melakukan *Void*.
-5. **Soft-Delete & Immutability**: Akun yang dinonaktifkan tidak pernah dihapus secara fisik (`status = 'inactive'`) demi menjaga keutuhan jejak audit transaksi.
+5. **Invarian 1 Active Manager per Outlet**: Setiap cabang fisik hanya boleh memiliki maksimal 1 Manager berstatus `active` untuk mencegah konflik wewenang otorisasi void dan persetujuan opname.
+6. **Sentralisasi Master Items & Proteksi HPP**: Manajemen katalog master barang, struktur harga jual, dan modal dasar (HPP) dikelola secara terpusat oleh Owner/Superadmin/Admin Gudang. Staf dan Manager cabang hanya memiliki akses *Read-Only* dengan proteksi `can_view_cost`.
+7. **Tata Kelola Visibilitas Stok Lintas-Cabang (`allow_cross_branch_stock_view`)**: Hak staf cabang untuk melihat saldo stok toko/cabang lain dikendalikan oleh Owner melalui *capability flag* bisnis. Secara default, staf terisolasi hanya melihat saldo cabang penempatannya.
+8. **Soft-Delete & Immutability**: Akun yang dinonaktifkan tidak pernah dihapus secara fisik (`status = 'inactive'`) demi menjaga keutuhan jejak audit transaksi.
 
 ---
 

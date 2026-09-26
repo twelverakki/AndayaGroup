@@ -3,6 +3,7 @@ package transactions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"andaya-erp/backend/internal/config"
@@ -142,16 +143,20 @@ func CloseShift(ctx context.Context, id uuid.UUID, closingCashActual int64) (*mo
 // =========================================================================
 
 type TxItemInput struct {
-	ProductID uuid.UUID `json:"product_id"`
-	Qty       float64   `json:"qty"`
+	ProductID      uuid.UUID  `json:"product_id"`
+	Qty            float64    `json:"qty"`
+	PromotionID    *uuid.UUID `json:"promotion_id,omitempty"`
+	DiscountAmount int64      `json:"discount_amount,omitempty"`
 }
 
 type CreateTxInput struct {
-	ClientUUID    uuid.UUID       `json:"client_uuid"`
-	TotalAmount   int64           `json:"total_amount"`
-	PaymentMethod models.PaymentMethod `json:"payment_method"`
-	Type          models.TransactionType   `json:"type"` // sale, internal_take, void
-	Items         []TxItemInput   `json:"items"`
+	ClientUUID     uuid.UUID            `json:"client_uuid"`
+	TotalAmount    int64                `json:"total_amount"`
+	PaymentMethod  models.PaymentMethod `json:"payment_method"`
+	Type           models.TransactionType `json:"type"` // sale, internal_take, void
+	Items          []TxItemInput        `json:"items"`
+	PromotionID    *uuid.UUID           `json:"promotion_id,omitempty"`
+	DiscountAmount int64                `json:"discount_amount,omitempty"`
 	
 	// Optional Manager Override details (for void or price overrides)
 	ManagerPIN *string `json:"manager_pin,omitempty"`
@@ -331,21 +336,174 @@ func CreateTransaction(ctx context.Context, businessID uuid.UUID, outletID uuid.
 		calculatedTotal += subtotal
 
 		ti := &models.TransactionItem{
-			ID:            uuid.New(),
-			TransactionID: txID,
-			ProductID:     p.ID,
-			Qty:           item.Qty,
-			UnitPrice:     p.SellPrice,
-			Subtotal:      subtotal,
-			CreatedAt:     time.Now(),
+			ID:             uuid.New(),
+			TransactionID:  txID,
+			ProductID:      p.ID,
+			Qty:            item.Qty,
+			UnitPrice:      p.SellPrice,
+			Subtotal:       subtotal,
+			DiscountAmount: item.DiscountAmount,
+			PromotionID:    item.PromotionID,
+			CreatedAt:      time.Now(),
 		}
 		savedItems = append(savedItems, ti)
 	}
 
-	t.TotalAmount = calculatedTotal
+	t.Subtotal = calculatedTotal
+
+	// 5b. Server-Side Rule Validation for Promotion & Discount Engine
+	var verifiedDiscount int64 = 0
+	if input.PromotionID != nil && *input.PromotionID != uuid.Nil {
+		var promo models.Promotion
+		var activeTimeStart, activeTimeEnd string
+		err = tx.QueryRow(ctx, `
+			SELECT id, business_id, promo_type, start_date, end_date, active_days,
+			       COALESCE(to_char(active_time_start, 'HH24:MI:SS'), ''),
+			       COALESCE(to_char(active_time_end, 'HH24:MI:SS'), ''),
+			       min_order_amount, min_qty, usage_limit, usage_count,
+			       reward_type, reward_value, max_discount_cap, target_scope, is_active
+			FROM promotions
+			WHERE id = $1 AND business_id = $2
+		`, *input.PromotionID, t.BusinessID).Scan(
+			&promo.ID, &promo.BusinessID, &promo.PromoType,
+			&promo.StartDate, &promo.EndDate, &promo.ActiveDays,
+			&activeTimeStart, &activeTimeEnd,
+			&promo.MinOrderAmount, &promo.MinQty, &promo.UsageLimit, &promo.UsageCount,
+			&promo.RewardType, &promo.RewardValue, &promo.MaxDiscountCap, &promo.TargetScope, &promo.IsActive,
+		)
+		if err != nil {
+			return nil, errors.New("invalid or unauthorized promotion")
+		}
+
+		if !promo.IsActive {
+			return nil, errors.New("promotion is currently inactive")
+		}
+
+		nowTime := time.Now()
+		if nowTime.Before(promo.StartDate) {
+			return nil, errors.New("promotion has not started yet")
+		}
+		if promo.EndDate != nil && nowTime.After(*promo.EndDate) {
+			return nil, errors.New("promotion period has expired")
+		}
+
+		if len(promo.ActiveDays) > 0 {
+			dayOfWeek := int(nowTime.Weekday())
+			dayMatched := false
+			for _, d := range promo.ActiveDays {
+				if d == dayOfWeek {
+					dayMatched = true
+					break
+				}
+			}
+			if !dayMatched {
+				return nil, errors.New("promotion is not active today")
+			}
+		}
+
+		if activeTimeStart != "" && activeTimeEnd != "" {
+			currentTimeStr := nowTime.Format("15:04:05")
+			if currentTimeStr < activeTimeStart || currentTimeStr > activeTimeEnd {
+				return nil, errors.New("promotion is outside happy hour time range")
+			}
+		}
+
+		if promo.UsageLimit != nil && *promo.UsageLimit > 0 && promo.UsageCount >= *promo.UsageLimit {
+			return nil, errors.New("promotion quota has been exceeded")
+		}
+
+		if promo.MinOrderAmount > 0 && calculatedTotal < int64(promo.MinOrderAmount) {
+			return nil, fmt.Errorf("minimum order amount of Rp %d not met for this promotion", promo.MinOrderAmount)
+		}
+
+		var totalQty float64
+		for _, it := range input.Items {
+			totalQty += it.Qty
+		}
+		if promo.MinQty > 0 && totalQty < float64(promo.MinQty) {
+			return nil, fmt.Errorf("minimum quantity of %v items not met for this promotion", promo.MinQty)
+		}
+
+		var eligibleSubtotal int64 = 0
+		if promo.TargetScope == "entire_order" {
+			eligibleSubtotal = calculatedTotal
+		} else {
+			targetRows, tErr := tx.Query(ctx, `
+				SELECT target_type, target_id FROM promotion_targets WHERE promotion_id = $1
+			`, promo.ID)
+			if tErr == nil {
+				targetItemIDs := make(map[uuid.UUID]bool)
+				targetCategoryIDs := make(map[uuid.UUID]bool)
+				for targetRows.Next() {
+					var tType string
+					var tID uuid.UUID
+					if scanErr := targetRows.Scan(&tType, &tID); scanErr == nil {
+						if tType == "item" {
+							targetItemIDs[tID] = true
+						} else if tType == "category" {
+							targetCategoryIDs[tID] = true
+						}
+					}
+				}
+				targetRows.Close()
+
+				for _, item := range savedItems {
+					if promo.TargetScope == "specific_items" && targetItemIDs[item.ProductID] {
+						eligibleSubtotal += item.Subtotal
+					} else if promo.TargetScope == "specific_categories" {
+						var catID *uuid.UUID
+						_ = tx.QueryRow(ctx, "SELECT category_id FROM items WHERE id = $1", item.ProductID).Scan(&catID)
+						if catID != nil && targetCategoryIDs[*catID] {
+							eligibleSubtotal += item.Subtotal
+						}
+					}
+				}
+			}
+
+			if eligibleSubtotal <= 0 {
+				return nil, errors.New("cart does not contain eligible items for this promotion")
+			}
+		}
+
+		if promo.RewardType == "discount_pct" {
+			verifiedDiscount = int64(float64(eligibleSubtotal) * (promo.RewardValue / 100.0))
+		} else if promo.RewardType == "discount_fixed" {
+			verifiedDiscount = int64(promo.RewardValue)
+		}
+
+		if promo.MaxDiscountCap != nil && *promo.MaxDiscountCap > 0 && verifiedDiscount > int64(*promo.MaxDiscountCap) {
+			verifiedDiscount = int64(*promo.MaxDiscountCap)
+		}
+
+		if verifiedDiscount > calculatedTotal {
+			verifiedDiscount = calculatedTotal
+		}
+
+		t.PromotionID = &promo.ID
+		t.DiscountAmount = verifiedDiscount
+	} else if input.DiscountAmount > 0 {
+		// Manual Cashier Quick Discount (e.g. Clearance Sale override as per D-23)
+		if input.DiscountAmount > calculatedTotal {
+			t.DiscountAmount = calculatedTotal
+		} else {
+			t.DiscountAmount = input.DiscountAmount
+		}
+		t.PromotionID = nil
+	} else {
+		t.DiscountAmount = 0
+		t.PromotionID = nil
+	}
+
+	if input.TotalAmount > 0 && input.PromotionID == nil {
+		t.TotalAmount = input.TotalAmount
+	} else {
+		t.TotalAmount = calculatedTotal - t.DiscountAmount
+		if t.TotalAmount < 0 {
+			t.TotalAmount = 0
+		}
+	}
 	if input.Type == models.TxInternalTake {
-		// As per PRD, internal take records consumption (could be priced at Rp0 or cost price)
-		// We keep the original total amount but mark transaction type
+		// As per PRD, internal take records consumption
 	}
 
 	// 6. Insert Transaction Header
@@ -354,11 +512,13 @@ func CreateTransaction(ctx context.Context, businessID uuid.UUID, outletID uuid.
 	err = tx.QueryRow(ctx, `
 		INSERT INTO transactions (
 			id, business_id, outlet_id, shift_id, staff_id, type, 
-			total_amount, payment_method, status, client_uuid, synced_at, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			total_amount, subtotal, discount_amount, promotion_id,
+			payment_method, status, client_uuid, synced_at, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING created_at, updated_at
 	`, t.ID, t.BusinessID, t.OutletID, t.ShiftID, t.StaffID, t.Type,
-		t.TotalAmount, t.PaymentMethod, t.Status, t.ClientUUID, t.SyncedAt, t.CreatedAt, t.UpdatedAt,
+		t.TotalAmount, t.Subtotal, t.DiscountAmount, t.PromotionID,
+		t.PaymentMethod, t.Status, t.ClientUUID, t.SyncedAt, t.CreatedAt, t.UpdatedAt,
 	).Scan(&t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -367,12 +527,22 @@ func CreateTransaction(ctx context.Context, businessID uuid.UUID, outletID uuid.
 	// 7. Insert Transaction Items
 	for _, ti := range savedItems {
 		_, err = tx.Exec(ctx, `
-			INSERT INTO transaction_items (id, transaction_id, product_id, qty, unit_price, subtotal, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`, ti.ID, ti.TransactionID, ti.ProductID, ti.Qty, ti.UnitPrice, ti.Subtotal, ti.CreatedAt)
+			INSERT INTO transaction_items (
+				id, transaction_id, product_id, qty, unit_price, subtotal, discount_amount, promotion_id, created_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, ti.ID, ti.TransactionID, ti.ProductID, ti.Qty, ti.UnitPrice, ti.Subtotal, ti.DiscountAmount, ti.PromotionID, ti.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// 7b. Increment Promotion Usage if applicable (safe against race conditions)
+	if t.PromotionID != nil {
+		_, _ = tx.Exec(ctx, `
+			UPDATE promotions 
+			SET usage_count = usage_count + 1, updated_at = NOW() 
+			WHERE id = $1 AND (usage_limit IS NULL OR usage_count < usage_limit)
+		`, *t.PromotionID)
 	}
 
 	// 8. Log Manager Override if it is a void transaction

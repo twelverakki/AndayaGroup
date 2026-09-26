@@ -2,15 +2,23 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { enqueueTransaction } from "../../lib/indexeddb";
+import { getImageUrl } from "../../lib/utils";
 import { 
   Search, Trash2, Barcode, ChevronRight, CreditCard, 
   CheckCircle2, RotateCcw, XCircle, ShoppingCart, 
   Package, ClipboardCheck, FileSpreadsheet, BarChart3, 
-  ChevronDown, GripVertical, History, Printer, AlertCircle, KeyRound, Menu
+  ChevronDown, GripVertical, History, Printer, AlertCircle, KeyRound, Menu, Tag, Sparkles, Boxes, ArrowDownToDot, Layers,
+  Pin, PinOff, ExternalLink, Ticket, Clock, Calendar, X
 } from "lucide-react";
+import { toast } from "sonner";
 import TransactionHistoryDrawer, { type TransactionRecord } from "../../components/TransactionHistoryDrawer";
 import { ErpSearchBar } from "../../components/ErpSearchBar";
+import { ErpImage } from "../../components/ErpImage";
+import { CurrencyInput } from "../../components/CurrencyInput";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "../../components/ui/input-otp";
 import { useLanguageStore, translations } from "../../lib/i18n";
+import { usePOSSettings } from "../../hooks/use-pos-settings";
+import type { Promotion } from "../promotions/promotions-module";
 import {
   Drawer,
   DrawerContent,
@@ -18,12 +26,24 @@ import {
   DrawerTitle,
   DrawerDescription,
 } from "../../components/ui/drawer";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "../../components/ui/dialog";
 
 interface Product {
   id: string;
   name: string;
   sku?: string;
   category?: string;
+  category_id?: string;
+  item_type?: string;
+  is_sellable?: boolean;
+  is_inventory_tracked?: boolean;
   unit_type: string;
   inventory_mode: string;
   purchase_price: number;
@@ -32,6 +52,12 @@ interface Product {
   min_stock_alert?: number;
   image_url?: string;
   status: "active" | "inactive" | "discontinued";
+  base_unit?: string;
+  price_unit?: string;
+  box_unit?: string;
+  conversion_rate?: number;
+  qty_sealed?: number;
+  qty_loose?: number;
 }
 
 interface CartItem {
@@ -51,17 +77,19 @@ interface Transaction {
 interface POSModuleProps {
   gridCols?: number;
   showNumpad?: boolean;
+  onNavigate?: (view: string) => void;
 }
 
-export default function POSModule({ gridCols = 4, showNumpad = true }: POSModuleProps) {
+export default function POSModule({ gridCols = 4, showNumpad = true, onNavigate }: POSModuleProps) {
   const { activeContext, activeShift, setActiveShift } = useAuthStore();
   const { language } = useLanguageStore();
   const t = translations[language] || translations.id;
 
   // Shift States
   const [loadingShift, setLoadingShift] = useState(true);
-  const [openingCash, setOpeningCash] = useState("150000");
-  const [closingCashActual, setClosingCashActual] = useState("");
+  const [openingCash, setOpeningCash] = useState<number>(150000);
+  const [closingCashActual, setClosingCashActual] = useState<number>(0);
+  const [cashReceived, setCashReceived] = useState<number>(0);
 
   // Product & Category States
   const [products, setProducts] = useState<Product[]>([]);
@@ -144,11 +172,15 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   const [transientQty, setTransientQty] = useState<Record<number, string>>({});
   const [numpadDecimalActive, setNumpadDecimalActive] = useState(false);
 
+  // Promotions State & Manual Selection
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [selectedPromo, setSelectedPromo] = useState<Promotion | null>(null);
+  const [couponCodeInput, setCouponCodeInput] = useState("");
+  const [showPromoDrawer, setShowPromoDrawer] = useState(false);
+
   // App UI/Theme State
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   // Refs for scrolling and keys
   const categoryRef = useRef<HTMLDivElement>(null);
@@ -169,6 +201,16 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
     return () => observer.disconnect();
   }, []);
 
+  // Single Product Detail & Unpack Drawer State
+  const [selectedProductForDetail, setSelectedProductForDetail] = useState<Product | null>(null);
+  const [boxesToUnbox, setBoxesToUnbox] = useState<number>(1);
+  const [unboxNotes, setUnboxNotes] = useState<string>("");
+  const [unboxingLoading, setUnboxingLoading] = useState(false);
+
+  // Long-press timer ref
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isLongPressTriggeredRef = useRef(false);
+
   // Global Keyboard Listener: Press '/' to focus scan input
   useEffect(() => {
     const handleGlobalKeydown = (e: KeyboardEvent) => {
@@ -187,13 +229,101 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
     return () => window.removeEventListener("keydown", handleGlobalKeydown);
   }, []);
 
-  // Fetch active shift & products
+  // Open Product Detail & Unpack Drawer
+  const handleOpenProductDetail = (p: Product) => {
+    setSelectedProductForDetail(p);
+    setBoxesToUnbox(1);
+    setUnboxNotes("");
+  };
+
+  // Long Press Handlers for Touch Devices
+  const handleTouchStartProduct = (p: Product) => {
+    isLongPressTriggeredRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressTriggeredRef.current = true;
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+      handleOpenProductDetail(p);
+    }, 450); // 450ms longpress threshold
+  };
+
+  const handleTouchEndProduct = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  // Handler for Unbox action directly inside Product Detail Drawer
+  const handleConfirmUnbox = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductForDetail || boxesToUnbox <= 0) return;
+
+    setUnboxingLoading(true);
+    try {
+      const res = await api.post(`/items/${selectedProductForDetail.id}/unbox`, {
+        boxes_to_unbox: boxesToUnbox,
+        notes: unboxNotes || "Unbox langsung via POS Kasir",
+      });
+
+      toast.success(res.data?.message || t.posUnpackSuccess || "Dus berhasil dibongkar ke rak display!");
+      
+      const updatedItem = res.data?.data;
+      if (updatedItem) {
+        setProducts((prev) =>
+          prev.map((p) =>
+            p.id === updatedItem.id
+              ? {
+                  ...p,
+                  qty_sealed: updatedItem.qty_sealed,
+                  qty_loose: updatedItem.qty_loose,
+                  current_stock: updatedItem.qty_loose,
+                }
+              : p
+          )
+        );
+        setSelectedProductForDetail((prev) =>
+          prev && prev.id === updatedItem.id
+            ? {
+                ...prev,
+                qty_sealed: updatedItem.qty_sealed,
+                qty_loose: updatedItem.qty_loose,
+                current_stock: updatedItem.qty_loose,
+              }
+            : prev
+        );
+      } else {
+        fetchProducts();
+      }
+
+      setBoxesToUnbox(1);
+      setUnboxNotes("");
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || t.posUnpackInsufficient || "Gagal membongkar dus");
+    } finally {
+      setUnboxingLoading(false);
+    }
+  };
+
+  // Fetch active shift, products & active promotions
   useEffect(() => {
     if (activeContext && activeContext.type !== "fnb_production") {
       fetchShiftStatus();
       fetchProducts();
+      fetchPromotions();
     }
   }, [activeContext]);
+
+  const fetchPromotions = async () => {
+    try {
+      const res = await api.get("/promotions?active_only=true");
+      const list = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setPromotions(list);
+    } catch (err) {
+      console.error("Failed to load promotions:", err);
+    }
+  };
 
   const fetchShiftStatus = async () => {
     setLoadingShift(true);
@@ -213,9 +343,12 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
   const fetchProducts = async () => {
     try {
-      const res = await api.get("/products?status=active");
-      const productsList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-      setProducts(productsList);
+      const res = await api.get("/products?status=active&is_sellable=true");
+      const productsList: Product[] = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      const sellableList = productsList.filter(
+        (p) => p.is_sellable !== false && (p.item_type ? p.item_type === "finished_good" : true)
+      );
+      setProducts(sellableList);
     } catch (err) {
       console.error("Failed to load products:", err);
     }
@@ -225,16 +358,14 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   const handleOpenShift = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError("");
     try {
       const res = await api.post("/shifts/open", {
-        opening_cash: parseInt(openingCash) || 0,
+        opening_cash: Math.round(openingCash) || 0,
       });
       setActiveShift(res.data);
-      setSuccess("Shift kasir berhasil dibuka!");
-      setTimeout(() => setSuccess(""), 3000);
+      toast.success(t.posOpenShiftSuccess || "Shift kasir berhasil dibuka!");
     } catch (err: any) {
-      setError(err.response?.data?.message || "Gagal membuka shift kasir");
+      toast.error(err.response?.data?.message || t.posOpenShiftFailed || "Gagal membuka shift kasir");
     } finally {
       setLoading(false);
     }
@@ -244,19 +375,17 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   const handleCloseShift = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError("");
     try {
       await api.post("/shifts/close", {
-        closing_cash_actual: parseInt(closingCashActual) || 0,
+        closing_cash_actual: Math.round(closingCashActual) || 0,
       });
       setActiveShift(null);
       setShowCloseModal(false);
-      setClosingCashActual("");
+      setClosingCashActual(0);
       setCart([]);
-      setSuccess("Shift kasir berhasil ditutup!");
-      setTimeout(() => setSuccess(""), 3000);
+      toast.success(t.posCloseShiftSuccess || "Shift kasir berhasil ditutup!");
     } catch (err: any) {
-      setError(err.response?.data?.message || "Gagal menutup shift kasir");
+      toast.error(err.response?.data?.message || t.posCloseShiftFailed || "Gagal menutup shift kasir");
     } finally {
       setLoading(false);
     }
@@ -264,7 +393,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
   // Dynamic products image generator using Unsplash stable links
   const getProductImage = (product: Product) => {
-    if (product.image_url) return product.image_url;
+    if (product.image_url) return getImageUrl(product.image_url);
     const cat = (product.category || "general").toLowerCase();
     const name = product.name.toLowerCase();
     
@@ -298,12 +427,15 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
   // Cart operations
   const addToCart = (product: Product) => {
+    const isTracked = product.is_inventory_tracked !== false;
+    const isDryStrict = product.inventory_mode === "dry_strict" && isTracked;
+    const availableStock = product.qty_loose ?? product.current_stock ?? 0;
+
     const idx = cart.findIndex((item) => item.product.id === product.id);
     if (idx !== -1) {
       const existing = cart[idx];
-      if (product.inventory_mode === "dry_strict" && existing.qty + 1 > product.current_stock) {
-        setError(`${t.posInsufficientStock} ${product.name}`);
-        setTimeout(() => setError(""), 3000);
+      if (isDryStrict && existing.qty + 1 > availableStock) {
+        toast.error(`${t.posInsufficientStock} ${product.name}`);
         return;
       }
       const newCart = [...cart];
@@ -311,9 +443,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
       setCart(newCart);
       setSelectedCartIndex(idx);
     } else {
-      if (product.inventory_mode === "dry_strict" && product.current_stock < 1) {
-        setError(`${t.posOutOfStock} ${product.name}`);
-        setTimeout(() => setError(""), 3000);
+      if (isDryStrict && availableStock < 1) {
+        toast.error(`${t.posOutOfStock} ${product.name}`);
         return;
       }
       setCart([...cart, { product, qty: 1 }]);
@@ -331,12 +462,21 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
     }
   };
 
+  const isFractionalUnit = (unit?: string) => {
+    const u = (unit || "").toLowerCase();
+    return ["kg", "liter", "l", "gr", "gram", "ml", "meter", "m"].includes(u);
+  };
+
   const updateQty = (index: number, delta: number) => {
     const item = cart[index];
     if (!item) return;
 
-    const isFractional = ["kg", "liter", "gr"].includes(item.product.unit_type?.toLowerCase() || "");
-    const step = isFractional && item.qty < 1 ? 0.1 : 1;
+    const isTracked = item.product.is_inventory_tracked !== false;
+    const isDryStrict = item.product.inventory_mode === "dry_strict" && isTracked;
+    const availableStock = item.product.qty_loose ?? item.product.current_stock ?? 0;
+
+    const isFractional = isFractionalUnit(item.product.unit_type || item.product.base_unit);
+    const step = isFractional && item.qty <= 1 ? 0.1 : 1;
     const newQty = Math.round((item.qty + (delta > 0 ? step : -step)) * 1000) / 1000;
 
     if (newQty <= 0) {
@@ -344,9 +484,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
       return;
     }
 
-    if (item.product.inventory_mode === "dry_strict" && delta > 0 && newQty > item.product.current_stock) {
-      setError(`${t.posInsufficientStock} ${item.product.name}`);
-      setTimeout(() => setError(""), 3000);
+    if (isDryStrict && delta > 0 && newQty > availableStock) {
+      toast.error(`${t.posInsufficientStock} ${item.product.name}`);
       return;
     }
 
@@ -364,9 +503,12 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
     if (!isNaN(parsed) && parsed > 0) {
       const item = cart[index];
       if (item) {
-        if (item.product.inventory_mode === "dry_strict" && parsed > item.product.current_stock) {
-          setError(`${t.posInsufficientStock} ${item.product.name}`);
-          setTimeout(() => setError(""), 3000);
+        const isTracked = item.product.is_inventory_tracked !== false;
+        const isDryStrict = item.product.inventory_mode === "dry_strict" && isTracked;
+        const availableStock = item.product.qty_loose ?? item.product.current_stock ?? 0;
+
+        if (isDryStrict && parsed > availableStock) {
+          toast.error(`${t.posInsufficientStock} ${item.product.name}`);
         }
         const newCart = [...cart];
         newCart[index].qty = parsed;
@@ -418,8 +560,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
       addToCart(matched);
       setSearchQuery("");
     } else {
-      setError(t.posProductNotFound);
-      setTimeout(() => setError(""), 3000);
+      toast.error(t.posProductNotFound);
     }
   };
 
@@ -439,8 +580,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
       } else if (val === ".") {
         setNumpadDecimalActive(true);
       } else if (val === "+" || val === "-") {
-        const isFractional = ["kg", "liter", "gr"].includes(product.unit_type?.toLowerCase() || "");
-        const step = isFractional && currentItem.qty < 1 ? 0.1 : 1;
+        const isFractional = isFractionalUnit(product.unit_type || product.base_unit);
+        const step = isFractional && currentItem.qty <= 1 ? 0.1 : 1;
         const targetQty = Math.round((currentItem.qty + (val === "+" ? step : -step)) * 1000) / 1000;
         
         if (targetQty <= 0) {
@@ -448,28 +589,47 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           return;
         }
 
-        if (product.inventory_mode === "dry_strict" && val === "+" && targetQty > product.current_stock) {
-          setError(`${t.posInsufficientStock} ${product.name}`);
-          setTimeout(() => setError(""), 3000);
+        const isTracked = product.is_inventory_tracked !== false;
+        const isDryStrict = product.inventory_mode === "dry_strict" && isTracked;
+        const availableStock = product.qty_loose ?? product.current_stock ?? 0;
+
+        if (isDryStrict && val === "+" && targetQty > availableStock) {
+          toast.error(`${t.posInsufficientStock} ${product.name}`);
           return;
         }
         currentItem.qty = targetQty;
+        setNumpadDecimalActive(false);
       } else {
         const digit = val;
         let newQtyStr = "";
 
         if (numpadDecimalActive) {
-          const base = currentItem.qty === 0 ? "0" : currentItem.qty.toString();
-          newQtyStr = base.includes(".") ? base + digit : base + "." + digit;
+          const currentStr = currentItem.qty === 0 ? "0" : currentItem.qty.toString();
+          if (currentStr.includes(".")) {
+            // Already has decimal dot, append digit if <= 3 decimal places
+            const decimals = currentStr.split(".")[1] || "";
+            if (decimals.length < 3) {
+              newQtyStr = currentStr + digit;
+            } else {
+              newQtyStr = currentStr;
+            }
+          } else {
+            // Start decimal portion
+            newQtyStr = currentStr + "." + digit;
+          }
         } else {
+          // If current qty is 0, replace with digit
           newQtyStr = currentItem.qty === 0 ? digit : currentItem.qty.toString() + digit;
         }
 
         const parsed = parseFloat(newQtyStr);
         if (!isNaN(parsed)) {
-          if (product.inventory_mode === "dry_strict" && parsed > product.current_stock) {
-            setError(`${t.posInsufficientStock} ${product.name}`);
-            setTimeout(() => setError(""), 3000);
+          const isTracked = product.is_inventory_tracked !== false;
+          const isDryStrict = product.inventory_mode === "dry_strict" && isTracked;
+          const availableStock = product.qty_loose ?? product.current_stock ?? 0;
+
+          if (isDryStrict && parsed > availableStock) {
+            toast.error(`${t.posInsufficientStock} ${product.name}`);
             return;
           }
           currentItem.qty = parsed;
@@ -516,15 +676,140 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
     });
   };
 
-  // Pricing calculations
+  // Helper: check if a promotion is valid right now (Day of week & Happy Hour time range)
+  const isPromoCurrentlyValid = (p: Promotion) => {
+    if (!p.is_active) return false;
+    const now = new Date();
+    
+    // Check start and end dates
+    if (new Date(p.start_date) > now) return false;
+    if (p.end_date && new Date(p.end_date) < now) return false;
+    
+    // Check day of week
+    if (p.active_days && p.active_days.length > 0) {
+      const day = now.getDay();
+      if (!p.active_days.includes(day)) return false;
+    }
+    
+    // Check happy hour time
+    if (p.active_time_start && p.active_time_end) {
+      const curHours = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+      if (curHours < p.active_time_start || curHours > p.active_time_end) {
+        return false;
+      }
+    }
+
+    // Check usage limit
+    if (p.usage_limit && p.usage_count >= p.usage_limit) return false;
+
+    return true;
+  };
+
+  // Line total calculation (clean standard multiplication)
+  const getLineTotal = (item: CartItem) => {
+    return item.qty * item.product.sell_price;
+  };
+
+  const getPriceUnitLabel = (p: Product) => {
+    return p.base_unit || p.unit_type || "pcs";
+  };
+
+  // Pricing calculations with Promotion Engine
   const subtotal = useMemo(() => {
-    return cart.reduce((acc, item) => acc + item.qty * item.product.sell_price, 0);
+    return cart.reduce((acc, item) => acc + getLineTotal(item), 0);
   }, [cart]);
 
+  const totalCartQty = useMemo(() => {
+    return cart.reduce((acc, item) => acc + item.qty, 0);
+  }, [cart]);
+
+  // Evaluate Auto Promotions if no manual promo is selected
+  const effectivePromo = useMemo<Promotion | null>(() => {
+    if (selectedPromo) {
+      if (!isPromoCurrentlyValid(selectedPromo)) return null;
+      if (selectedPromo.min_order_amount > 0 && subtotal < selectedPromo.min_order_amount) return null;
+      if (selectedPromo.min_qty > 0 && totalCartQty < selectedPromo.min_qty) return null;
+
+      if (selectedPromo.target_scope === "specific_items") {
+        const hasMatchingItem = cart.some((c) => selectedPromo.target_ids?.includes(c.product.id));
+        if (!hasMatchingItem) return null;
+      } else if (selectedPromo.target_scope === "specific_categories") {
+        const hasMatchingCat = cart.some((c) =>
+          selectedPromo.target_ids?.includes(c.product.category_id || "") ||
+          selectedPromo.target_ids?.includes(c.product.category || "")
+        );
+        if (!hasMatchingCat) return null;
+      }
+      return selectedPromo;
+    }
+
+    // Find first matching automatic promo
+    const autoPromos = promotions.filter(
+      (p) => p.promo_type === "automatic" && isPromoCurrentlyValid(p)
+    );
+
+    for (const p of autoPromos) {
+      // Check min order amount and min qty
+      if (p.min_order_amount > 0 && subtotal < p.min_order_amount) continue;
+      if (p.min_qty > 0 && totalCartQty < p.min_qty) continue;
+
+      // Check target scope
+      if (p.target_scope === "entire_order") {
+        return p;
+      } else if (p.target_scope === "specific_items") {
+        const hasMatchingItem = cart.some((c) => p.target_ids?.includes(c.product.id));
+        if (hasMatchingItem) return p;
+      } else if (p.target_scope === "specific_categories") {
+        const hasMatchingCat = cart.some((c) =>
+          p.target_ids?.includes(c.product.category_id || "") ||
+          p.target_ids?.includes(c.product.category || "")
+        );
+        if (hasMatchingCat) return p;
+      }
+    }
+
+    return null;
+  }, [cart, subtotal, totalCartQty, selectedPromo, promotions]);
+
+  // Calculate discount from effective promotion OR manual % input
   const discountAmount = useMemo(() => {
+    if (effectivePromo) {
+      let eligibleSubtotal = 0;
+      if (effectivePromo.target_scope === "entire_order") {
+        eligibleSubtotal = subtotal;
+      } else if (effectivePromo.target_scope === "specific_items") {
+        eligibleSubtotal = cart
+          .filter((c) => effectivePromo.target_ids?.includes(c.product.id))
+          .reduce((acc, item) => acc + getLineTotal(item), 0);
+      } else if (effectivePromo.target_scope === "specific_categories") {
+        eligibleSubtotal = cart
+          .filter((c) =>
+            effectivePromo.target_ids?.includes(c.product.category_id || "") ||
+            effectivePromo.target_ids?.includes(c.product.category || "")
+          )
+          .reduce((acc, item) => acc + getLineTotal(item), 0);
+      }
+
+      if (eligibleSubtotal <= 0 && effectivePromo.target_scope !== "entire_order") {
+        return 0;
+      }
+
+      let disc = 0;
+      if (effectivePromo.reward_type === "discount_pct") {
+        disc = eligibleSubtotal * (effectivePromo.reward_value / 100);
+      } else if (effectivePromo.reward_type === "discount_fixed") {
+        disc = effectivePromo.reward_value;
+      }
+
+      if (effectivePromo.max_discount_cap && disc > effectivePromo.max_discount_cap) {
+        disc = effectivePromo.max_discount_cap;
+      }
+      return Math.min(disc, subtotal);
+    }
+
     if (!enableDiscount || discountRate <= 0) return 0;
     return subtotal * (discountRate / 100);
-  }, [subtotal, discountRate, enableDiscount]);
+  }, [subtotal, cart, effectivePromo, discountRate, enableDiscount]);
 
   const taxAmount = useMemo(() => {
     if (!enableTax || taxRate <= 0) return 0;
@@ -532,26 +817,63 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   }, [subtotal, discountAmount, taxRate, enableTax]);
 
   const totalAmount = useMemo(() => {
-    return subtotal - discountAmount + taxAmount;
+    return Math.max(0, subtotal - discountAmount + taxAmount);
   }, [subtotal, discountAmount, taxAmount]);
+
+  // Apply Coupon Code
+  const handleApplyCoupon = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!couponCodeInput.trim()) return;
+
+    const matched = promotions.find(
+      (p) => (p.code || "").toUpperCase() === couponCodeInput.trim().toUpperCase() && isPromoCurrentlyValid(p)
+    );
+
+    if (!matched) {
+      toast.error("Kode voucher tidak valid atau masa berlaku telah habis!");
+      return;
+    }
+
+    if (matched.min_order_amount > 0 && subtotal < matched.min_order_amount) {
+      toast.error(`Minimal belanja untuk kupon ini adalah Rp ${matched.min_order_amount.toLocaleString("id-ID")}`);
+      return;
+    }
+
+    setSelectedPromo(matched);
+    setShowPromoDrawer(false);
+    setCouponCodeInput("");
+    toast.success(`Kupon "${matched.name}" berhasil digunakan!`);
+  };
 
   // Payment Confirmation (Hits API or stores offline)
   const handleConfirmPayment = async () => {
     if (cart.length === 0) return;
+    
+    // Validate cash received if paying with cash
+    if (paymentMethod === "cash" && !isInternalTake && cashReceived < Math.round(totalAmount)) {
+      toast.error(t.posInsufficientCash || "Uang yang diterima kurang dari total tagihan!");
+      return;
+    }
+
     setLoading(true);
-    setError("");
-    setSuccess("");
     setShowPaymentModal(false);
 
     const clientUUID = crypto.randomUUID();
     const payload = {
       client_uuid: clientUUID,
       total_amount: Math.round(totalAmount),
+      subtotal: Math.round(subtotal),
+      discount_amount: Math.round(discountAmount),
+      promotion_id: effectivePromo?.id || null,
       payment_method: paymentMethod,
       type: isInternalTake ? "internal_take" : "sale",
       items: cart.map((item) => ({
         product_id: item.product.id,
         qty: item.qty,
+        promotion_id: effectivePromo?.id || null,
+        discount_amount: effectivePromo?.target_scope === "specific_items" && effectivePromo.target_ids?.includes(item.product.id)
+          ? Math.round(discountAmount)
+          : 0,
       })),
     };
 
@@ -561,23 +883,28 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
       setShowReceipt({
         ...res.data,
         subtotal,
-        discountRate,
+        promoName: effectivePromo?.name,
+        discountRate: effectivePromo?.reward_type === "discount_pct" ? effectivePromo.reward_value : discountRate,
         discountAmount,
         taxRate,
         taxAmount,
         totalAmount,
+        cashReceived: paymentMethod === "cash" ? cashReceived : Math.round(totalAmount),
+        changeDue: paymentMethod === "cash" ? Math.max(0, cashReceived - Math.round(totalAmount)) : 0,
         items: cart.map((c) => ({
           name: c.product.name,
           qty: c.qty,
           unit_price: c.product.sell_price,
-          subtotal: c.qty * c.product.sell_price,
+          subtotal: Math.round(getLineTotal(c)),
         })),
       });
       setCart([]);
+      setSelectedPromo(null);
       setIsInternalTake(false);
-      setSuccess("Transaksi berhasil!");
+      setCashReceived(0);
+      toast.success(t.posCheckoutSuccess || "Transaksi berhasil!");
       fetchProducts();
-      setTimeout(() => setSuccess(""), 3000);
+      fetchPromotions();
     } catch (err: any) {
       const isNetworkError = !err.response || err.code === "ERR_NETWORK";
       if (isNetworkError || !navigator.onLine) {
@@ -598,47 +925,40 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
             type: isInternalTake ? "internal_take" : "sale",
             total_amount: Math.round(totalAmount),
             payment_method: paymentMethod,
-            status: "completed",
+            status: "completed" as const,
             created_at: new Date().toISOString(),
           };
 
+          setRecentTx([mockTx as any, ...recentTx].slice(0, 5));
           setShowReceipt({
             ...mockTx,
             subtotal,
-            discountRate,
+            promoName: effectivePromo?.name,
+            discountRate: effectivePromo?.reward_type === "discount_pct" ? effectivePromo.reward_value : discountRate,
             discountAmount,
             taxRate,
             taxAmount,
             totalAmount,
+            cashReceived: paymentMethod === "cash" ? cashReceived : Math.round(totalAmount),
+            changeDue: paymentMethod === "cash" ? Math.max(0, cashReceived - Math.round(totalAmount)) : 0,
             items: cart.map((c) => ({
               name: c.product.name,
               qty: c.qty,
               unit_price: c.product.sell_price,
-              subtotal: c.qty * c.product.sell_price,
+              subtotal: Math.round(getLineTotal(c)),
             })),
           });
-
-          // Deduct stock locally
-          setProducts((prevProducts) =>
-            (prevProducts || []).map((p) => {
-              const cartItem = cart.find((c) => c.product.id === p.id);
-              if (cartItem) {
-                return { ...p, current_stock: p.current_stock - cartItem.qty };
-              }
-              return p;
-            })
-          );
-
           setCart([]);
+          setSelectedPromo(null);
           setIsInternalTake(false);
-          setSuccess("Transaksi disimpan lokal (offline)!");
-          setTimeout(() => setSuccess(""), 3000);
+          setCashReceived(0);
+          toast.success("Transaksi disimpan offline & akan disinkron saat online.");
           return;
         } catch (dbErr) {
-          console.error("[Offline] Failed to queue transaction in IndexedDB:", dbErr);
+          console.error("Failed to queue transaction offline:", dbErr);
         }
       }
-      setError(err.response?.data?.message || "Gagal memproses transaksi");
+      toast.error(err.response?.data?.message || "Gagal memproses transaksi");
     } finally {
       setLoading(false);
     }
@@ -647,10 +967,12 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   // Handle Void
   const handleVoid = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!showVoidModal || !managerPin) return;
+    if (!showVoidModal || !managerPin || managerPin.length < 6) {
+      toast.error(t.posManagerPinRequired || "PIN Manager 6 digit wajib diisi");
+      return;
+    }
 
     setLoading(true);
-    setError("");
 
     try {
       const target = recentTx.find((tx) => tx.id === showVoidModal);
@@ -673,49 +995,76 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
         )
       );
 
-      setSuccess("Transaksi berhasil di-void!");
+      toast.success(t.posVoidSuccess || "Transaksi berhasil di-void!");
       setShowVoidModal(null);
       setManagerPin("");
       setVoidReason("");
       fetchProducts();
-      setTimeout(() => setSuccess(""), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || "Gagal memproses void");
+      toast.error(err.response?.data?.message || err.message || t.posVoidFailed || "Gagal memproses void");
     } finally {
       setLoading(false);
     }
   };
 
-  // Dynamically Filter products based on search & category select
+  // Settings & Pinned Items Hook
+  const { pinnedItemIds, togglePinItem, isItemPinned } = usePOSSettings();
+
+  // Dynamically Filter and Sort products (Pinned items always appear first)
   const filteredProducts = useMemo(() => {
-    return (products || []).filter((p) => {
+    const list = (products || []).filter((p) => {
       const matchesSearch = 
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
         (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()));
       
       const matchesCategory = 
         activeCategory === "ALL_CATEGORY_KEY" || 
+        activeCategory === "PINNED_CATEGORY_KEY" ||
         activeCategory === "All" ||
         activeCategory === "Semua" ||
         (p.category || "General") === activeCategory;
 
+      if (activeCategory === "PINNED_CATEGORY_KEY") {
+        return matchesSearch && pinnedItemIds.includes(p.id);
+      }
+
       return matchesSearch && matchesCategory;
     });
-  }, [products, searchQuery, activeCategory]);
+
+    // Sort: Pinned items float to top, preserving relative ordering
+    return list.sort((a, b) => {
+      const aPinned = pinnedItemIds.includes(a.id);
+      const bPinned = pinnedItemIds.includes(b.id);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      return 0;
+    });
+  }, [products, searchQuery, activeCategory, pinnedItemIds]);
+
+  const pinnedCount = useMemo(() => {
+    return (products || []).filter((p) => pinnedItemIds.includes(p.id)).length;
+  }, [products, pinnedItemIds]);
 
   const categories = useMemo(() => {
     const unique = new Set((products || []).map((p) => p.category || "General"));
-    return ["ALL_CATEGORY_KEY", ...Array.from(unique)];
-  }, [products]);
+    const base = ["ALL_CATEGORY_KEY"];
+    if (pinnedCount > 0) {
+      base.push("PINNED_CATEGORY_KEY");
+    }
+    return [...base, ...Array.from(unique)];
+  }, [products, pinnedCount]);
 
   const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = { ALL_CATEGORY_KEY: (products || []).length };
+    const counts: Record<string, number> = { 
+      ALL_CATEGORY_KEY: (products || []).length,
+      PINNED_CATEGORY_KEY: pinnedCount
+    };
     (products || []).forEach((p) => {
       const cat = p.category || "General";
       counts[cat] = (counts[cat] || 0) + 1;
     });
     return counts;
-  }, [products]);
+  }, [products, pinnedCount]);
 
   const gridColsClass = useMemo(() => {
     switch (gridCols) {
@@ -732,7 +1081,9 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <div className="w-12 h-12 border-4 border-brand-purple border-t-transparent rounded-full animate-spin mb-4" />
-        <span className="text-slate-500 dark:text-slate-400 font-bold text-sm">Memeriksa status laci kasir...</span>
+        <span className="text-slate-500 dark:text-slate-400 font-bold text-sm">
+          {t.posCheckingShift || "Memeriksa status laci kasir..."}
+        </span>
       </div>
     );
   }
@@ -741,35 +1092,26 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
   if (!activeShift) {
     return (
       <div className={`max-w-md mx-auto border shadow-xl rounded-3xl p-8 text-center mt-10 transition-colors ${
-        isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border text-neutral-dark"
+        isDarkMode ? "bg-[#202024] border-[#38383C] text-white" : "bg-[#FFFFFF] border-slate-200/80 text-neutral-dark"
       }`}>
-        <KeyRound className="w-12 h-12 mx-auto text-primary mb-4 stroke-[2.5]" />
-        <h3 className="text-2xl font-bold mb-2">Buka Shift Kasir</h3>
-        <p className="opacity-80 text-xs font-semibold leading-relaxed mb-6">
-          Laci kasir saat ini terkunci. Anda harus membuka shift baru dan menginput nominal kas awal untuk memulai transaksi.
+        <div className="w-16 h-16 rounded-2xl bg-brand-purple/10 dark:bg-primary/10 flex items-center justify-center mx-auto mb-4 text-brand-purple dark:text-primary">
+          <KeyRound className="w-8 h-8 stroke-[2.2]" />
+        </div>
+        <h3 className="text-2xl font-bold mb-2">{t.posOpenShiftTitle || "Buka Shift Kasir"}</h3>
+        <p className="opacity-75 text-xs font-semibold leading-relaxed mb-6">
+          {t.posOpenShiftDesc || "Laci kasir saat ini terkunci. Anda harus membuka shift baru dan menginput nominal kas awal untuk memulai transaksi."}
         </p>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20 flex items-center gap-1.5 justify-center">
-            <AlertCircle className="w-4 h-4 shrink-0 stroke-[2.5]" />
-            <span>{error}</span>
-          </div>
-        )}
 
         <form onSubmit={handleOpenShift} className="space-y-5">
           <div className="text-left">
             <label className="block text-xs font-bold opacity-75 uppercase tracking-wider mb-2 ml-1">
-              Modal Awal Laci Kasir (Rupiah)
+              {t.posOpeningCashLabel || "Modal Awal Laci Kasir (Rupiah)"}
             </label>
-            <input
-              type="number"
+            <CurrencyInput
               value={openingCash}
-              onChange={(e) => setOpeningCash(e.target.value)}
-              placeholder="150000"
-              className={`w-full text-center text-xl font-bold px-4 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-brand-purple/40 focus:border-brand-purple transition-all ${
-                isDarkMode ? "bg-[#1E1E1E] border-dark-border-lighter text-white" : "bg-slate-50 border-light-border text-neutral-dark"
-              }`}
-              style={{ minHeight: "56px" }}
+              onChange={(val) => setOpeningCash(val)}
+              placeholder="150.000"
+              className="text-center text-xl font-bold h-14 rounded-2xl"
               required
             />
           </div>
@@ -777,10 +1119,9 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           <button
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center font-bold text-white bg-brand-purple hover:bg-brand-purple-hover rounded-2xl shadow-md transition-all duration-200 cursor-pointer text-sm"
-            style={{ minHeight: "56px" }}
+            className="w-full flex items-center justify-center font-bold text-white bg-brand-purple hover:bg-brand-purple-hover dark:bg-[#E2FF66] dark:text-slate-900 rounded-2xl shadow-md transition-all duration-200 cursor-pointer text-sm h-14"
           >
-            {loading ? "Membuka Laci..." : "Mulai Shift Baru"}
+            {loading ? (t.posOpeningShiftLoading || "Membuka Laci...") : (t.posStartShiftButton || "Mulai Shift Baru")}
           </button>
         </form>
       </div>
@@ -794,7 +1135,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
       {/* ================= LEFT SIDE: PRODUCTS GRID ================= */}
       <section className="flex-1 flex flex-col overflow-hidden space-y-3 lg:space-y-5 pb-16 lg:pb-0">
 
-        {/* Top Header Row: Unified ErpSearchBar + Mobile Menu Button Aligned Side-by-Side */}
+        {/* Top Header Row: Clean Frameless ErpSearchBar */}
         <ErpSearchBar
           value={searchQuery}
           onChange={setSearchQuery}
@@ -802,20 +1143,6 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           placeholder={t.posSearchPlaceholder}
           inputRef={barcodeInputRef}
         />
-
-        {/* Global Error & Success Alerts */}
-        {error && (
-          <div className="p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20 text-left flex items-center gap-1.5">
-            <AlertCircle className="w-4 h-4 shrink-0 stroke-[2.5]" />
-            <span>{error}</span>
-          </div>
-        )}
-        {success && (
-          <div className="p-3 bg-emerald-500/10 text-emerald-500 text-xs font-bold rounded-xl border border-emerald-500/20 text-left flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 shrink-0 stroke-[2.5]" />
-            <span>{success}</span>
-          </div>
-        )}
 
         {/* Horizontal Minimalist Text Category Tabs with Custom Underline */}
         <div className="relative flex items-center w-full flex-shrink-0 border-b border-slate-200/80 dark:border-[#38383C] pt-1">
@@ -825,7 +1152,11 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           >
             {categories.map((cat) => {
               const isCatActive = activeCategory === cat;
-              const displayLabel = cat === "ALL_CATEGORY_KEY" ? t.posAllCategories : cat;
+              const displayLabel = cat === "ALL_CATEGORY_KEY" 
+                ? t.posAllCategories 
+                : cat === "PINNED_CATEGORY_KEY" 
+                ? (t.posPinnedBadge || "Disematkan") 
+                : cat;
               const count = categoryCounts[cat] || 0;
               return (
                 <button
@@ -838,6 +1169,9 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                       : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium"
                   }`}
                 >
+                  {cat === "PINNED_CATEGORY_KEY" && (
+                    <Pin className="w-3.5 h-3.5 fill-amber-500 text-amber-500 shrink-0" />
+                  )}
                   <span className="truncate max-w-[150px]">{displayLabel}</span>
                   <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-black transition-colors ${
                     isCatActive
@@ -870,7 +1204,12 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
         {/* Choose Products Title and Grid */}
         <div className="flex-1 flex flex-col min-h-0 space-y-3.5">
-          <h3 className="text-xs font-bold text-left uppercase tracking-wider opacity-80 flex-shrink-0">Choose Products</h3>
+          <div className="flex items-center justify-between flex-shrink-0">
+            <h3 className="text-xs font-bold text-left uppercase tracking-wider opacity-80">Choose Products</h3>
+            <span className="text-[11px] text-slate-400 font-medium">
+              {filteredProducts.length} item
+            </span>
+          </div>
           
           <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin pb-4">
             {filteredProducts.length === 0 ? (
@@ -883,58 +1222,139 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
             ) : (
               <div className={`grid grid-cols-2 sm:grid-cols-3 ${gridColsClass} gap-2.5 sm:gap-4`}>
                 {filteredProducts.map((p) => {
-                  const inStock = p.inventory_mode === "wet_infinite" || p.inventory_mode === "batch_thaw" || p.current_stock > 0;
+                  const isTracked = p.is_inventory_tracked !== false;
+                  const shelfStock = p.qty_loose ?? p.current_stock ?? 0;
+                  const warehouseStock = p.qty_sealed ?? 0;
+                  const inStock = !isTracked || p.inventory_mode === "wet_infinite" || p.inventory_mode === "batch_thaw" || shelfStock > 0;
+                  const isPinned = isItemPinned(p.id);
+                  
                   return (
-                    <button
+                    <div
                       key={p.id}
-                      type="button"
-                      onClick={() => inStock && addToCart(p)}
-                      disabled={!inStock}
-                      className={`group relative flex flex-col justify-between overflow-hidden border rounded-2xl p-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-                        inStock ? "cursor-pointer" : "opacity-45 cursor-not-allowed"
-                      } ${
-                        isDarkMode
-                          ? "bg-dark-card-lighter border-dark-border-lighter hover:border-primary/40"
-                          : "bg-[#FFFFFF] border-light-border hover:border-brand-purple/40 text-neutral-dark"
-                      }`}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        handleOpenProductDetail(p);
+                      }}
+                      onTouchStart={() => handleTouchStartProduct(p)}
+                      onTouchEnd={handleTouchEndProduct}
+                      onTouchCancel={handleTouchEndProduct}
+                      className="relative select-none"
                     >
-                      {/* aspect ratio 4/3 Unsplash image */}
-                      <div className="w-full aspect-[4/3] rounded-xl overflow-hidden bg-slate-100 mb-2 relative">
-                        <img
-                          src={getProductImage(p)}
-                          alt={p.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        {!inStock && (
-                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                            <span className="text-[10px] text-white font-bold bg-red-600 px-2 py-0.5 rounded-full">HABIS</span>
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isLongPressTriggeredRef.current) return;
+                          if (inStock) {
+                            addToCart(p);
+                          } else {
+                            handleOpenProductDetail(p);
+                          }
+                        }}
+                        className={`w-full h-full group relative flex flex-col justify-between overflow-hidden border rounded-2xl p-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+                          inStock ? "cursor-pointer" : "cursor-pointer border-amber-400/50 dark:border-amber-500/40"
+                        } ${
+                          isDarkMode
+                            ? "bg-dark-card-lighter border-dark-border-lighter hover:border-primary/40"
+                            : "bg-[#FFFFFF] border-light-border hover:border-brand-purple/40 text-neutral-dark"
+                        }`}
+                      >
+                        {/* Quick Pin Toggle Button on hover / when pinned */}
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newlyPinned = togglePinItem(p.id);
+                            if (newlyPinned) {
+                              toast.success(
+                                (t.posPinSuccess || '"{name}" berhasil disematkan ke posisi teratas!').replace("{name}", p.name)
+                              );
+                            } else {
+                              toast.info(
+                                (t.posUnpinSuccess || 'Sematan "{name}" telah dilepas.').replace("{name}", p.name)
+                              );
+                            }
+                          }}
+                          className={`absolute top-2 right-2 z-10 p-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer shadow-xs ${
+                            isPinned
+                              ? "bg-amber-500 text-white opacity-100 scale-100 ring-2 ring-white/50 dark:ring-black/50"
+                              : "bg-black/30 text-white opacity-0 group-hover:opacity-100 hover:bg-black/60 scale-95 hover:scale-105"
+                          }`}
+                          title={isPinned ? (t.posUnpinItem || "Lepas Sematan (Unpin)") : (t.posPinItem || "Sematkan Produk (Pin ke Atas)")}
+                        >
+                          <Pin className={`w-3.5 h-3.5 ${isPinned ? "fill-white" : ""}`} />
+                        </div>
 
-                      <div className="flex-1 flex flex-col justify-between">
-                        <div>
-                          <h4 className="font-bold text-xs leading-tight line-clamp-2 mb-1 dark:text-white">{p.name}</h4>
-                          <div className="flex items-center justify-between text-[9px] opacity-60">
-                            <span>SKU: {p.sku || "-"}</span>
-                            {(p.inventory_mode === "dry_strict" || p.inventory_mode === "batch_thaw") && (
-                              <span className={`font-bold ${p.current_stock < 5 ? "text-amber-500 font-bold" : ""}`}>
-                                Stok: {p.current_stock} {p.inventory_mode === "batch_thaw" ? "pcs" : ""}
-                              </span>
+                        {/* aspect ratio 4/3 ErpImage with fallbacks */}
+                        <div className="w-full aspect-[4/3] rounded-xl overflow-hidden bg-slate-100 dark:bg-white/5 mb-2 relative">
+                          <ErpImage
+                            src={p.image_url}
+                            alt={p.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          {!inStock && (
+                            <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-1 text-center">
+                              <span className="text-[9px] text-white font-extrabold bg-amber-600 px-2 py-0.5 rounded-full mb-0.5">RAK KOSONG</span>
+                              {warehouseStock > 0 ? (
+                                <span className="text-[8px] text-amber-200 font-bold leading-tight">Gudang: {warehouseStock} {p.box_unit || "Dus"}</span>
+                              ) : (
+                                <span className="text-[8px] text-red-300 font-bold leading-tight">Stok Habis</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex-1 flex flex-col justify-between">
+                          <div>
+                            <h4 className="font-bold text-xs leading-tight line-clamp-2 mb-1 dark:text-white">{p.name}</h4>
+                            <div className="flex items-center justify-between text-[9px] opacity-60 mb-1">
+                              <span>SKU: {p.sku || "-"}</span>
+                            </div>
+
+                            {/* Stock Display Badge */}
+                            {!isTracked ? (
+                              <div className="flex items-center text-[9px] mt-0.5">
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded-md">
+                                  {language === "id" ? "♾️ Tanpa Lacak Stok" : "♾️ Untracked Stock"}
+                                </span>
+                              </div>
+                            ) : (p.inventory_mode === "dry_strict" || p.inventory_mode === "batch_thaw") && (
+                              <div className="flex items-center justify-between text-[9px] mt-0.5">
+                                <span className={`font-bold ${
+                                  shelfStock <= 0 
+                                    ? "text-red-500 font-black" 
+                                    : shelfStock < 5 
+                                      ? "text-amber-500 font-bold" 
+                                      : "text-slate-600 dark:text-slate-400"
+                                }`}>
+                                  Stok: {shelfStock} {p.base_unit || p.unit_type}
+                                </span>
+
+                                {warehouseStock > 0 && (
+                                  <span className="text-purple-600 dark:text-purple-400 font-extrabold text-[8px] bg-purple-50 dark:bg-purple-950/40 px-1 py-0.2 rounded">
+                                    +{warehouseStock} {p.box_unit || "Dus"}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
-                        </div>
 
-                        <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-dashed border-light-border/60 dark:border-dark-border-lighter">
-                          <span className="text-xs font-bold text-brand-purple dark:text-primary">
-                            Rp {p.sell_price.toLocaleString()}
-                          </span>
-                          <span className="w-6 h-6 rounded-lg bg-brand-purple/10 flex items-center justify-center text-brand-purple text-xs font-bold group-hover:bg-brand-purple group-hover:text-white transition-colors dark:group-hover:bg-primary dark:group-hover:text-neutral-dark dark:text-primary">
-                            +
-                          </span>
+                          <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-dashed border-light-border/60 dark:border-dark-border-lighter">
+                            <span className="text-xs font-bold text-brand-purple dark:text-primary">
+                              Rp {p.sell_price.toLocaleString("id-ID")}
+                              <span className="text-[10px] font-normal text-slate-400 dark:text-slate-400">/{getPriceUnitLabel(p)}</span>
+                            </span>
+                            <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold transition-colors ${
+                              inStock 
+                                ? "bg-brand-purple/10 text-brand-purple group-hover:bg-brand-purple group-hover:text-white dark:group-hover:bg-primary dark:group-hover:text-neutral-dark dark:text-primary"
+                                : "bg-amber-500/20 text-amber-700 dark:text-amber-300 group-hover:bg-amber-500 group-hover:text-white"
+                            }`}>
+                              {inStock ? "+" : <ArrowDownToDot className="w-3.5 h-3.5" />}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -996,8 +1416,8 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0 flex-1">
-                      <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100">
-                        <img src={getProductImage(item.product)} alt={item.product.name} className="w-full h-full object-cover" />
+                      <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100 dark:bg-white/5">
+                        <ErpImage src={item.product.image_url} alt={item.product.name} className="w-full h-full object-cover" />
                       </div>
                       
                       <div className="min-w-0 flex-1">
@@ -1008,12 +1428,12 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                             isDarkMode ? "bg-dark-border-lighter" : "bg-slate-100"
                           }`}>
-                            Unit: {item.product.unit_type}
+                            Unit: {item.product.base_unit || item.product.unit_type}
                           </span>
                           
                           {showNumpad ? (
                             <span className="text-[9px] opacity-75 font-semibold text-brand-purple dark:text-primary">
-                              Qty: {item.qty} {item.product.unit_type}
+                              Qty: {item.qty} {item.product.base_unit || item.product.unit_type}
                             </span>
                           ) : (
                             <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
@@ -1063,7 +1483,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                         ✕
                       </button>
                       <span className="font-bold text-[11px]">
-                        Rp {(item.product.sell_price * item.qty).toLocaleString()}
+                        Rp {Math.round(getLineTotal(item)).toLocaleString("id-ID")}
                       </span>
                     </div>
                   </div>
@@ -1077,16 +1497,49 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
         <div className={`p-4 rounded-3xl border space-y-3.5 shrink-0 transition-colors ${
           isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border shadow-sm"
         }`}>
+          {/* Active Promo / Voucher Selector */}
+          <div className="flex items-center justify-between pb-2 border-b border-light-border/60 dark:border-dark-border-lighter">
+            <button
+              type="button"
+              onClick={() => setShowPromoDrawer(true)}
+              className="flex items-center gap-1.5 text-xs font-bold text-brand-purple dark:text-primary hover:opacity-80 transition-opacity cursor-pointer"
+            >
+              <Tag className="w-3.5 h-3.5" />
+              <span>{effectivePromo ? effectivePromo.name : (t.posSelectPromo || "Pilih Promo / Kupon")}</span>
+            </button>
+            {effectivePromo ? (
+              <button
+                type="button"
+                onClick={() => setSelectedPromo(null)}
+                className="text-[10px] text-red-500 hover:underline font-semibold cursor-pointer"
+              >
+                ✕ {t.posRemovePromo || "Batal"}
+              </button>
+            ) : (
+              <span className="text-[10px] text-slate-400 font-medium">
+                {promotions.filter(isPromoCurrentlyValid).length} {language === "id" ? "Tersedia" : "Available"}
+              </span>
+            )}
+          </div>
+
           {/* Pricing breakdown */}
-          <div className="space-y-1.5 py-3 border-t border-light-border/60 dark:border-dark-border-lighter text-xs">
-            {(enableTax || enableDiscount) && (
-              <div className="flex justify-between opacity-75">
-                <span>{t.posSubtotal}</span>
-                <span>Rp {subtotal.toLocaleString("id-ID")}</span>
+          <div className="space-y-1.5 py-1 text-xs">
+            <div className="flex justify-between opacity-75">
+              <span>{t.posSubtotal}</span>
+              <span>Rp {subtotal.toLocaleString("id-ID")}</span>
+            </div>
+
+            {effectivePromo && discountAmount > 0 && (
+              <div className="flex justify-between text-emerald-600 dark:text-primary font-bold">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>{effectivePromo.name}</span>
+                </div>
+                <span>- Rp {Math.round(discountAmount).toLocaleString("id-ID")}</span>
               </div>
             )}
 
-            {enableDiscount && (
+            {!effectivePromo && enableDiscount && (
               <div className="flex justify-between text-emerald-600 dark:text-primary">
                 <div className="flex items-center gap-1.5">
                   <span>{t.posDiscount}</span>
@@ -1126,9 +1579,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
               </div>
             )}
 
-            <div className={`flex justify-between items-center text-sm font-bold ${
-              enableDiscount || enableTax ? "pt-1.5 border-t border-dashed border-light-border" : ""
-            } text-brand-purple dark:text-primary`}>
+            <div className={`flex justify-between items-center text-sm font-bold pt-1.5 border-t border-dashed border-light-border text-brand-purple dark:text-primary`}>
               <span>{t.posTotalPayment}</span>
               <span>Rp {Math.round(totalAmount).toLocaleString("id-ID")}</span>
             </div>
@@ -1223,54 +1674,43 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
       {/* 1. Close Shift Modal */}
       {showCloseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-neutral-dark">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-neutral-dark">
           <div className={`w-full max-w-md border rounded-3xl p-6 shadow-2xl transition-all ${
-            isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-[#FFFFFF] border-light-border"
+            isDarkMode ? "bg-[#202024] border-[#38383C] text-white" : "bg-[#FFFFFF] border-slate-200/80 text-neutral-dark"
           }`}>
             <h3 className="text-lg font-bold mb-1 dark:text-white">{t.posCloseShift}</h3>
-            <p className="opacity-70 text-xs font-semibold leading-relaxed mb-5">
-              {language === "id"
-                ? "Hitung seluruh uang fisik di laci kasir saat ini untuk rekonsiliasi dan penutupan shift."
-                : "Count all physical cash in the drawer for end-of-shift reconciliation."}
+            <p className="opacity-75 text-xs font-semibold leading-relaxed mb-6">
+              {language === "id" 
+                ? "Hitung total fisik uang tunai di laci kasir saat ini untuk proses rekonsiliasi akhir sesi."
+                : "Count total physical cash inside the register drawer for end-of-session reconciliation."}
             </p>
 
-            {error && (
-              <div className="mb-4 p-3 bg-red-500/10 text-red-500 text-xs font-bold rounded-xl border border-red-500/20 text-left flex items-center gap-1.5">
-                <AlertCircle className="w-4 h-4 shrink-0 stroke-[2.5]" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCloseShift} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold opacity-75 uppercase tracking-wider mb-2 ml-1 text-left">
-                  {t.posActualCash} (Rupiah)
+            <form onSubmit={handleCloseShift} className="space-y-5">
+              <div className="text-left">
+                <label className="block text-xs font-bold opacity-75 uppercase tracking-wider mb-2 ml-1">
+                  {t.posActualCash || "Kas Akhir Dihitung (Rupiah)"}
                 </label>
-                <input
-                  type="number"
+                <CurrencyInput
                   value={closingCashActual}
-                  onChange={(e) => setClosingCashActual(e.target.value)}
-                  placeholder="150000"
-                  className={`w-full text-center text-xl font-bold px-4 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-brand-purple/40 focus:border-brand-purple transition-all ${
-                    isDarkMode ? "bg-[#1E1E1E] border-dark-border-lighter text-white" : "bg-slate-50 border-light-border"
-                  }`}
-                  style={{ minHeight: "56px" }}
+                  onChange={(val) => setClosingCashActual(val)}
+                  placeholder="0"
+                  className="text-center text-xl font-bold h-14 rounded-2xl"
                   required
                 />
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowCloseModal(false)}
-                  className="flex-1 py-3 text-xs font-bold border border-light-border dark:border-dark-border-lighter hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
+                  className="flex-1 py-3 text-xs font-bold border border-slate-200 dark:border-[#38383C] hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
                 >
                   {t.cancel}
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 py-3 text-xs font-bold bg-brand-purple text-white hover:bg-brand-purple-hover rounded-xl transition-all cursor-pointer shadow-md"
+                  className="flex-1 py-3 text-xs font-bold bg-brand-purple text-white hover:bg-brand-purple-hover dark:bg-[#E2FF66] dark:text-slate-900 rounded-xl transition-all cursor-pointer shadow-md"
                 >
                   {loading ? t.saving : t.posConfirmCloseShift}
                 </button>
@@ -1282,31 +1722,35 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
       {/* 2. Manager Override / Void Transaction Modal */}
       {showVoidModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-neutral-dark">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-neutral-dark">
           <div className={`w-full max-w-md border rounded-3xl p-6 shadow-2xl transition-all ${
-            isDarkMode ? "bg-dark-card-lighter border-dark-border-lighter text-white" : "bg-white border-light-border"
+            isDarkMode ? "bg-[#202024] border-[#38383C] text-white" : "bg-white border-slate-200/80"
           }`}>
             <h3 className="text-lg font-bold mb-1 text-red-500">{t.posVoidModalTitle}</h3>
-            <p className="opacity-70 text-xs font-semibold leading-relaxed mb-5">
+            <p className="opacity-75 text-xs font-semibold leading-relaxed mb-5">
               {t.posManagerPinRequired}
             </p>
 
             <form onSubmit={handleVoid} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold opacity-75 uppercase tracking-wider mb-1 text-left">
-                  {t.posVoidManagerPin}
+              <div className="flex flex-col items-center">
+                <label className="block text-[10px] font-bold opacity-75 uppercase tracking-wider mb-2 self-start">
+                  {t.posVoidManagerPin} (6-Digit)
                 </label>
-                <input
-                  type="password"
-                  value={managerPin}
-                  onChange={(e) => setManagerPin(e.target.value)}
-                  placeholder="••••••"
+                <InputOTP
                   maxLength={6}
-                  className={`w-full text-center text-xl font-bold px-4 py-2.5 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500 transition-all ${
-                    isDarkMode ? "bg-[#1E1E1E] border-dark-border-lighter text-white" : "bg-slate-50 border-light-border"
-                  }`}
-                  required
-                />
+                  value={managerPin}
+                  onChange={(val) => setManagerPin(val)}
+                  containerClassName="justify-center"
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
               </div>
 
               <div>
@@ -1318,14 +1762,14 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                   value={voidReason}
                   onChange={(e) => setVoidReason(e.target.value)}
                   placeholder={t.posVoidPlaceholder}
-                  className={`w-full text-xs px-4 py-2.5 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500 transition-all ${
-                    isDarkMode ? "bg-[#1E1E1E] border-dark-border-lighter text-white" : "bg-slate-50 border-light-border"
+                  className={`w-full text-xs px-4 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500 transition-all ${
+                    isDarkMode ? "bg-[#1A1A1E] border-[#38383C] text-white" : "bg-slate-50 border-slate-200"
                   }`}
                   required
                 />
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -1333,14 +1777,14 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                     setManagerPin("");
                     setVoidReason("");
                   }}
-                  className="flex-1 py-3 text-xs font-bold border border-light-border dark:border-dark-border-lighter hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
+                  className="flex-1 py-3 text-xs font-bold border border-slate-200 dark:border-[#38383C] hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
                 >
                   {t.cancel}
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="flex-1 py-3 text-xs font-bold bg-red-600 text-white hover:bg-red-700 rounded-xl transition-all cursor-pointer shadow-md"
+                  disabled={loading || managerPin.length < 6}
+                  className="flex-1 py-3 text-xs font-bold bg-red-600 text-white hover:bg-red-700 rounded-xl transition-all cursor-pointer shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? t.saving : t.posVoidConfirm}
                 </button>
@@ -1398,52 +1842,118 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
               {/* Payment Methods */}
               {!isInternalTake && (
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold opacity-75 uppercase tracking-wider block text-left">
-                    {language === "id" ? "Metode Pembayaran" : "Payment Method"}
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: "cash", label: t.posCashMethod },
-                      { id: "qris", label: t.posQrisMethod },
-                      { id: "other", label: language === "id" ? "Lainnya" : "Other" }
-                    ].map((method) => {
-                      const isSelected = paymentMethod === method.id;
-                      return (
-                        <button
-                          key={method.id}
-                          type="button"
-                          onClick={() => setPaymentMethod(method.id as any)}
-                          className={`p-3 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                            isSelected
-                              ? isDarkMode
-                                ? "bg-primary/15 border-primary text-primary"
-                                : "bg-brand-purple/10 border-brand-purple text-brand-purple"
-                              : isDarkMode
-                                ? "bg-dark-border-lighter border-transparent text-[#94A3B8] hover:bg-[#404040]"
-                                : "bg-slate-50 border-light-border/60 text-neutral-dark hover:bg-slate-100"
-                          }`}
-                        >
-                          <CreditCard className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">{method.label}</span>
-                        </button>
-                      );
-                    })}
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold opacity-75 uppercase tracking-wider block text-left">
+                      {t.posReceiptPaymentMethod || "Metode Pembayaran"}
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: "cash", label: t.posCashMethod },
+                        { id: "qris", label: t.posQrisMethod },
+                        { id: "other", label: t.posOtherMethod || "Lainnya" }
+                      ].map((method) => {
+                        const isSelected = paymentMethod === method.id;
+                        return (
+                          <button
+                            key={method.id}
+                            type="button"
+                            onClick={() => {
+                              setPaymentMethod(method.id as any);
+                              if (method.id === "cash" && cashReceived === 0) {
+                                setCashReceived(Math.round(totalAmount));
+                              }
+                            }}
+                            className={`p-3 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                              isSelected
+                                ? isDarkMode
+                                  ? "bg-primary/15 border-primary text-primary"
+                                  : "bg-brand-purple/10 border-brand-purple text-brand-purple"
+                                : isDarkMode
+                                  ? "bg-[#1E1E22] border-transparent text-[#94A3B8] hover:bg-[#28282C]"
+                                  : "bg-slate-50 border-slate-200 text-neutral-dark hover:bg-slate-100"
+                            }`}
+                          >
+                            <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{method.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
+
+                  {/* Cash Details: Quick Cash Buttons & Change Due */}
+                  {paymentMethod === "cash" && (
+                    <div className="p-3.5 rounded-2xl border border-slate-200/80 dark:border-[#38383C] bg-slate-50/70 dark:bg-[#1E1E22]/60 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold opacity-75 uppercase tracking-wider">
+                          {t.posCashReceived || "Uang Diterima (Cash)"}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setCashReceived(Math.round(totalAmount))}
+                          className="text-[10px] font-bold text-brand-purple dark:text-primary hover:underline cursor-pointer"
+                        >
+                          {t.posCashExact || "Uang Pas"}
+                        </button>
+                      </div>
+
+                      <CurrencyInput
+                        value={cashReceived}
+                        onChange={(val) => setCashReceived(val)}
+                        placeholder="0"
+                        className="text-center font-bold text-lg h-12 rounded-xl"
+                      />
+
+                      {/* Quick Cash Presets */}
+                      <div className="grid grid-cols-4 gap-1.5 pt-1">
+                        {[
+                          Math.round(totalAmount),
+                          Math.ceil(Math.round(totalAmount) / 10000) * 10000,
+                          Math.ceil(Math.round(totalAmount) / 50000) * 50000,
+                          Math.ceil(Math.round(totalAmount) / 100000) * 100000
+                        ]
+                          .filter((val, index, self) => val > 0 && self.indexOf(val) === index)
+                          .slice(0, 4)
+                          .map((preset, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setCashReceived(preset)}
+                              className="py-1.5 px-1 bg-white dark:bg-[#28282C] border border-slate-200 dark:border-[#38383C] rounded-lg text-[10px] font-bold hover:border-brand-purple dark:hover:border-primary transition-all cursor-pointer truncate"
+                            >
+                              {preset === Math.round(totalAmount) ? "Pas" : `Rp ${preset.toLocaleString("id-ID")}`}
+                            </button>
+                          ))}
+                      </div>
+
+                      {/* Change breakdown */}
+                      <div className="flex items-center justify-between pt-2 border-t border-dashed border-slate-200 dark:border-[#38383C] text-xs font-bold">
+                        <span className="text-slate-500 dark:text-slate-400">{t.posChangeDue || "Kembalian"}:</span>
+                        <span className={`text-sm ${
+                          cashReceived >= Math.round(totalAmount)
+                            ? "text-emerald-600 dark:text-primary"
+                            : "text-red-500"
+                        }`}>
+                          Rp {Math.max(0, cashReceived - Math.round(totalAmount)).toLocaleString("id-ID")}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Payment Modal Summary */}
               <div className={`p-4 rounded-2xl text-xs space-y-2 font-semibold ${
-                isDarkMode ? "bg-dark-border-lighter text-white" : "bg-[#E7DCFD] text-neutral-dark"
+                isDarkMode ? "bg-[#1E1E22] text-white" : "bg-[#F3EFE4] text-neutral-dark"
               }`}>
                 <div className="flex justify-between">
-                  <span className="opacity-75">{language === "id" ? "Total Produk:" : "Total Items:"}</span>
+                  <span className="opacity-75">{t.posTotalItemsLabel || "Total Produk:"}</span>
                   <span>{cart.reduce((sum, item) => sum + item.qty, 0)} {t.posUnit}</span>
                 </div>
-                <div className="flex justify-between text-sm font-bold pt-2 border-t border-dashed border-light-border text-brand-purple dark:text-primary">
+                <div className="flex justify-between text-sm font-bold pt-2 border-t border-dashed border-slate-300 dark:border-slate-700 text-brand-purple dark:text-primary">
                   <span>{t.posTotalPayment}</span>
-                  <span>Rp {Math.round(totalAmount).toLocaleString()}</span>
+                  <span>Rp {Math.round(totalAmount).toLocaleString("id-ID")}</span>
                 </div>
               </div>
             </div>
@@ -1453,14 +1963,14 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
               <button
                 type="button"
                 onClick={() => setShowPaymentModal(false)}
-                className="flex-1 py-3 text-xs font-bold border border-light-border dark:border-dark-border-lighter hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
+                className="flex-1 py-3 text-xs font-bold border border-slate-200 dark:border-[#38383C] hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
               >
                 {t.cancel}
               </button>
               <button
                 type="button"
                 onClick={handleConfirmPayment}
-                className="flex-1 py-3 text-xs font-bold bg-brand-purple text-white hover:bg-brand-purple-hover rounded-xl transition-all cursor-pointer shadow-md"
+                className="flex-1 py-3 text-xs font-bold bg-brand-purple text-white hover:bg-brand-purple-hover dark:bg-[#E2FF66] dark:text-slate-900 rounded-xl transition-all cursor-pointer shadow-md"
               >
                 {t.posProcessPayment}
               </button>
@@ -1483,7 +1993,7 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
             </div>
 
             {/* Receipt Monospace Card */}
-            <div className="space-y-3.5 text-xs font-mono border-t border-b border-dashed border-light-border/60 dark:border-dark-border-lighter py-3.5 my-3.5 max-h-[250px] overflow-y-auto dark:text-white">
+            <div className="space-y-3.5 text-xs font-mono border-t border-b border-dashed border-slate-200 dark:border-[#38383C] py-3.5 my-3.5 max-h-[260px] overflow-y-auto dark:text-white">
               <div className="flex justify-between opacity-75">
                 <span>{t.posReceiptDate}:</span>
                 <span>{new Date(showReceipt.created_at).toLocaleString(language === "id" ? "id-ID" : "en-US")}</span>
@@ -1497,32 +2007,48 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                 <span className="font-bold text-brand-purple dark:text-primary uppercase">{showReceipt.payment_method}</span>
               </div>
               
-              <div className="space-y-1.5 pt-2 border-t border-light-border/60 dark:border-dark-border-lighter">
+              <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-[#38383C]">
                 {showReceipt.items?.map((item: any, idx: number) => (
                   <div key={idx} className="flex justify-between text-[11px]">
                     <span className="truncate max-w-[70%]">{item.name} (x{item.qty})</span>
-                    <span>Rp {item.subtotal.toLocaleString()}</span>
+                    <span>Rp {item.subtotal.toLocaleString("id-ID")}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="space-y-1.5 pt-2 border-t border-light-border/60 dark:border-dark-border-lighter font-semibold">
+              <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-[#38383C] font-semibold">
                 <div className="flex justify-between">
                   <span>{t.posSubtotal}:</span>
-                  <span>Rp {showReceipt.subtotal?.toLocaleString() || "0"}</span>
+                  <span>Rp {showReceipt.subtotal?.toLocaleString("id-ID") || "0"}</span>
                 </div>
-                <div className="flex justify-between text-emerald-600 font-bold">
-                  <span>{t.posDiscount} ({showReceipt.discountRate || 0}%):</span>
-                  <span>-Rp {showReceipt.discountAmount?.toLocaleString() || "0"}</span>
-                </div>
-                <div className="flex justify-between text-amber-500">
-                  <span>{t.posTax} ({showReceipt.taxRate || 0}%):</span>
-                  <span>Rp {showReceipt.taxAmount?.toLocaleString() || "0"}</span>
-                </div>
-                <div className="flex justify-between text-sm font-bold pt-2 border-t border-light-border/60 dark:border-dark-border-lighter text-brand-purple dark:text-primary">
+                {showReceipt.discountAmount > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-bold">
+                    <span>{t.posDiscount} ({showReceipt.discountRate || 0}%):</span>
+                    <span>-Rp {showReceipt.discountAmount?.toLocaleString("id-ID")}</span>
+                  </div>
+                )}
+                {showReceipt.taxAmount > 0 && (
+                  <div className="flex justify-between text-amber-500">
+                    <span>{t.posTax} ({showReceipt.taxRate || 0}%):</span>
+                    <span>Rp {showReceipt.taxAmount?.toLocaleString("id-ID")}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm font-bold pt-2 border-t border-slate-200 dark:border-[#38383C] text-brand-purple dark:text-primary">
                   <span>{t.posReceiptTotalBill}:</span>
-                  <span>Rp {Math.round(showReceipt.totalAmount || showReceipt.total_amount).toLocaleString()}</span>
+                  <span>Rp {Math.round(showReceipt.totalAmount || showReceipt.total_amount).toLocaleString("id-ID")}</span>
                 </div>
+                {showReceipt.payment_method === "cash" && (
+                  <>
+                    <div className="flex justify-between text-[11px] pt-1 opacity-80">
+                      <span>{t.posCashReceived}:</span>
+                      <span>Rp {(showReceipt.cashReceived || showReceipt.total_amount).toLocaleString("id-ID")}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] font-bold text-emerald-600 dark:text-primary">
+                      <span>{t.posChangeDue}:</span>
+                      <span>Rp {(showReceipt.changeDue || 0).toLocaleString("id-ID")}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1531,16 +2057,17 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
               <button
                 type="button"
                 onClick={() => {
-                  alert(t.posReceiptPrinted);
+                  toast.success(t.posReceiptPrinted || "Struk nota berhasil dicetak!");
                 }}
-                className="flex-1 py-3 text-xs font-bold border border-light-border dark:border-dark-border-lighter hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white"
+                className="flex-1 py-3 text-xs font-bold border border-slate-200 dark:border-[#38383C] hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer dark:text-white flex items-center justify-center gap-1.5"
               >
-                {t.posPrintReceipt}
+                <Printer className="w-3.5 h-3.5" />
+                <span>{t.posPrintReceipt}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setShowReceipt(null)}
-                className="flex-1 py-3 text-xs font-bold bg-brand-purple text-white hover:bg-brand-purple-hover rounded-xl transition-all cursor-pointer shadow-md"
+                className="flex-1 py-3 text-xs font-bold bg-brand-purple text-white hover:bg-brand-purple-hover dark:bg-[#E2FF66] dark:text-slate-900 rounded-xl transition-all cursor-pointer shadow-md"
               >
                 {t.posNewTransaction}
               </button>
@@ -1652,11 +2179,16 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
                         }`}
                       >
                         <div className="flex items-center space-x-3 min-w-0 flex-1">
-                          <img src={getProductImage(item.product)} alt={item.product.name} className="w-10 h-10 rounded-xl object-cover shrink-0" />
+                          <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0 bg-slate-100 dark:bg-white/5">
+                            <ErpImage src={item.product.image_url} alt={item.product.name} className="w-full h-full object-cover" />
+                          </div>
                           <div className="min-w-0 flex-1">
                             <h4 className="font-bold text-xs leading-tight truncate">{item.product.name}</h4>
                             <span className="text-[10px] opacity-75 font-semibold text-brand-purple dark:text-primary">
-                              Rp {item.product.sell_price.toLocaleString("id-ID")} x {item.qty}
+                              Rp {Math.round(getLineTotal(item)).toLocaleString("id-ID")}{" "}
+                              <span className="text-slate-400 font-normal">
+                                ({item.qty} {item.product.base_unit || item.product.unit_type} @ Rp {item.product.sell_price.toLocaleString("id-ID")}/{getPriceUnitLabel(item.product)})
+                              </span>
                             </span>
                           </div>
                         </div>
@@ -1685,6 +2217,38 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
 
                 {/* Sticky Action Footer */}
                 <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5 shrink-0">
+                  {/* Mobile Active Promo / Voucher Selector */}
+                  <div className="flex items-center justify-between pb-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowPromoDrawer(true)}
+                      className="flex items-center gap-1.5 text-xs font-bold text-brand-purple dark:text-primary hover:opacity-80 transition-opacity cursor-pointer"
+                    >
+                      <Tag className="w-3.5 h-3.5" />
+                      <span>{effectivePromo ? effectivePromo.name : (t.posSelectPromo || "Pilih Promo / Kupon")}</span>
+                    </button>
+                    {effectivePromo ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPromo(null)}
+                        className="text-[10px] text-red-500 hover:underline font-semibold cursor-pointer"
+                      >
+                        ✕ {t.posRemovePromo || "Batal"}
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        {promotions.filter(isPromoCurrentlyValid).length} {language === "id" ? "Tersedia" : "Available"}
+                      </span>
+                    )}
+                  </div>
+
+                  {effectivePromo && discountAmount > 0 && (
+                    <div className="flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-primary">
+                      <span>{language === "id" ? "Potongan Promo:" : "Promo Discount:"}</span>
+                      <span>- Rp {Math.round(discountAmount).toLocaleString("id-ID")}</span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between text-sm font-extrabold">
                     <span>{t.posTotalPayment}</span>
                     <span className="text-brand-purple dark:text-primary text-base">
@@ -1715,6 +2279,532 @@ export default function POSModule({ gridCols = 4, showNumpad = true }: POSModule
           </div>
         </div>
       </>
+
+      {/* 7. Single Product Detail & Unbox Drawer */}
+      <Drawer
+        open={!!selectedProductForDetail}
+        onOpenChange={(open) => !open && setSelectedProductForDetail(null)}
+        direction="right"
+      >
+        <DrawerContent className={`w-[440px] max-w-[95vw] border-l ${
+          isDarkMode ? "bg-[#202024] border-[#38383C] text-white" : "bg-white border-slate-200 text-neutral-dark"
+        }`}>
+          {selectedProductForDetail && (() => {
+            const p = selectedProductForDetail;
+            const isTracked = p.is_inventory_tracked !== false;
+            const shelfStock = p.qty_loose ?? p.current_stock ?? 0;
+            const warehouseStock = p.qty_sealed ?? 0;
+            const convRate = p.conversion_rate || 1;
+            const totalEquiv = (warehouseStock * convRate) + shelfStock;
+            const hasWarehouseStock = warehouseStock > 0;
+
+            return (
+              <div className="flex flex-col h-full p-6 overflow-y-auto">
+                {/* Header */}
+                {/* Header */}
+                <DrawerHeader className="p-0 pb-4 border-b border-slate-200 dark:border-[#38383C]">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-left">
+                      <div className="w-10 h-10 rounded-2xl bg-brand-purple/10 dark:bg-primary/10 flex items-center justify-center text-brand-purple dark:text-primary shrink-0">
+                        <Package className="w-5 h-5 stroke-[2.2]" />
+                      </div>
+                      <div>
+                        <DrawerTitle className="text-base font-extrabold">{t.posItemDetailTitle || "Detail Produk & Stok"}</DrawerTitle>
+                        <DrawerDescription className="text-xs text-slate-500 dark:text-slate-400">
+                          {t.posItemDetailDesc || "Informasi stok rak, gudang dus, dan pembongkaran kemasan."}
+                        </DrawerDescription>
+                      </div>
+                    </div>
+
+                    {/* Pin/Unpin Action Button in Drawer */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newlyPinned = togglePinItem(p.id);
+                        if (newlyPinned) {
+                          toast.success(
+                            (t.posPinSuccess || '"{name}" berhasil disematkan ke posisi teratas!').replace("{name}", p.name)
+                          );
+                        } else {
+                          toast.info(
+                            (t.posUnpinSuccess || 'Sematan "{name}" telah dilepas.').replace("{name}", p.name)
+                          );
+                        }
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                        isItemPinned(p.id)
+                          ? "bg-amber-500 text-white shadow-xs"
+                          : "bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200"
+                      }`}
+                      title={isItemPinned(p.id) ? (t.posUnpinItem || "Lepas Sematan (Unpin)") : (t.posPinItem || "Sematkan Produk (Pin ke Atas)")}
+                    >
+                      <Pin className={`w-3.5 h-3.5 ${isItemPinned(p.id) ? "fill-white" : ""}`} />
+                      <span>{isItemPinned(p.id) ? (t.posPinnedBadge || "Disematkan") : (t.posPinItem || "Pin")}</span>
+                    </button>
+                  </div>
+                </DrawerHeader>
+
+                {/* Product Identity Hero */}
+                <div className="py-4 border-b border-slate-200 dark:border-[#38383C] flex items-center gap-3.5">
+                  <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
+                    <ErpImage src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight truncate">{p.name}</h3>
+                      {onNavigate && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedProductForDetail(null);
+                            onNavigate("items");
+                          }}
+                          className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-slate-100 dark:bg-white/10 hover:bg-slate-200 transition-colors cursor-pointer"
+                          title={t.viewInMasterItem || "Buka Detail"}
+                        >
+                          <ExternalLink className="w-3 h-3 text-slate-400" />
+                          <span>{t.viewInMasterItem || "Buka Detail"}</span>
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] font-mono text-slate-500 mt-0.5">SKU: {p.sku || "-"}</p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="text-xs font-black text-brand-purple dark:text-primary">
+                        Rp {p.sell_price.toLocaleString("id-ID")}{" "}
+                        <span className="text-[10px] font-normal text-slate-400">/{getPriceUnitLabel(p)}</span>
+                      </span>
+                      <span className="text-[10px] px-2 py-0.2 rounded-full bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 font-bold">
+                        {p.category || "General"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Real-time 3-Tier Stock Cards */}
+                {isTracked ? (
+                  <div className="py-4 space-y-2 border-b border-slate-200 dark:border-[#38383C]">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Status Ketersediaan Stok
+                    </span>
+
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-[#28282C] border border-slate-200/80 dark:border-white/5">
+                        <span className="text-[9px] font-bold text-slate-400 block uppercase">{t.posShelfStock || "Rak Kasir"}</span>
+                        <span className={`text-sm font-black mt-1 block ${
+                          shelfStock <= 0 ? "text-red-500" : shelfStock < 5 ? "text-amber-500" : "text-slate-800 dark:text-slate-100"
+                        }`}>
+                          {shelfStock} <span className="text-[10px] font-semibold">{p.base_unit || p.unit_type}</span>
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-[#28282C] border border-slate-200/80 dark:border-white/5">
+                        <span className="text-[9px] font-bold text-slate-400 block uppercase">{t.posWarehouseStock || "Gudang Dus"}</span>
+                        <span className="text-sm font-black text-purple-600 dark:text-purple-400 mt-1 block">
+                          {warehouseStock} <span className="text-[10px] font-semibold">{p.box_unit || "Dus"}</span>
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-[#28282C] border border-slate-200/80 dark:border-white/5">
+                        <span className="text-[9px] font-bold text-slate-400 block uppercase">{t.posTotalEquivStock || "Total Fisik"}</span>
+                        <span className="text-sm font-black text-slate-900 dark:text-white mt-1 block">
+                          {totalEquiv} <span className="text-[10px] font-semibold">{p.base_unit || p.unit_type}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {p.box_unit && p.conversion_rate && (
+                      <p className="text-[10px] text-slate-500 italic text-right pt-1">
+                        1 {p.box_unit} = {p.conversion_rate} {p.base_unit || p.unit_type}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-4 border-b border-slate-200 dark:border-[#38383C]">
+                    <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 text-left space-y-1.5">
+                      <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-bold text-xs">
+                        <Sparkles className="w-4 h-4 text-emerald-500 shrink-0" />
+                        <span>{t.posUntrackedStockBadge || "Tanpa Lacak Stok (Jasa / Unlimited)"}</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-600/90 dark:text-emerald-400 leading-relaxed">
+                        {t.posUntrackedStockNote || "Item ini berstatus non-inventori atau jasa. Kasir dapat melakukan penjualan bebas tanpa limitasi kuantitas stok rak maupun gudang."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Inline Unbox Section (Only for tracked items) */}
+                {isTracked ? (
+                  <div className="flex-1 py-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <ArrowDownToDot className="w-4 h-4 text-brand-purple dark:text-primary" />
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                        {t.posUnpackSectionTitle || "Bongkar Dus ke Rak (Unbox)"}
+                      </span>
+                    </div>
+
+                    {hasWarehouseStock ? (
+                      <form onSubmit={handleConfirmUnbox} className="space-y-3.5 p-4 rounded-2xl bg-brand-purple/5 dark:bg-primary/5 border border-brand-purple/20">
+                        {/* Box Quantity Input */}
+                        <div className="space-y-1.5 text-left">
+                          <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                            {t.posUnpackQtyLabel || "Jumlah Dus yang Dibongkar"}
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              max={warehouseStock}
+                              value={boxesToUnbox}
+                              onChange={(e) => setBoxesToUnbox(Math.max(1, parseInt(e.target.value) || 1))}
+                              className="flex-1 px-3 py-2 text-sm font-extrabold rounded-xl border border-slate-200 dark:border-[#38383C] bg-white dark:bg-[#28282C] focus:outline-none focus:ring-2 focus:ring-brand-purple"
+                              required
+                            />
+                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{p.box_unit || "Dus"}</span>
+                          </div>
+                        </div>
+
+                        {/* Yield preview */}
+                        <div className="p-2.5 rounded-xl bg-white dark:bg-[#202024] border border-slate-200/80 dark:border-white/5 text-xs flex items-center justify-between">
+                          <span className="text-slate-500 font-medium">{t.posUnpackYieldLabel || "Hasil Tambahan Satuan Rak"}:</span>
+                          <span className="font-black text-brand-purple dark:text-primary text-sm">
+                            + {boxesToUnbox * convRate} {p.base_unit || p.unit_type}
+                          </span>
+                        </div>
+
+                        {/* Notes Input */}
+                        <div className="space-y-1 text-left">
+                          <label className="text-[10px] font-bold text-slate-500">
+                            Catatan (Opsional)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Misal: Restock etalase kasir"
+                            value={unboxNotes}
+                            onChange={(e) => setUnboxNotes(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-[#38383C] bg-white dark:bg-[#28282C] focus:outline-none"
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={unboxingLoading || warehouseStock < boxesToUnbox}
+                          className="w-full py-2.5 rounded-xl bg-brand-purple hover:bg-brand-purple-hover text-white dark:bg-primary dark:text-slate-900 text-xs font-bold transition-all shadow-md disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          {unboxingLoading ? (t.posUnpackLoading || "Memproses...") : (t.posUnpackSubmit || "Konfirmasi Bongkar Dus")}
+                        </button>
+                      </form>
+                    ) : (
+                      <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#28282C] border border-slate-200 dark:border-[#38383C] text-center text-slate-400 text-xs py-6">
+                        <Boxes className="w-8 h-8 mx-auto opacity-40 mb-2" />
+                        <p className="font-bold text-slate-600 dark:text-slate-300">{t.posNoWarehouseStockNotice || "Tidak ada stok dus di gudang"}</p>
+                        <p className="text-[10px] mt-1 text-slate-400">Seluruh stok barang ini sudah berada di rak display kasir atau habis.</p>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                {/* Footer Quick Action */}
+                <div className="pt-3 border-t border-slate-200 dark:border-[#38383C] flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProductForDetail(null)}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-[#38383C] text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                  >
+                    {t.close || "Tutup"}
+                  </button>
+                  {shelfStock > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        addToCart(p);
+                        setSelectedProductForDetail(null);
+                        toast.success(`1x ${p.name} dimasukkan ke keranjang`);
+                      }}
+                      className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-bold hover:opacity-90 cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      + Keranjang
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </DrawerContent>
+      </Drawer>
+
+      {/* 9. Voucher & Promotion Selector Drawer */}
+      <Drawer
+        open={showPromoDrawer}
+        onOpenChange={setShowPromoDrawer}
+        direction="right"
+      >
+        <DrawerContent className="w-[500px] sm:w-[540px] md:w-[560px] max-w-[95vw] border-l bg-white dark:bg-[#202024] text-neutral-dark dark:text-white">
+          <div className="flex flex-col h-full w-full p-5 sm:p-6 overflow-hidden">
+            
+            {/* Header */}
+            <DrawerHeader className="p-0 pb-4 border-b border-slate-200 dark:border-[#38383C] shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-left">
+                  <div className="w-10 h-10 rounded-2xl bg-brand-purple/10 dark:bg-primary/10 flex items-center justify-center text-brand-purple dark:text-primary shrink-0 font-bold">
+                    <Ticket className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <div>
+                    <DrawerTitle className="text-base font-extrabold text-slate-800 dark:text-slate-100">
+                      {language === "id" ? "Voucher & Promo Kasir" : "Vouchers & Cashier Promo"}
+                    </DrawerTitle>
+                    <DrawerDescription className="text-xs text-slate-500 dark:text-slate-400">
+                      {language === "id"
+                        ? "Pilih program promosi aktif atau masukkan kode voucher kupon."
+                        : "Select active promotion program or enter coupon voucher code."}
+                    </DrawerDescription>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPromoDrawer(false)}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-[#2C2C30] hover:bg-slate-200 dark:hover:bg-[#38383C] text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                  title={t.close || "Tutup"}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Cart Context Summary Strip */}
+              <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
+                <div className="p-2 rounded-xl bg-slate-50 dark:bg-[#28282C] border border-slate-200/80 dark:border-white/5 text-left">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                    {language === "id" ? "Subtotal Keranjang" : "Cart Subtotal"}
+                  </span>
+                  <span className="text-xs font-black text-slate-900 dark:text-white mt-0.5 block">
+                    Rp {subtotal.toLocaleString("id-ID")}
+                  </span>
+                </div>
+                <div className="p-2 rounded-xl bg-slate-50 dark:bg-[#28282C] border border-slate-200/80 dark:border-white/5 text-left">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                    {language === "id" ? "Total Item Belanja" : "Total Cart Items"}
+                  </span>
+                  <span className="text-xs font-black text-brand-purple dark:text-primary mt-0.5 block">
+                    {totalCartQty} {language === "id" ? "Unit" : "Units"} ({cart.length} SKU)
+                  </span>
+                </div>
+              </div>
+            </DrawerHeader>
+
+            {/* Scrollable Body Content */}
+            <div className="flex-1 overflow-y-auto py-4 space-y-5 pr-1 scrollbar-thin">
+              
+              {/* Coupon Code Input Form */}
+              <form onSubmit={handleApplyCoupon} className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block text-left">
+                  {language === "id" ? "Punya Kode Voucher Kupon?" : "Have a Coupon Code?"}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder={language === "id" ? "Contoh: DISKONHEMAT10" : "E.g. SUMMERPROMO10"}
+                    value={couponCodeInput}
+                    onChange={(e) => setCouponCodeInput(e.target.value.toUpperCase())}
+                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-[#38383C] bg-slate-50 dark:bg-[#28282C] font-mono font-bold text-xs uppercase focus:outline-none focus:ring-2 focus:ring-brand-purple dark:focus:ring-primary"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!couponCodeInput.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-brand-purple hover:bg-brand-purple-hover text-white dark:bg-primary dark:text-slate-900 text-xs font-bold transition-all disabled:opacity-40 cursor-pointer shrink-0"
+                  >
+                    {language === "id" ? "Terapkan" : "Apply"}
+                  </button>
+                </div>
+              </form>
+
+              {/* List of Available Promotions */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                    {language === "id" ? "Daftar Promo Tersedia" : "Available Promotions"}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-400">
+                    {promotions.length} {language === "id" ? "Program" : "Programs"}
+                  </span>
+                </div>
+
+                {promotions.length === 0 ? (
+                  <div className="p-8 text-center rounded-2xl bg-slate-50 dark:bg-[#28282C] border border-slate-200 dark:border-[#38383C] space-y-2">
+                    <Ticket className="w-8 h-8 mx-auto opacity-30 text-slate-400" />
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                      {language === "id" ? "Belum ada promo yang terdaftar" : "No promotions registered yet"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {promotions.map((p) => {
+                      const isTimeValid = isPromoCurrentlyValid(p);
+                      const isMinOrderValid = p.min_order_amount <= 0 || subtotal >= p.min_order_amount;
+                      const isMinQtyValid = p.min_qty <= 0 || totalCartQty >= p.min_qty;
+                      const isTargetValid = p.target_scope === "entire_order" || (
+                        p.target_scope === "specific_items"
+                          ? cart.some((c) => p.target_ids?.includes(c.product.id))
+                          : cart.some((c) =>
+                              p.target_ids?.includes(c.product.category_id || "") ||
+                              p.target_ids?.includes(c.product.category || "")
+                            )
+                      );
+                      const isEligible = isTimeValid && isMinOrderValid && isMinQtyValid && isTargetValid && cart.length > 0;
+                      const isSelected = selectedPromo?.id === p.id;
+                      const isAutoEffective = !selectedPromo && effectivePromo?.id === p.id;
+
+                      // Reason why ineligible
+                      let ineligibleHint = "";
+                      if (!isTimeValid) {
+                        ineligibleHint = language === "id" ? "Di luar jadwal / jam aktif" : "Outside active schedule";
+                      } else if (cart.length === 0) {
+                        ineligibleHint = language === "id" ? "Keranjang masih kosong" : "Cart is empty";
+                      } else if (!isMinOrderValid) {
+                        const diff = p.min_order_amount - subtotal;
+                        ineligibleHint = (language === "id" ? "Kurang Rp {diff} lagi" : "Needs Rp {diff} more").replace("{diff}", diff.toLocaleString("id-ID"));
+                      } else if (!isMinQtyValid) {
+                        const diffQty = p.min_qty - totalCartQty;
+                        ineligibleHint = (language === "id" ? "Kurang {diff} item lagi" : "Needs {diff} more items").replace("{diff}", String(diffQty));
+                      } else if (!isTargetValid) {
+                        ineligibleHint = language === "id" ? "Item target belum ada di keranjang" : "Target item not in cart";
+                      }
+
+                      return (
+                        <div
+                          key={p.id}
+                          className={`rounded-2xl border transition-all p-4 relative overflow-hidden ${
+                            isSelected || isAutoEffective
+                              ? "border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/25 shadow-xs"
+                              : isEligible
+                                ? "border-slate-200 dark:border-[#38383C] bg-white dark:bg-[#28282C] hover:border-brand-purple/50 dark:hover:border-primary/50 shadow-xs"
+                                : "border-dashed border-slate-200 dark:border-white/10 bg-slate-50/60 dark:bg-[#202024]/60 opacity-75"
+                          }`}
+                        >
+                          {/* Ticket Header & Value */}
+                          <div className="flex items-start justify-between gap-3 mb-2.5">
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight">
+                                  {p.name}
+                                </span>
+                                {p.code && (
+                                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-purple/10 text-brand-purple dark:bg-primary/10 dark:text-primary">
+                                    {p.code}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs font-black text-brand-purple dark:text-primary">
+                                {p.reward_type === "discount_pct"
+                                  ? `Diskon ${p.reward_value}%${p.max_discount_cap ? ` (Maks. Rp ${p.max_discount_cap.toLocaleString("id-ID")})` : ""}`
+                                  : `Potongan Rp ${p.reward_value.toLocaleString("id-ID")}`}
+                              </p>
+                            </div>
+
+                            <div className="shrink-0">
+                              {isSelected || isAutoEffective ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/50 px-2.5 py-1 rounded-full">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                  {language === "id" ? "Aktif Digunakan" : "Active"}
+                                </span>
+                              ) : isEligible ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-2.5 py-1 rounded-full">
+                                  <Sparkles className="w-3 h-3 text-amber-500" />
+                                  {language === "id" ? "Dapat Digunakan" : "Eligible"}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 rounded-full">
+                                  <AlertCircle className="w-3 h-3" />
+                                  {ineligibleHint}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Rules summary badges */}
+                          <div className="flex flex-wrap gap-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-3">
+                            {p.min_order_amount > 0 && (
+                              <span className={`px-2 py-0.5 rounded-md border ${
+                                isMinOrderValid
+                                  ? "border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                                  : "border-red-200 bg-red-50 text-red-600 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-400 font-semibold"
+                              }`}>
+                                Min. Rp {p.min_order_amount.toLocaleString("id-ID")}
+                              </span>
+                            )}
+                            {p.min_qty > 0 && (
+                              <span className={`px-2 py-0.5 rounded-md border ${
+                                isMinQtyValid
+                                  ? "border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                                  : "border-red-200 bg-red-50 text-red-600 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-400 font-semibold"
+                              }`}>
+                                Min. {p.min_qty} Item
+                              </span>
+                            )}
+                            <span className="px-2 py-0.5 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20">
+                              {p.target_scope === "entire_order"
+                                ? (language === "id" ? "Semua Item" : "Entire Order")
+                                : p.target_scope === "specific_items"
+                                  ? `${p.target_ids?.length || 0} Item Sasaran`
+                                  : `${p.target_ids?.length || 0} Kategori Sasaran`}
+                            </span>
+                            {p.active_time_start && p.active_time_end && (
+                              <span className="px-2 py-0.5 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 flex items-center gap-1">
+                                <Clock className="w-2.5 h-2.5" />
+                                {p.active_time_start} - {p.active_time_end}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Footer Action */}
+                          <div className="pt-2.5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400">
+                              {p.promo_type === "automatic"
+                                ? (language === "id" ? "Otomatis aktif" : "Auto applied")
+                                : (language === "id" ? "Kupon manual" : "Manual coupon")}
+                            </span>
+
+                            {isSelected ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedPromo(null);
+                                  toast.info(language === "id" ? "Promo dilepas dari keranjang" : "Promo removed from cart");
+                                }}
+                                className="px-3 py-1.5 rounded-xl text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                              >
+                                {language === "id" ? "Lepas Promo" : "Remove"}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={!isEligible}
+                                onClick={() => {
+                                  setSelectedPromo(p);
+                                  setShowPromoDrawer(false);
+                                  toast.success(`Promo "${p.name}" berhasil diterapkan!`);
+                                }}
+                                className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                  isEligible
+                                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:opacity-90 shadow-sm"
+                                    : "bg-slate-100 text-slate-400 dark:bg-white/5 dark:text-slate-500 cursor-not-allowed"
+                                }`}
+                              >
+                                {language === "id" ? "Pakai Voucher" : "Use Voucher"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        </DrawerContent>
+      </Drawer>
 
     </div>
   );

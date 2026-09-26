@@ -92,10 +92,11 @@ func main() {
 		"manager_pins", "categories", "items", "products", "item_stocks",
 		"stock_movements", "shifts", "transactions", "transaction_items",
 		"boms", "bom_items", "productions", "production_expenses",
-		"distributions", "eod_material_usages", "daily_settlements",
+		"stock_transfers", "stock_transfer_items",
+		"eod_material_usages", "daily_settlements",
 		"daily_settlement_items", "opname_sessions", "opname_items",
 		"procurements", "procurement_items", "wastage_logs", "audit_logs",
-		"stock_batches", "ingredients",
+		"stock_batches", "ingredients", "promotions", "promotion_targets",
 	}
 
 	fmt.Println("\n=== LIVE DATABASE TABLE AUDIT ===")
