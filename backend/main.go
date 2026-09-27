@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"andaya-erp/backend/internal/config"
+	"andaya-erp/backend/internal/jobs"
 	"andaya-erp/backend/internal/middleware"
 	"andaya-erp/backend/internal/modules/admin"
 	"andaya-erp/backend/internal/modules/auth"
@@ -266,7 +267,10 @@ func main() {
 	adminGroup.Get("/owners", admin.HandleGetOwnersHierarchy)
 	adminGroup.Post("/owners/:id/businesses", admin.HandleCreateBusinessForOwner)
 
-	// 5. Start HTTP Server
+	// 5. Start Background Schedulers & Workers
+	jobs.StartDraftCleanupScheduler(config.DB, 14)
+
+	// 6. Start HTTP Server
 	log.Printf("Starting API server on port %s in %s mode...", config.AppConfig.Port, config.AppConfig.Env)
 	log.Fatal(app.Listen(":" + config.AppConfig.Port))
 }

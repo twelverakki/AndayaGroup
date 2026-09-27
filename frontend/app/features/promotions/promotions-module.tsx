@@ -38,6 +38,7 @@ import {
   XCircle,
   Pause,
   Play,
+  ShieldAlert,
 } from "lucide-react";
 import {
   Dialog,
@@ -108,6 +109,8 @@ export function PromotionsModule() {
   const { activeContext } = useAuthStore();
   const { language } = useLanguageStore();
   const t = translations[language] || translations.id;
+
+  const isPromoAdmin = activeContext?.role === "owner" || activeContext?.role === "superadmin" || activeContext?.role === "admin_gudang" || activeContext?.role === "manager";
 
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [itemsList, setItemsList] = useState<ItemOption[]>([]);
@@ -189,6 +192,10 @@ export function PromotionsModule() {
   };
 
   const handleOpenCreate = () => {
+    if (!isPromoAdmin) {
+      toast.error("Akses Dibatasi: Staf tidak memiliki izin membuat program promo");
+      return;
+    }
     setEditingPromo(null);
     setIsReadOnly(false);
     setFormName("");
@@ -239,6 +246,10 @@ export function PromotionsModule() {
   };
 
   const handleOpenEdit = (p: Promotion) => {
+    if (!isPromoAdmin) {
+      toast.error("Akses Dibatasi: Staf tidak memiliki izin mengedit program promo");
+      return;
+    }
     populateFormFields(p);
     setIsReadOnly(false);
     setCurrentView("form");
@@ -393,6 +404,10 @@ export function PromotionsModule() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isPromoAdmin) {
+      toast.error("Akses Dibatasi: Staf tidak memiliki izin menyimpan program promo");
+      return;
+    }
     if (!formName.trim()) {
       toast.error(t.promoNameLabel + " wajib diisi");
       return;
@@ -447,6 +462,10 @@ export function PromotionsModule() {
   };
 
   const handleToggleActive = async (p: Promotion) => {
+    if (!isPromoAdmin) {
+      toast.error("Akses Dibatasi: Staf tidak memiliki izin mengubah status promosi");
+      return;
+    }
     const nextStatus = !p.is_active;
     try {
       await api.put(`/promotions/${p.id}`, { is_active: nextStatus });
@@ -819,8 +838,9 @@ export function PromotionsModule() {
                 <TooltipTrigger>
                   <button
                     type="button"
+                    disabled={!isPromoAdmin}
                     onClick={() => handleToggleActive(p)}
-                    className={`px-3 py-0.5 rounded-full text-[11px] font-extrabold cursor-pointer transition-all flex items-center gap-1.5 ${statusInfo.badgeClass}`}
+                    className={`px-3 py-0.5 rounded-full text-[11px] font-extrabold transition-all flex items-center gap-1.5 ${statusInfo.badgeClass} ${isPromoAdmin ? "cursor-pointer" : "cursor-default opacity-90"}`}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotClass}`} />
                     <span>{statusInfo.label}</span>
@@ -829,7 +849,9 @@ export function PromotionsModule() {
                 <TooltipContent className="text-xs max-w-xs font-normal">
                   <p className="font-bold mb-0.5">Status: {statusInfo.label}</p>
                   <p className="text-slate-200">{statusInfo.description}</p>
-                  <p className="text-[10px] text-slate-400 mt-1 italic">Klik tombol untuk mengubah switch aktif/jeda.</p>
+                  <p className="text-[10px] text-slate-400 mt-1 italic">
+                    {isPromoAdmin ? "Klik tombol untuk mengubah switch aktif/jeda." : "Status operasional promo saat ini."}
+                  </p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -892,13 +914,15 @@ export function PromotionsModule() {
               <span>Lihat Detail Program</span>
             </DropdownMenuItem>
 
-            <DropdownMenuItem
-              onClick={() => handleOpenEdit(p)}
-              className="gap-2 rounded-xl text-xs font-medium cursor-pointer text-slate-800 dark:text-slate-100"
-            >
-              <Edit2 className="w-3.5 h-3.5 text-blue-500" />
-              <span>Edit Parameter Promo</span>
-            </DropdownMenuItem>
+            {isPromoAdmin && (
+              <DropdownMenuItem
+                onClick={() => handleOpenEdit(p)}
+                className="gap-2 rounded-xl text-xs font-medium cursor-pointer text-slate-800 dark:text-slate-100"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-blue-500" />
+                <span>Edit Parameter Promo</span>
+              </DropdownMenuItem>
+            )}
 
             {p.code && (
               <DropdownMenuItem
@@ -910,28 +934,32 @@ export function PromotionsModule() {
               </DropdownMenuItem>
             )}
 
-            <DropdownMenuSeparator className="my-1 border-slate-100 dark:border-white/10" />
-            
-            <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              Kontrol Status
-            </div>
+            {isPromoAdmin && (
+              <>
+                <DropdownMenuSeparator className="my-1 border-slate-100 dark:border-white/10" />
+                
+                <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Kontrol Status
+                </div>
 
-            {p.is_active ? (
-              <DropdownMenuItem
-                onClick={() => handleToggleActive(p)}
-                className="gap-2 rounded-xl text-xs font-medium text-amber-600 dark:text-amber-400 cursor-pointer"
-              >
-                <Pause className="w-3.5 h-3.5" />
-                <span>Jeda Program (Nonaktifkan)</span>
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem
-                onClick={() => handleToggleActive(p)}
-                className="gap-2 rounded-xl text-xs font-medium text-emerald-600 dark:text-emerald-400 cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5" />
-                <span>Lanjutkan (Aktifkan Kembali)</span>
-              </DropdownMenuItem>
+                {p.is_active ? (
+                  <DropdownMenuItem
+                    onClick={() => handleToggleActive(p)}
+                    className="gap-2 rounded-xl text-xs font-medium text-amber-600 dark:text-amber-400 cursor-pointer"
+                  >
+                    <Pause className="w-3.5 h-3.5" />
+                    <span>Jeda Program (Nonaktifkan)</span>
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    onClick={() => handleToggleActive(p)}
+                    className="gap-2 rounded-xl text-xs font-medium text-emerald-600 dark:text-emerald-400 cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>Lanjutkan (Aktifkan Kembali)</span>
+                  </DropdownMenuItem>
+                )}
+              </>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -989,24 +1017,28 @@ export function PromotionsModule() {
               </button>
 
               {isReadOnly ? (
-                <button
-                  type="button"
-                  onClick={() => setIsReadOnly(false)}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all cursor-pointer"
-                >
-                  <Edit2 className="w-4 h-4" />
-                  <span>Edit Promo Ini</span>
-                </button>
+                isPromoAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setIsReadOnly(false)}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all cursor-pointer"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    <span>Edit Promo Ini</span>
+                  </button>
+                )
               ) : (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-brand-purple hover:bg-brand-purple-hover dark:bg-[#E2FF66] dark:text-slate-900 text-white font-bold text-xs rounded-2xl shadow-md transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <Check className="w-4 h-4 stroke-[2.5]" />
-                  <span>{submitting ? "Menyimpan..." : (editingPromo ? "Perbarui Promo" : "Simpan & Luncurkan")}</span>
-                </button>
+                isPromoAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-brand-purple hover:bg-brand-purple-hover dark:bg-[#E2FF66] dark:text-slate-900 text-white font-bold text-xs rounded-2xl shadow-md transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Check className="w-4 h-4 stroke-[2.5]" />
+                    <span>{submitting ? "Menyimpan..." : (editingPromo ? "Perbarui Promo" : "Simpan & Luncurkan")}</span>
+                  </button>
+                )
               )}
             </div>
           </div>
@@ -1014,7 +1046,7 @@ export function PromotionsModule() {
           {/* 2-Column Bento Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left">
             {/* Left Column: Form Controls (8 Cols) */}
-            <div className="lg:col-span-8 space-y-6">
+            <fieldset disabled={isReadOnly || !isPromoAdmin} className="lg:col-span-8 space-y-6 border-0 p-0 m-0 min-w-0">
               
               {/* CARD 1: Identitas & Besaran Diskon */}
               <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E22] border border-slate-200/80 dark:border-[#2E2E34] space-y-5 shadow-xs">
@@ -1723,7 +1755,7 @@ export function PromotionsModule() {
                 </div>
               </div>
 
-            </div>
+            </fieldset>
 
             {/* Right Column: Live POS Receipt Preview & Status (4 Cols) */}
             <div className="lg:col-span-4 space-y-5 sticky top-6">
@@ -1737,7 +1769,7 @@ export function PromotionsModule() {
                     {formIsActive ? "Aktif dan dapat dipakai di kasir" : "Di-nonaktifkan sementara"}
                   </span>
                 </div>
-                <Switch checked={formIsActive} onCheckedChange={setFormIsActive} />
+                <Switch checked={formIsActive} onCheckedChange={setFormIsActive} disabled={isReadOnly || !isPromoAdmin} />
               </div>
 
               {/* POS Cashier Receipt Simulation Card */}
@@ -2136,14 +2168,24 @@ export function PromotionsModule() {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-purple hover:bg-brand-purple-hover dark:bg-[#E2FF66] dark:text-slate-900 text-white font-bold text-xs rounded-2xl shadow-md transition-all cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>{t.promoCreateNew || "Buat Program Promo"}</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          {!isPromoAdmin && (
+            <span className="px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60 font-bold text-xs flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5" />
+              {t.itemsReadOnlyBadge || "Mode Baca (Read-Only)"}
+            </span>
+          )}
+          {isPromoAdmin && (
+            <button
+              type="button"
+              onClick={handleOpenCreate}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-purple hover:bg-brand-purple-hover dark:bg-[#E2FF66] dark:text-slate-900 text-white font-bold text-xs rounded-2xl shadow-md transition-all cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>{t.promoCreateNew || "Buat Program Promo"}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 2. Interactive KPI Summary Metric Strip (Quick Filters) */}

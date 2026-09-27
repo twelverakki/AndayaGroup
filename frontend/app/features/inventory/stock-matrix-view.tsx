@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
-import { useLanguageStore } from "../../lib/i18n";
+import { useLanguageStore, translations } from "../../lib/i18n";
 import { useTheme } from "../../hooks/use-theme";
 import { toast } from "../../components/ui/sonner";
 import { ErpSearchBar } from "../../components/ErpSearchBar";
@@ -100,12 +100,14 @@ export function StockMatrixView({
 }: StockMatrixViewProps) {
   const { activeContext } = useAuthStore();
   const { language } = useLanguageStore();
+  const t = translations[language] || translations.id;
   const { isDark } = useTheme();
 
   const [isLoading, setIsLoading] = useState(true);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [outlets, setOutlets] = useState<OutletInfo[]>([]);
   const [items, setItems] = useState<StockMatrixItem[]>([]);
+  const [existingTransfers, setExistingTransfers] = useState<any[]>([]);
 
   // Search & Filter States
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -146,13 +148,20 @@ export function StockMatrixView({
     setIsLoading(true);
     setPermissionError(null);
     try {
-      const res = await api.get("/inventory/matrix");
+      const [res, transfersRes] = await Promise.all([
+        api.get("/inventory/matrix"),
+        api.get("/transfers").catch(() => ({ data: [] })),
+      ]);
       const data = res.data?.data || res.data || {};
       const loadedOutlets: OutletInfo[] = data.outlets || [];
       const loadedItems: StockMatrixItem[] = data.items || [];
+      const loadedTransfers = Array.isArray(transfersRes.data)
+        ? transfersRes.data
+        : (transfersRes.data?.data || []);
 
       setOutlets(loadedOutlets);
       setItems(loadedItems);
+      setExistingTransfers(loadedTransfers);
 
       // Default Origin Outlet (HQ / Main)
       const main = loadedOutlets.find((o) => o.is_main) || loadedOutlets[0];
@@ -971,6 +980,9 @@ export function StockMatrixView({
                 ) : (
                   satelliteOutlets.map((o) => {
                     const isChecked = bulkTargetOutletIds.includes(o.id);
+                    const activeDraftsForOutlet = existingTransfers.filter(
+                      (d) => d.to_outlet_id === o.id && (d.status === "draft" || d.status === "pending_approval")
+                    );
                     return (
                       <div
                         key={o.id}
@@ -1001,7 +1013,7 @@ export function StockMatrixView({
                           />
                         </div>
 
-                        <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex items-center justify-between gap-1">
                             <span className={`font-bold text-xs truncate ${
                               isChecked ? "text-[#3F73F7] dark:text-white font-extrabold" : "text-slate-900 dark:text-slate-100"
@@ -1016,6 +1028,17 @@ export function StockMatrixView({
                           <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-tight">
                             {o.address || "Lokasi outlet operasional"}
                           </p>
+
+                          {activeDraftsForOutlet.length > 0 && (
+                            <div className="flex items-center gap-1.5 mt-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-lg border border-amber-200/80 dark:border-amber-800/40">
+                              <AlertTriangle className="w-3 h-3 shrink-0 text-amber-600 dark:text-amber-400" />
+                              <span className="truncate">
+                                {(t.distBulkDraftHasExistingWarn || "Cabang ini sudah memiliki {count} draf aktif ({draftNo})")
+                                  .replace("{count}", String(activeDraftsForOutlet.length))
+                                  .replace("{draftNo}", activeDraftsForOutlet[0].transfer_no || `#${activeDraftsForOutlet[0].id.slice(0, 8)}`)}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

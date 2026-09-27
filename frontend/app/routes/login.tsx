@@ -52,6 +52,7 @@ import {
   Send,
   Flame,
   Shield,
+  ShieldAlert,
   Building,
   GitBranch,
   MapPin,
@@ -71,6 +72,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isExpired = searchParams.get("expired") === "true";
+  const isSuspended = searchParams.get("reason") === "suspended";
 
   const { language, toggleLanguage } = useLanguageStore();
   const { isDark, toggleTheme } = useTheme();
@@ -453,9 +455,26 @@ export default function Login() {
             </CardHeader>
 
             <CardContent className="space-y-6">
+              {/* Account Suspended / Deactivated Alert */}
+              {isSuspended && (
+                <div className="flex items-start gap-3 p-3.5 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-xs font-medium rounded-2xl border border-rose-500/20 shadow-xs">
+                  <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+                  <div className="space-y-0.5 text-left">
+                    <span className="font-bold text-slate-900 dark:text-white block">
+                      {language === "id" ? "Akses Akun Dinonaktifkan" : "Account Suspended"}
+                    </span>
+                    <span className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed block">
+                      {language === "id"
+                        ? "Akun Anda telah dinonaktifkan oleh Administrator. Seluruh sesi login telah dihentikan secara otomatis."
+                        : "Your account has been deactivated by the Administrator. All active login sessions have been terminated."}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Session Expired Alert */}
-              {isExpired && (
-                <div className="flex items-center gap-2.5 p-3.5 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-medium rounded-xl border border-amber-500/20">
+              {isExpired && !isSuspended && (
+                <div className="flex items-center gap-2.5 p-3.5 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-medium rounded-2xl border border-amber-500/20">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>
                     {language === "id"

@@ -52,8 +52,19 @@ func (h *PromotionsHandler) HandleGetPromotions(c *fiber.Ctx) error {
 	return c.JSON(promos)
 }
 
+func isPromoAdmin(role string) bool {
+	return role == "owner" || role == "superadmin" || role == "admin_gudang" || role == "manager"
+}
+
 // HandleCreatePromotion handles POST /api/v1/promotions
 func (h *PromotionsHandler) HandleCreatePromotion(c *fiber.Ctx) error {
+	role, _ := c.Locals("role").(string)
+	if !isPromoAdmin(role) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Akses ditolak: Hanya Owner, Manager, atau Admin Gudang yang berwenang mengelola program promosi.",
+		})
+	}
+
 	businessIDStr, ok := c.Locals("business_id").(string)
 	if !ok || businessIDStr == "" {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "Access to active workspace denied"})
@@ -93,6 +104,13 @@ func (h *PromotionsHandler) HandleCreatePromotion(c *fiber.Ctx) error {
 
 // HandleUpdatePromotion handles PUT /api/v1/promotions/:id
 func (h *PromotionsHandler) HandleUpdatePromotion(c *fiber.Ctx) error {
+	role, _ := c.Locals("role").(string)
+	if !isPromoAdmin(role) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Akses ditolak: Hanya Owner, Manager, atau Admin Gudang yang berwenang mengubah program promosi.",
+		})
+	}
+
 	businessIDStr, ok := c.Locals("business_id").(string)
 	if !ok || businessIDStr == "" {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "Access to active workspace denied"})
@@ -129,6 +147,13 @@ func (h *PromotionsHandler) HandleUpdatePromotion(c *fiber.Ctx) error {
 
 // HandleDeletePromotion handles DELETE /api/v1/promotions/:id
 func (h *PromotionsHandler) HandleDeletePromotion(c *fiber.Ctx) error {
+	role, _ := c.Locals("role").(string)
+	if !isPromoAdmin(role) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Akses ditolak: Hanya Owner, Manager, atau Admin Gudang yang berwenang menonaktifkan program promosi.",
+		})
+	}
+
 	businessIDStr, ok := c.Locals("business_id").(string)
 	if !ok || businessIDStr == "" {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "Access to active workspace denied"})

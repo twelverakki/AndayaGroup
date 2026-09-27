@@ -2,12 +2,25 @@ package middleware
 
 import (
 	"strings"
+	"time"
 
 	"andaya-erp/backend/internal/config"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+func clearTokenCookie(c *fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{
+		Name:     "token",
+		Value:    "",
+		Expires:  time.Now().Add(-24 * time.Hour),
+		HTTPOnly: true,
+		Secure:   false,
+		SameSite: "Lax",
+		Path:     "/",
+	})
+}
 
 // AuthGuard parses and validates JWT tokens from cookies or Authorization header
 func AuthGuard() fiber.Handler {
@@ -58,6 +71,32 @@ func AuthGuard() fiber.Handler {
 		role, _ := claims["role"].(string)
 		businessID, _ := claims["business_id"].(string)
 		outletID, _ := claims["outlet_id"].(string)
+
+		// Check live active status in database to immediately enforce suspension / deactivation
+		if userID != "" && config.DB != nil {
+			var userStatus string
+			err := config.DB.QueryRow(c.Context(), "SELECT status FROM users WHERE id = $1", userID).Scan(&userStatus)
+			if err != nil || userStatus != "active" {
+				clearTokenCookie(c)
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+					"code":    "ACCOUNT_SUSPENDED",
+					"message": "Akun Anda telah dinonaktifkan oleh administrator. Silakan hubungi pemilik usaha.",
+				})
+			}
+
+			// For staff with specific outlet assignment, also check outlet staff status
+			if outletID != "" {
+				var staffStatus string
+				err := config.DB.QueryRow(c.Context(), "SELECT status FROM outlet_staff WHERE user_id = $1 AND outlet_id = $2", userID, outletID).Scan(&staffStatus)
+				if err == nil && staffStatus != "active" {
+					clearTokenCookie(c)
+					return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+						"code":    "ACCOUNT_SUSPENDED",
+						"message": "Penugasan outlet Anda telah dinonaktifkan oleh administrator. Silakan hubungi pemilik usaha.",
+					})
+				}
+			}
+		}
 
 		c.Locals("user_id", userID)
 		c.Locals("role", role)

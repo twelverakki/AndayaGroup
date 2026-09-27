@@ -314,6 +314,7 @@ export function DistributionModule({
 
   // Editing Draft State
   const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
+  const [editingTransferUpdatedAt, setEditingTransferUpdatedAt] = useState<string | null>(null);
 
   // Unsaved Form Dirty Guard State
   const [showExitConfirmDialog, setShowExitConfirmDialog] = useState<boolean>(false);
@@ -437,6 +438,7 @@ export function DistributionModule({
   // Open existing Draft in Creator Form with all pre-filled data
   const handleOpenEditDraft = (dist: DistributionItem) => {
     setEditingTransferId(dist.id);
+    setEditingTransferUpdatedAt(dist.updated_at || dist.created_at || null);
     setShipFromOutletID(dist.from_outlet_id || "");
     setShipToOutletID(dist.to_outlet_id || "");
     setShipToUserID(dist.sent_to_user_id || "");
@@ -746,6 +748,18 @@ export function DistributionModule({
     }
   }, [availableDestinations, shipToOutletID]);
 
+  // Active unfinished drafts for the currently selected origin & destination route
+  const matchingRouteDrafts = useMemo(() => {
+    if (!shipFromOutletID || !shipToOutletID) return [];
+    return distributions.filter(
+      (d) =>
+        d.from_outlet_id === shipFromOutletID &&
+        d.to_outlet_id === shipToOutletID &&
+        (d.status === "draft" || (isStaffOrCashier && d.status === "pending_approval")) &&
+        d.id !== editingTransferId
+    );
+  }, [distributions, shipFromOutletID, shipToOutletID, isStaffOrCashier, editingTransferId]);
+
   // Item Selector Modal State
   const [isItemPickerOpen, setIsItemPickerOpen] = useState<boolean>(false);
   const handleOpenItemPicker = () => setIsItemPickerOpen(true);
@@ -930,6 +944,7 @@ export function DistributionModule({
         transfer_type: shipType,
         status: "draft",
         notes: combinedNotes || undefined,
+        expected_updated_at: editingTransferUpdatedAt || undefined,
         items: validLines.map((l) => ({
           item_id: l.item_id,
           qty_sent_sealed: Number(l.qty_sent_sealed) || 0,
@@ -954,6 +969,7 @@ export function DistributionModule({
 
       // Reset form
       setEditingTransferId(null);
+      setEditingTransferUpdatedAt(null);
       setShipLines([]);
       setShipNotes("");
       setDriverName("");
@@ -979,6 +995,11 @@ export function DistributionModule({
       }
       return true;
     } catch (err: any) {
+      if (err.response?.status === 409) {
+        toast.warning(err.response?.data?.message || "Dokumen ini baru saja diubah oleh pengguna lain. Memuat data terbaru...");
+        await fetchData();
+        return false;
+      }
       toast.error(err.response?.data?.message || err.message || "Gagal menyimpan draf distribusi");
       return false;
     } finally {
@@ -1055,6 +1076,7 @@ export function DistributionModule({
         status: targetStatus,
         notes: combinedNotes || undefined,
         create_backorder: createBackorder,
+        expected_updated_at: editingTransferUpdatedAt || undefined,
         items: validLines.map((l) => ({
           item_id: l.item_id,
           qty_sent_sealed: Number(l.qty_sent_sealed) || 0,
@@ -1089,6 +1111,7 @@ export function DistributionModule({
 
       // Reset form
       setEditingTransferId(null);
+      setEditingTransferUpdatedAt(null);
       setShipLines([]);
       setShipNotes("");
       setDriverName("");
@@ -1116,6 +1139,11 @@ export function DistributionModule({
         setCurrentView("master");
       }
     } catch (err: any) {
+      if (err.response?.status === 409) {
+        toast.warning(err.response?.data?.message || "Dokumen ini baru saja diubah oleh pengguna lain. Memuat data terbaru...");
+        await fetchData();
+        return;
+      }
       toast.error(err.response?.data?.message || err.message || "Gagal menerbitkan surat jalan pengiriman");
     } finally {
       setIsSubmitting(false);
@@ -1513,7 +1541,14 @@ export function DistributionModule({
       const branchId = activeContext.outlet_id;
       return distributions.filter((d) => d.from_outlet_id === branchId || d.to_outlet_id === branchId);
     }
-    return distributions;
+    // In Main HQ / Holding View: Hide raw unsubmitted branch requisition drafts (status === 'draft')
+    return distributions.filter((d) => {
+      const isRequisition = d.transfer_type === "requisition" || (d as any).distribution_type === "requisition" || (d as any).type === "requisition";
+      if (d.status === "draft" && isRequisition && d.to_outlet_id !== activeContext?.outlet_id) {
+        return false;
+      }
+      return true;
+    });
   }, [distributions, isBranchScoped, activeContext]);
 
   // Filtered Distributions for Master Table
@@ -1575,6 +1610,7 @@ export function DistributionModule({
   const countInTransit = scopedDistributions.filter((d) => d.status === "in_transit" || d.status === "sent").length;
   const countReceived = scopedDistributions.filter((d) => d.status === "received").length;
   const countReturned = scopedDistributions.filter((d) => d.distribution_type === "return" || d.type === "return" || d.transfer_type === "return" || d.status === "returned").length;
+  const countDrafts = scopedDistributions.filter((d) => d.status === "draft" || (isStaffOrCashier && d.status === "pending_approval")).length;
 
   // Distribution Table Columns
   const distributionColumns: ColumnDef<DistributionItem>[] = [
@@ -2365,6 +2401,64 @@ export function DistributionModule({
                   </div>
                 </div>
               </div>
+
+              {/* Unfinished Draft Detection & Contextual Warning Box */}
+              {matchingRouteDrafts.length > 0 && !editingTransferId && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 dark:bg-amber-950/25 dark:border-amber-500/30 text-amber-950 dark:text-amber-200 space-y-3 shadow-2xs">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+                      <FileText className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-black text-amber-900 dark:text-amber-100">
+                          {t.distUnfinishedDraftNoticeTitle || "Ditemukan Draf Pengiriman Belum Selesai"}
+                        </p>
+                        <span className="px-2 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-800 dark:text-amber-300">
+                          {matchingRouteDrafts.length} Draf
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90 leading-relaxed font-medium">
+                        {(t.distUnfinishedDraftNoticeDesc || "Terdapat {count} draf rencana distribusi aktif untuk rute ke cabang ini ({draftNo}). Anda dapat melanjutkan draf tersebut untuk menghindari duplikasi dokumen.")
+                          .replace("{count}", String(matchingRouteDrafts.length))
+                          .replace("{draftNo}", matchingRouteDrafts.map((d) => d.transfer_no || "Draft").join(", "))}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Quick Action List for Existing Drafts */}
+                  <div className="space-y-2 pt-1 border-t border-amber-500/20">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {matchingRouteDrafts.map((draft) => {
+                        const itemsCount = (draft.items && draft.items.length > 0) ? draft.items.length : (draft.item_name ? 1 : 0);
+                        return (
+                          <div
+                            key={draft.id}
+                            className="p-2.5 sm:p-3 rounded-xl bg-white/90 dark:bg-[#202024]/90 border border-amber-500/30 flex items-center justify-between gap-3 flex-1 min-w-[260px]"
+                          >
+                            <div className="space-y-0.5 text-left">
+                              <span className="font-mono font-black text-xs text-slate-900 dark:text-white block">
+                                {draft.transfer_no || `SJ-${draft.id.slice(0, 8).toUpperCase()}`}
+                              </span>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
+                                {itemsCount} Macam Barang • {new Date(draft.created_at).toLocaleDateString(language === "en" ? "en-US" : "id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditDraft(draft)}
+                              className="px-3.5 py-1.5 rounded-xl bg-brand-purple hover:bg-brand-purple-hover text-white dark:bg-[#E2FF66] dark:text-slate-900 text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs shrink-0"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>{t.distBtnResumeDraft ? t.distBtnResumeDraft.replace("({draftNo})", draft.transfer_no || "") : "Lanjutkan Draf"}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Section: Biaya Distribusi & Kebijakan Klaim Kurir */}
@@ -4781,6 +4875,7 @@ export function DistributionModule({
                     { key: "in_transit", label: t.logisticsInTransit || "Dalam Perjalanan", count: countInTransit },
                     { key: "received", label: t.logisticsReceived || "Selesai Diterima", count: countReceived },
                     { key: "returned", label: t.distKpiReturned || "Retur / Batal", count: countReturned },
+                    { key: "draft", label: isStaffOrCashier ? (t.distKpiPendingRequisitions || "Menunggu Persetujuan") : (t.distDraftsTab || "Draf Surat Jalan"), count: countDrafts },
                   ],
                 },
                 {
@@ -4848,6 +4943,25 @@ export function DistributionModule({
               ]}
             />
           </div>
+
+          {/* Draft Notification Banner (Observability & Quick Resume) */}
+          {countDrafts > 0 && !selectedStatuses.includes("draft") && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 px-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-xs">
+              <div className="flex items-center gap-2.5 font-medium">
+                <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>
+                  {(t.distDraftsFilterPill || "Ada {count} Draf Belum Dikirim").replace("{count}", String(countDrafts))}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedStatuses(["draft"])}
+                className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition-all shrink-0 cursor-pointer shadow-xs"
+              >
+                {t.distBtnViewDrafts || "Tampilkan Draf"}
+              </button>
+            </div>
+          )}
 
           {/* 4. Distribution Table */}
           <ErpDataTable<DistributionItem>

@@ -1153,6 +1153,14 @@ export const translations = {
 		distQuotaMatrixBtn: "Matriks Alokasi Kuota Cabang",
 		distQuotaMatrixTitle: "Matriks Alokasi Kuota Multi-Cabang",
 		distQuotaMatrixDesc: "Tinjau dan distribusikan kuota stok pusat ke beberapa cabang pemohon secara adil dan serentak.",
+		distUnfinishedDraftNoticeTitle: "Ditemukan Draf Pengiriman Belum Selesai",
+		distUnfinishedDraftNoticeDesc: "Terdapat {count} draf rencana distribusi aktif untuk rute ke cabang ini ({draftNo}). Anda dapat melanjutkan draf tersebut untuk menghindari duplikasi dokumen.",
+		distBtnResumeDraft: "Lanjutkan Draf ({draftNo})",
+		distBtnIgnoreAndNew: "Tetap Buat Dokumen Baru",
+		distDraftsFilterPill: "Ada {count} Draf Belum Dikirim",
+		distBulkDraftHasExistingWarn: "Cabang ini sudah memiliki {count} draf aktif ({draftNo})",
+		distBtnViewDrafts: "Tampilkan Draf",
+		distDraftsTab: "Draf Surat Jalan",
 	},
 
 	en: {
@@ -2281,6 +2289,14 @@ export const translations = {
 		distQuotaMatrixBtn: "Branch Quota Allocation Matrix",
 		distQuotaMatrixTitle: "Multi-Branch Quota Matrix",
 		distQuotaMatrixDesc: "Review and distribute central inventory across multiple requesting branches concurrently.",
+		distUnfinishedDraftNoticeTitle: "Unfinished Delivery Draft Detected",
+		distUnfinishedDraftNoticeDesc: "There is {count} active draft delivery note for this destination branch ({draftNo}). You can resume editing it to avoid duplicates.",
+		distBtnResumeDraft: "Resume Draft ({draftNo})",
+		distBtnIgnoreAndNew: "Create New Document Anyway",
+		distDraftsFilterPill: "{count} Unfinished Drafts",
+		distBulkDraftHasExistingWarn: "This branch already has {count} active draft ({draftNo})",
+		distBtnViewDrafts: "Show Drafts",
+		distDraftsTab: "Delivery Drafts",
 	},
 };
 

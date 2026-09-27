@@ -80,6 +80,7 @@ type UpdateTransferRequest struct {
 	Notes                 *string                     `json:"notes,omitempty"`
 	BackorderStatus       *string                     `json:"backorder_status,omitempty"`
 	CreateBackorder       bool                        `json:"create_backorder,omitempty"`
+	ExpectedUpdatedAt     *time.Time                  `json:"expected_updated_at,omitempty"`
 	Items                 []CreateTransferItemRequest `json:"items,omitempty"`
 }
 
@@ -680,8 +681,19 @@ func (s *LogisticsService) GetTransfers(ctx context.Context, businessID uuid.UUI
 	args = append(args, businessID)
 
 	if outletID != nil && *outletID != uuid.Nil {
-		query += ` AND (t.from_outlet_id = $2 OR t.to_outlet_id = $2)`
+		query += ` AND (
+			(t.status != 'draft' AND (t.from_outlet_id = $2 OR t.to_outlet_id = $2))
+			OR
+			(t.status = 'draft' AND (
+				(t.transfer_type = 'requisition' AND t.to_outlet_id = $2)
+				OR
+				(t.transfer_type != 'requisition' AND t.from_outlet_id = $2)
+			))
+		)`
 		args = append(args, *outletID)
+	} else {
+		// Enterprise / Holding view: Hide unsubmitted branch requisition drafts until officially submitted (pending_approval)
+		query += ` AND NOT (t.status = 'draft' AND t.transfer_type = 'requisition')`
 	}
 
 	query += ` ORDER BY t.created_at DESC`
@@ -838,17 +850,29 @@ func (s *LogisticsService) UpdateTransfer(ctx context.Context, businessID uuid.U
 		toOutletID    uuid.UUID
 		currentStatus string
 		senderID      uuid.UUID
+		dbUpdatedAt   time.Time
 	)
 	err = tx.QueryRow(ctx, `
-		SELECT transfer_no, from_outlet_id, to_outlet_id, status, sent_by_user_id
+		SELECT transfer_no, from_outlet_id, to_outlet_id, status, sent_by_user_id, updated_at
 		FROM stock_transfers
 		WHERE id = $1 AND business_id = $2
-	`, transferID, businessID).Scan(&transferNo, &fromOutletID, &toOutletID, &currentStatus, &senderID)
+	`, transferID, businessID).Scan(&transferNo, &fromOutletID, &toOutletID, &currentStatus, &senderID, &dbUpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errors.New("surat jalan tidak ditemukan")
 		}
 		return nil, fmt.Errorf("failed to fetch stock transfer: %w", err)
+	}
+
+	// Optimistic Concurrency Control (OCC)
+	if req.ExpectedUpdatedAt != nil && !req.ExpectedUpdatedAt.IsZero() {
+		diff := dbUpdatedAt.Sub(*req.ExpectedUpdatedAt)
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > time.Second {
+			return nil, errors.New("ERR_OCC_CONFLICT: Dokumen ini baru saja diubah oleh pengguna lain. Silakan muat ulang data terbaru.")
+		}
 	}
 
 	if currentStatus == "cancelled" {

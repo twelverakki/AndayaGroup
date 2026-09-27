@@ -1,4 +1,5 @@
 import axios from "axios";
+import { useAuthStore } from "./store";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api/v1";
 
@@ -10,14 +11,27 @@ export const api = axios.create({
   },
 });
 
-// Response interceptor to handle session expiration (401 Unauthorized)
+// Response interceptor to handle session expiration or account suspension (401 Unauthorized)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Clear token/session or redirect if not on login page
+      const isSuspended = error.response.data?.code === "ACCOUNT_SUSPENDED";
+
+      // Clear client-side zustand auth session
+      try {
+        useAuthStore.getState().clearSession();
+      } catch (e) {
+        // ignore
+      }
+
+      // Clear token/session and redirect if not on login page
       if (!window.location.pathname.endsWith("/login")) {
-        window.location.href = "/login?expired=true";
+        if (isSuspended) {
+          window.location.href = "/login?reason=suspended";
+        } else {
+          window.location.href = "/login?expired=true";
+        }
       }
     }
     return Promise.reject(error);

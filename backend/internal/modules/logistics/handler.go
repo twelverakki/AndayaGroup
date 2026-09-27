@@ -1,6 +1,8 @@
 package logistics
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -250,6 +252,12 @@ func (h *LogisticsHandler) HandleUpdateTransfer(c *fiber.Ctx) error {
 
 	res, err := h.Service.UpdateTransfer(c.Context(), businessID, transferID, req)
 	if err != nil {
+		if strings.Contains(err.Error(), "ERR_OCC_CONFLICT") {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"message": "Dokumen ini baru saja diperbarui oleh pengguna lain. Sistem akan memuat data terbaru.",
+				"code":    "OCC_CONFLICT",
+			})
+		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"message": err.Error(),
 		})
