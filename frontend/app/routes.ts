@@ -4,4 +4,5 @@ export default [
   index("routes/home.tsx"),
   route("login", "routes/login.tsx"),
   route("claim/:token", "routes/claim.$token.tsx"),
+  route("preview-datepicker", "routes/preview-datepicker.tsx"),
 ] satisfies RouteConfig;

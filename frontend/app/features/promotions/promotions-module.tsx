@@ -6,6 +6,7 @@ import { ErpSearchBar } from "../../components/ErpSearchBar";
 import { ErpDataTable, type ColumnDef } from "../../components/ErpDataTable";
 import { ErpFilterPopover } from "../../components/ErpFilterPopover";
 import { CurrencyInput } from "../../components/CurrencyInput";
+import { DatePicker, TimePicker } from "../../components/ui/date-picker";
 import {
   Tag,
   Plus,
@@ -1676,27 +1677,25 @@ export function PromotionsModule() {
                         <Label className="text-[11px] text-slate-600 dark:text-slate-400 block mb-1">
                           Tanggal Mulai
                         </Label>
-                        <Input
-                          type="date"
+                        <DatePicker
                           value={formStartDate}
-                          onChange={(e) => setFormStartDate(e.target.value)}
-                          className="h-9 text-xs rounded-xl"
-                          required
+                          onChange={(val) => setFormStartDate(val)}
+                          placeholder="Pilih tanggal mulai..."
+                          className="h-9 w-full rounded-xl"
                         />
                       </div>
                       <div>
                         <Label className={`text-[11px] block mb-1 ${hasEndDate ? "text-slate-600 dark:text-slate-400" : "text-slate-400/70 dark:text-slate-500"}`}>
                           Tanggal Selesai {hasEndDate ? "" : "(Nonaktif - Permanen)"}
                         </Label>
-                        <Input
-                          type="date"
+                        <DatePicker
                           value={formEndDate}
                           disabled={!hasEndDate}
-                          onChange={(e) => setFormEndDate(e.target.value)}
-                          className={`h-9 text-xs rounded-xl transition-all ${
+                          onChange={(val) => setFormEndDate(val)}
+                          placeholder="Pilih tanggal selesai..."
+                          className={`h-9 w-full rounded-xl transition-all ${
                             !hasEndDate ? "opacity-40 bg-slate-100 dark:bg-white/5 cursor-not-allowed border-dashed" : ""
                           }`}
-                          required={hasEndDate}
                         />
                       </div>
                     </div>
@@ -1724,30 +1723,28 @@ export function PromotionsModule() {
                         <Label className={`text-[11px] block mb-1 ${hasHappyHour ? "text-slate-600 dark:text-slate-400" : "text-slate-400/70 dark:text-slate-500"}`}>
                           Jam Mulai {hasHappyHour ? "" : "(24 Jam)"}
                         </Label>
-                        <Input
-                          type="time"
+                        <TimePicker
                           value={formTimeStart}
                           disabled={!hasHappyHour}
-                          onChange={(e) => setFormTimeStart(e.target.value)}
-                          className={`h-9 text-xs rounded-xl transition-all ${
+                          onChange={(val) => setFormTimeStart(val)}
+                          placeholder="Pilih jam mulai..."
+                          className={`h-9 w-full rounded-xl transition-all ${
                             !hasHappyHour ? "opacity-40 bg-slate-100 dark:bg-white/5 cursor-not-allowed border-dashed" : ""
                           }`}
-                          required={hasHappyHour}
                         />
                       </div>
                       <div>
                         <Label className={`text-[11px] block mb-1 ${hasHappyHour ? "text-slate-600 dark:text-slate-400" : "text-slate-400/70 dark:text-slate-500"}`}>
                           Jam Selesai {hasHappyHour ? "" : "(24 Jam)"}
                         </Label>
-                        <Input
-                          type="time"
+                        <TimePicker
                           value={formTimeEnd}
                           disabled={!hasHappyHour}
-                          onChange={(e) => setFormTimeEnd(e.target.value)}
-                          className={`h-9 text-xs rounded-xl transition-all ${
+                          onChange={(val) => setFormTimeEnd(val)}
+                          placeholder="Pilih jam selesai..."
+                          className={`h-9 w-full rounded-xl transition-all ${
                             !hasHappyHour ? "opacity-40 bg-slate-100 dark:bg-white/5 cursor-not-allowed border-dashed" : ""
                           }`}
-                          required={hasHappyHour}
                         />
                       </div>
                     </div>

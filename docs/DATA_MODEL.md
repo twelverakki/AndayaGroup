@@ -119,6 +119,7 @@ CREATE TABLE outlets (
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
     is_main BOOLEAN NOT NULL DEFAULT FALSE, -- Penanda Cabang Utama / Central Hub
+    allow_direct_purchase BOOLEAN NOT NULL DEFAULT TRUE, -- Izinkan Cabang Belanja Mandiri (DSD / Direct Store Delivery)
     address TEXT,                          -- Alamat Lengkap Fisik Cabang
     phone VARCHAR(50),                     -- No. HP / Kontak Cabang Kasir
     receipt_footer TEXT,                   -- Pesan Kaki Struk Kasir POS
@@ -144,7 +145,7 @@ CREATE TABLE categories (
 CREATE TABLE items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-    category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+    category_id REFERENCES categories(id) ON DELETE SET NULL,
     sku VARCHAR(50),
     name VARCHAR(150) NOT NULL,
     
@@ -155,6 +156,7 @@ CREATE TABLE items (
     is_sellable BOOLEAN NOT NULL DEFAULT TRUE,          -- Tampil di kasir POS / Grosir?
     is_inventory_tracked BOOLEAN NOT NULL DEFAULT TRUE,  -- Dipantau saldonya di stock ledger?
     requires_thaw BOOLEAN NOT NULL DEFAULT FALSE,       -- Perlu alur pencairan beku & QC harian?
+    allow_branch_purchase BOOLEAN NOT NULL DEFAULT TRUE, -- Izinkan dibeli lokal oleh cabang (False = Eksklusif Pasokan Pusat)
     
     -- Dual-UOM & Pricing UOM Konfigurasi
     base_unit VARCHAR(20) NOT NULL DEFAULT 'pcs',       -- Satuan eceran (pcs, gram, ml, porsi)
@@ -167,11 +169,19 @@ CREATE TABLE items (
     box_sell_price BIGINT DEFAULT 0,                    -- Harga grosir
     standard_cost BIGINT DEFAULT 0,                     -- Harga modal (HPP baseline sesuai price_unit)
     
+    -- Review & Lifecycle Staging Flags (The Lean Odoo Way: Onboarding & Quick PO Creation)
+    needs_review BOOLEAN NOT NULL DEFAULT FALSE,        -- True jika dibuat on-the-fly dari form PO / scan kilat
+    creation_source VARCHAR(30) NOT NULL DEFAULT 'manual', -- 'manual', 'po_inline', 'excel_import'
+    reviewed_at TIMESTAMPTZ,                            -- Waktu diverifikasi oleh Owner / Admin Gudang
+    reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL, -- User yang menyetujui data master
+
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'discontinued')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT unique_business_sku UNIQUE(business_id, sku)
 );
+
+CREATE INDEX idx_items_needs_review ON items(business_id) WHERE needs_review = TRUE;
 
 -- Saldo Stok Fisik Realtime per Lokasi / Personel (Mirip stock.quant di Odoo)
 CREATE TABLE item_stocks (
@@ -451,26 +461,61 @@ CREATE TABLE eod_material_usages (
 
 ---
 
-## 9. Purchases & Accounts Payable (Vendor Bills)
+## 9. Purchases, Suppliers & Accounts Payable (Domain 7)
 
 ```sql
--- Faktur Pembelian Supplier (Mirip purchase.order / account.move di Odoo)
+-- Master Vendor / Supplier
+CREATE TABLE suppliers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    contact_person VARCHAR(100),
+    phone VARCHAR(50),
+    email VARCHAR(100),
+    address TEXT,
+    payment_terms_days INT NOT NULL DEFAULT 0,          -- 0 = Tunai/COD, 7, 14, 30 hari tempo
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Faktur Pembelian / PO Supplier (3-Way Matching: Draft -> Received -> AP)
 CREATE TABLE purchases (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
     outlet_id UUID NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
     
-    invoice_no VARCHAR(50) NOT NULL,
-    supplier_name VARCHAR(100) NOT NULL,
+    po_number VARCHAR(50) UNIQUE NOT NULL,              -- Nomor PO Internal (PO-202609-0001)
+    invoice_no VARCHAR(100),                            -- Nomor Faktur/Nota Vendor Fisik
+    supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL,
+    supplier_name VARCHAR(150) NOT NULL,
     
+    -- Status Rantai Pasok & Finansial
+    status VARCHAR(30) NOT NULL DEFAULT 'draft' 
+        CHECK (status IN ('draft', 'submitted', 'partially_received', 'received', 'cancelled')),
+    payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' 
+        CHECK (payment_status IN ('unpaid', 'partial', 'paid')),
+    payment_method VARCHAR(30) DEFAULT 'credit' 
+        CHECK (payment_method IN ('cash', 'bank_transfer', 'credit', 'qris')),
+    
+    order_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    due_date DATE,
+    received_at TIMESTAMPTZ,
+    
+    -- Perhitungan Finansial (BIGINT)
+    subtotal_amount BIGINT NOT NULL DEFAULT 0,
+    discount_amount BIGINT NOT NULL DEFAULT 0,
+    tax_amount BIGINT NOT NULL DEFAULT 0,
+    shipping_cost BIGINT NOT NULL DEFAULT 0,
     total_amount BIGINT NOT NULL DEFAULT 0,
     amount_paid BIGINT NOT NULL DEFAULT 0,
     amount_owed BIGINT NOT NULL DEFAULT 0,              -- total_amount - amount_paid
-    payment_status VARCHAR(20) NOT NULL DEFAULT 'paid' CHECK (payment_status IN ('paid', 'unpaid', 'partial')),
-    due_date DATE,
     
+    notes TEXT,
     created_by UUID REFERENCES users(id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    received_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE purchase_items (
@@ -478,16 +523,82 @@ CREATE TABLE purchase_items (
     purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
     item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     
-    quantity NUMERIC(14, 4) NOT NULL,
     uom VARCHAR(10) NOT NULL DEFAULT 'box' CHECK (uom IN ('box', 'base')),
-    unit_price BIGINT NOT NULL DEFAULT 0,
-    subtotal BIGINT NOT NULL DEFAULT 0
+    qty_ordered NUMERIC(14, 4) NOT NULL,
+    qty_received NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
+    conversion_rate NUMERIC(14, 4) NOT NULL DEFAULT 1.0000,
+    
+    unit_cost BIGINT NOT NULL DEFAULT 0,                -- Harga beli satuan sesuai UOM
+    discount_amount BIGINT NOT NULL DEFAULT 0,
+    subtotal BIGINT NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Histori Pembayaran Cicilan / Pelunasan Hutang Supplier
+CREATE TABLE purchase_payments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    
+    payment_no VARCHAR(50) UNIQUE NOT NULL,             -- PAY-202609-0001
+    payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    amount_paid BIGINT NOT NULL,
+    payment_method VARCHAR(30) NOT NULL CHECK (payment_method IN ('cash', 'bank_transfer', 'qris')),
+    reference_no VARCHAR(100),                          -- Bukti transfer / resi bank
+    recorded_by UUID REFERENCES users(id),
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
 ---
 
-## 10. Audit Trails, Overrides & Blind Opname
+## 10. Operational Expenses & Cash Outflows (Domain 10)
+
+```sql
+-- Master Kategori Beban Usaha
+CREATE TABLE expense_categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,                         -- 'Utilitas Listrik & Air', 'Retribusi Pasar', dll.
+    code VARCHAR(50),                                   -- 'OPEX_UTIL', 'OPEX_CLEAN', dll.
+    description TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Buku Kas Keluar Toko & Biaya Operasional (Non-Stok)
+CREATE TABLE expenses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    outlet_id UUID NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+    category_id UUID NOT NULL REFERENCES expense_categories(id) ON DELETE RESTRICT,
+    
+    expense_no VARCHAR(50) UNIQUE NOT NULL,             -- EXP-202609-0001
+    expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    amount BIGINT NOT NULL,                             -- Nominal pengeluaran (BIGINT)
+    
+    payment_source VARCHAR(30) NOT NULL DEFAULT 'cash_drawer' 
+        CHECK (payment_source IN ('cash_drawer', 'petty_cash', 'bank_transfer', 'owner_personal')),
+    session_id UUID REFERENCES sessions(id) ON DELETE SET NULL, -- Terikat ke sesi kasir jika diambil dari laci
+    
+    description TEXT NOT NULL,                          -- Detail rincian ("Beli token listrik 100k")
+    receipt_image_url TEXT,                             -- Lampiran foto struk / nota fisik
+    paid_to VARCHAR(150),                               -- Pihak penerima uang
+    
+    created_by UUID NOT NULL REFERENCES users(id),
+    approved_by UUID REFERENCES users(id),
+    status VARCHAR(20) NOT NULL DEFAULT 'approved' CHECK (status IN ('draft', 'pending_approval', 'approved', 'rejected')),
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+---
+
+## 11. Audit Trails, Overrides & Blind Opname
 
 ```sql
 CREATE TABLE override_logs (

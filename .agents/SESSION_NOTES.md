@@ -1,5 +1,5 @@
 # Catatan Sesi Pengembangan (Session Handover Notes)
-> **Tanggal Update**: 28 September 2026 (WITA)  
+> **Tanggal Update**: 6 Oktober 2026 (WITA)  
 > **Status Sistem**: Stable, Production-Ready & 100% Type-Safe  
 > **Kompilasi Frontend TypeScript**: `npm run build` Lolos 100% (`Exit Code 0`)  
 > **Kompilasi Backend Go**: `go test -p 1 ./...` Lolos 100% (`Exit Code 0`)  
@@ -8,75 +8,73 @@
 
 ## 1. Rangkuman Eksekusi Sesi Ini (Completed Work)
 
-### A. Domain 4: Distribusi & Mutasi Stok Multi-Cabang (Logistics & Stock Transfers — 100% Selesai)
-1. **Penyelarasan Hak Akses & Isolasi Draft Privat Cabang**:
-   - Memastikan draf permintaan pasokan cabang (`distributions` dengan `status = 'draft'` dan tipe pengajuan cabang) bersifat privat di outlet pembuatnya dan tidak bocor ke outlet lain atau gudang pusat sebelum resmi diajukan (`submitted`).
-   - Penyelarasan scoping query di `backend/internal/modules/logistics/service.go`.
-2. **Optimistic Concurrency Control (OCC)**:
-   - Menambahkan kolom `expected_updated_at` pada payload simpan draf dan penanganan status `HTTP 409 Conflict` bila ada dua pengguna mengedit draf transfer yang sama secara bersamaan di outlet yang sama.
-3. **Pembersihan Otomatis Draf Usang (Draft Auto-Expire Cron Job)**:
-   - Implementasi background worker `backend/internal/jobs/draft_cleanup.go` yang berjalan terjadwal setiap 12 jam.
-   - Draf pengajuan atau pengiriman yang tidak dilanjutkan melebihi 14 hari otomatis ditandai `cancelled` dengan catatan audit sistem, mencegah penumpukan data draf mati.
-   - Pendaftaran worker scheduler di `backend/main.go`.
-4. **Fitur Rantai Pasok Terpadu (The Lean Odoo Way)**:
-   - *Blind Requisition Mode* (`hide_central_stock_from_branches`).
-   - Pelacakan kuantitas diminta vs kuantitas disetujui (*Requested vs Allocated Tracking*).
-   - Penyesuaian kuota dengan preset alasan alokasi (*Quota Adjustment Governance*).
-   - Pembuatan otomatis dokumen pesanan susulan (*Backorder Generation*).
-   - Rekomendasi restock cerdas (*Smart Replenishment Calculation*).
-   - Matriks alokasi kuota terpusat (*Central Quota Matrix*) dengan fitur bagi rata (*Equal Split*).
+### A. Komponen Suite Pemilih Tanggal & Waktu (Shadcn Calendar + Samsung 3D Cylindrical Drum Wheel)
+1. **Arsitektur 3D Cylindrical Drum Wheel (`wheel-carousel-dialog.tsx`)**:
+   - Terinspirasi dari roda jam alarm Samsung (One UI) dengan efek kedalaman visual 3D vertikal murni (`perspective: 1000px`, `rotateX`, `translate3d`).
+   - Posisi dihitung secara kontinu float sub-piksel (`scrollOffset`), di mana item paling dekat ke row tengah membesar (`scale 1.25`, `opacity 1.0`, teks tebal `font-black text-2xl`), dan mengecil saat menjauhi tengah hingga `scale 0.70`.
+   - Menggunakan pelacakan drag level `window` (`pointermove` & `pointerup`) anti-macet dengan *momentum flick velocity*.
+   - Roda scroll mouse & trackpad kontinu yang sangat cair (*fluid*) dengan mekanisme *debounce magnetic snapping* (`easeOutCubic`).
 
-### B. Penyelarasan Hak Akses CRUD Penuh Master Promosi (Domain 3 / Promotions RBAC)
-1. **Backend Protection (`promotions/handler.go`)**:
-   - Menambahkan guard `isPromoAdmin(role)` yang membatasi hak `POST`, `PUT`, dan `DELETE` promosi hanya untuk `owner`, `superadmin`, `admin_gudang`, dan `manager`.
-   - Staf kasir dibatasi hanya memiliki hak baca (*read-only*) untuk memeriksa diskon aktif.
-2. **Frontend UI Alignment (`promotions-module.tsx`)**:
-   - Header list view menampilkan badge <kbd>Mode Baca (Read-Only)</kbd> untuk staf kasir dan menyembunyikan tombol *"Buat Program Promo"*.
-   - Menu aksi baris tabel menyembunyikan tombol *"Edit Parameter"* dan *"Kontrol Status"* bagi non-admin.
-   - Seluruh input pada form detail dibungkus `<fieldset disabled>` dan tombol simpan/edit disembunyikan bagi non-admin.
+2. **Dukungan 4 Varian Terpadu (Single Unified Suite)**:
+   - **Varian 1 • Tanggal Standar**: Grid kalender resmi Shadcn dengan header bulan/tahun yang langsung clickable membuka dialog carousel 3D (Tanggal, Bulan, Tahun).
+   - **Varian 2 • Tanggal + Waktu (`showTime = true`)**: Format 24-jam dan interval per-menit (`5 Okt 2026 02:00`). Baris waktu pada popover kalender didesain minimalis & elegan: `(icon jam) TIME` yang dapat langsung diklik.
+   - **Varian 3 • Mode Pekan ISO (`mode="week"`)**:
+     - Menghitung secara dinamis 4, 5, atau 6 pekan ISO (Senin–Minggu) per bulan (`getWeeksInMonth`).
+     - Mengembalikan rentang tanggal ISO lengkap (`05 Okt 2026 - 11 Okt 2026`).
+     - **Smart Week Tracking**: Jika user memilih Pekan 1, saat bulan diganti tetap berada di Pekan 1. Jika memilih Pekan Terakhir, otomatis menyesuaikan ke pekan terakhir di bulan baru (4, 5, atau 6).
+   - **Varian 4 • Jam Saja (`mode="time"` / `<TimePicker />`)**:
+     - Pemilih jam & menit murni (Jam 00-23 dan Menit 00-59) dalam dialog ramping (`max-w-xs`).
+     - Diekspor sebagai komponen mandiri `<TimePicker />` untuk kemudahan penggunaan.
 
-### C. Keamanan Akses Akun & Forced Logout Seketika (Account Suspension Guard)
-1. **Live Database Status Guard di Middleware (`backend/internal/middleware/middleware.go`)**:
-   - `AuthGuard` memeriksa status riil pengguna di database (`SELECT status FROM users WHERE id = $1`) dan status penugasan cabang (`SELECT status FROM outlet_staff`) pada setiap request API yang masuk.
-   - Jika akun berstatus `inactive` atau `discontinued`, cookie HTTP-Only `token` langsung dihapus dan server mengembalikan `401 Unauthorized` dengan kode payload `ACCOUNT_SUSPENDED`.
-2. **Frontend Session Interceptor (`frontend/app/lib/api.ts`)**:
-   - Mendeteksi error `ACCOUNT_SUSPENDED`, membersihkan session zustand store (`clearSession()`), dan me-redirect paksa browser pengguna ke `/login?reason=suspended`.
-3. **Halaman Login UI (`frontend/app/routes/login.tsx`)**:
-   - Menampilkan banner peringatan merah dengan icon `ShieldAlert`: *"Akses Akun Dinonaktifkan: Akun Anda telah dinonaktifkan oleh Administrator. Seluruh sesi login telah dihentikan secara otomatis."*
+3. **Icon Representatif Sesuai Tipe Field**:
+   - Input trigger menampilkan icon yang tepat: Calendar untuk tanggal, Calendar `|` Clock untuk tanggal+waktu, Clock untuk jam saja, dan CalendarDays untuk pekan ISO.
+
+### B. Implementasi Komponen Baru ke Domain Bisnis
+1. **Domain Pengadaan (*Procurement*)**:
+   - `features/procurement/components/PurchaseOrderForm.tsx`: Field Tanggal Transaksi pada Wizard Mode dan Classic Mode telah dimigrasikan menggunakan `DatePicker`.
+   - `features/procurement/components/PaymentModal.tsx`: Field Tanggal Pembayaran Hutang Supplier dimigrasikan menggunakan `DatePicker`.
+2. **Domain Promosi (*Promotions*)**:
+   - `features/promotions/promotions-module.tsx`: Field Tanggal Mulai dan Tanggal Selesai Promo menggunakan `DatePicker`.
+   - Field Happy Hour (Jam Mulai & Jam Selesai) dimigrasikan dari input native `<input type="time">` ke `<TimePicker />`.
+3. **Domain Laporan Penjualan (*Sales Report*)**:
+   - `features/sales-report/sales-report-module.tsx`: Filter laporan penjualan mewarisi fitur 3D wheel carousel, dan ditambahkan preset tombol *"Pekan Ini"* (*This Week*).
+
+### C. Halaman Pengujian Interaktif
+- Terdaftar di `/preview-datepicker` ([`frontend/app/routes/preview-datepicker.tsx`](file:///D:/laragon/www/Andaya-Group/frontend/app/routes/preview-datepicker.tsx)) untuk menguji seluruh 4 varian picker dan standalone modal dialog.
 
 ---
 
 ## 2. Berkas Utama yang Dimodifikasi / Dibuat
 
-1. [backend/internal/middleware/middleware.go](file:///D:/laragon/www/Andaya-Group/backend/internal/middleware/middleware.go) (Live status check & forced cookie clear on suspended account)
-2. [backend/internal/modules/logistics/service.go](file:///D:/laragon/www/Andaya-Group/backend/internal/modules/logistics/service.go) & [handler.go](file:///D:/laragon/www/Andaya-Group/backend/internal/modules/logistics/handler.go) (Isolasi draf privat cabang & OCC)
-3. [backend/internal/modules/promotions/handler.go](file:///D:/laragon/www/Andaya-Group/backend/internal/modules/promotions/handler.go) (RBAC admin guard untuk CRUD promosi)
-4. [backend/internal/jobs/draft_cleanup.go](file:///D:/laragon/www/Andaya-Group/backend/internal/jobs/draft_cleanup.go) & [backend/main.go](file:///D:/laragon/www/Andaya-Group/backend/main.go) (Cron worker pembersihan draf distribusi kadaluarsa)
-5. [frontend/app/lib/api.ts](file:///D:/laragon/www/Andaya-Group/frontend/app/lib/api.ts) (Interceptor untuk penanganan `ACCOUNT_SUSPENDED`)
-6. [frontend/app/routes/login.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/routes/login.tsx) (Banner UI peringatan akun dinonaktifkan)
-7. [frontend/app/features/promotions/promotions-module.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/features/promotions/promotions-module.tsx) (UI Read-Only & proteksi form promosi)
-8. [docs/ROADMAP.md](file:///D:/laragon/www/Andaya-Group/docs/ROADMAP.md) (Pembaruan status Domain 4 dan Domain 9 ke Selesai)
+1. [frontend/app/components/ui/wheel-carousel-dialog.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/components/ui/wheel-carousel-dialog.tsx) (Mesin Silinder Drum 3D, Smart Week Tracking, Time & Date mode)
+2. [frontend/app/components/ui/date-picker.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/components/ui/date-picker.tsx) (Shadcn Popover Calendar + Trigger Icons + TimePicker wrapper)
+3. [frontend/app/components/ui/calendar.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/components/ui/calendar.tsx) (Header caption button clickable & transparent grid)
+4. [frontend/app/features/procurement/components/PurchaseOrderForm.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/features/procurement/components/PurchaseOrderForm.tsx) (Migrasi input tanggal PO)
+5. [frontend/app/features/procurement/components/PaymentModal.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/features/procurement/components/PaymentModal.tsx) (Migrasi input tanggal bayar)
+6. [frontend/app/features/promotions/promotions-module.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/features/promotions/promotions-module.tsx) (Migrasi input tanggal promo & TimePicker happy hour)
+7. [frontend/app/features/sales-report/sales-report-module.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/features/sales-report/sales-report-module.tsx) (Preset pekan & integrasi wheel picker)
+8. [frontend/app/routes/preview-datepicker.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/routes/preview-datepicker.tsx) & [frontend/app/routes.ts](file:///D:/laragon/www/Andaya-Group/frontend/app/routes.ts) (Halaman preview interaktif)
 
 ---
 
 ## 3. Status Kompilasi & Pengujian
 
-* **Frontend Build**: `npm run build` $\rightarrow$ **100% Success (0 Errors / Vite Production Bundle Ready)**
-* **Backend Go Unit & Integration Tests**: `go test -p 1 ./...` $\rightarrow$ **100% Success (0 Errors)**
-* **Zero Full-Page Reload**: Seluruh aksi dan feedback toast berjalan reaktif (*optimistic UI*).
+* **Frontend Build**: `npm run build` $\rightarrow$ **100% Success (0 Errors / Exit Code 0)**
+* **Backend Go Tests**: `go test -p 1 ./...` $\rightarrow$ **100% Success (0 Errors / Exit Code 0)**
+* **Type-Safety**: 100% Type-safe TypeScript.
 
 ---
 
 ## 4. Agenda untuk Sesi Berikutnya (Next Session Agenda)
 
-1. **Phase 4: Modul Dapur & Formula Produksi (BOM — Domain 5)**:
-   - Implementasi formula adonan Bakso Kang Gemoy, bumbu marinasi Yasaka, dan EOD material usage Gorengan Andalan ke mutasi stok double-entry.
-2. **Phase 4.5: Preview Cetak Dokumen Surat Jalan**:
+1. **Domain 10: Manajemen Beban Operasional & Kas Keluar (Operational Expenses & Cash Outflows)**:
+   - Master kategori beban usaha (`expense_categories`), buku kas keluar (`expenses`), pemotongan kas laci kasir (*Petty Cash*), dan lampiran struk nota.
+2. **Phase 5: Modul Dapur & Formula Produksi (Domain 5 — Kitchen Production & Real COGS / BOM)**:
+   - Implementasi formula adonan Bakso Kang Gemoy, bumbu marinasi Yasaka, dan EOD material usage Gorengan Andalan yang menghitung HPP otomatis dari harga beli riil di Domain 7.
+3. **Phase 4.5: Preview Cetak Dokumen Surat Jalan**:
    - Templating cetak thermal receipt surat jalan pengiriman pasokan antar-cabang.
-3. **Phase 6: Daily Reconciliation & Settlements (Domain 6)**:
+4. **Phase 6: Daily Reconciliation & Settlements (Domain 6)**:
    - Rekonsiliasi setoran kas & QRIS, penghitungan selisih (*variance*), dan pencatatan blind count opname.
-4. **Phase 8: Group Consolidated Analytics (Domain 8)**:
-   - Dashboard omzet gabungan 4 unit bisnis holding untuk Owner (Kennan).
 
 ---
 *Catatan sesi diperbarui secara otomatis sesuai standar penutupan sesi proyek Andaya Group.*

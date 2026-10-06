@@ -111,7 +111,7 @@ export default function SalesReportModule() {
   const [error, setError] = useState("");
 
   // Quick Preset Helper
-  const applyDatePreset = (preset: "today" | "7days" | "month" | "custom") => {
+  const applyDatePreset = (preset: "today" | "week" | "7days" | "month" | "custom") => {
     setDatePreset(preset);
     const now = new Date();
     const todayStr = now.toISOString().split("T")[0];
@@ -119,6 +119,14 @@ export default function SalesReportModule() {
     if (preset === "today") {
       setStartDate(todayStr);
       setEndDate(todayStr);
+    } else if (preset === "week") {
+      const dayOfWeek = (now.getDay() + 6) % 7; // ISO Monday = 0
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - dayOfWeek);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      setStartDate(monday.toISOString().split("T")[0]);
+      setEndDate(sunday.toISOString().split("T")[0]);
     } else if (preset === "7days") {
       const past = new Date();
       past.setDate(now.getDate() - 7);
@@ -272,6 +280,7 @@ export default function SalesReportModule() {
           <div className="flex items-center gap-1.5 bg-white dark:bg-[#25252A] p-1 rounded-2xl border border-slate-200/80 dark:border-[#333338]">
             {[
               { id: "today", label: language === "id" ? "Hari Ini" : "Today" },
+              { id: "week", label: language === "id" ? "Pekan Ini" : "This Week" },
               { id: "7days", label: language === "id" ? "7 Hari" : "7 Days" },
               { id: "month", label: language === "id" ? "Bulan Ini" : "This Month" },
               { id: "custom", label: language === "id" ? "Kustom" : "Custom" },

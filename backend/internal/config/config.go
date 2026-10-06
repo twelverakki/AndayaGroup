@@ -168,6 +168,11 @@ func ConnectDB() {
 		ALTER TABLE items ADD COLUMN IF NOT EXISTS is_purchasable BOOLEAN NOT NULL DEFAULT TRUE;
 		ALTER TABLE items ADD COLUMN IF NOT EXISTS is_thawable BOOLEAN NOT NULL DEFAULT FALSE;
 		ALTER TABLE items ADD COLUMN IF NOT EXISTS price_unit VARCHAR(20) NOT NULL DEFAULT 'base';
+		ALTER TABLE items ADD COLUMN IF NOT EXISTS needs_review BOOLEAN NOT NULL DEFAULT FALSE;
+		ALTER TABLE items ADD COLUMN IF NOT EXISTS creation_source VARCHAR(30) NOT NULL DEFAULT 'manual';
+		ALTER TABLE items ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+		ALTER TABLE items ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES users(id);
+		CREATE INDEX IF NOT EXISTS idx_items_needs_review ON items (business_id) WHERE needs_review = TRUE;
 		ALTER TABLE items DROP CONSTRAINT IF EXISTS items_item_type_check;
 		ALTER TABLE items ADD CONSTRAINT items_item_type_check CHECK (item_type IN ('finished_good', 'semi_finished', 'raw_material', 'consumable', 'fixed_tool'));
 
@@ -231,6 +236,80 @@ func ConnectDB() {
 		ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS qty_requested_sealed NUMERIC(14, 4) DEFAULT 0.0000;
 		ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS qty_requested_loose NUMERIC(14, 4) DEFAULT 0.0000;
 		ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS allocation_notes TEXT;
+
+		ALTER TABLE outlets ADD COLUMN IF NOT EXISTS allow_direct_purchase BOOLEAN NOT NULL DEFAULT TRUE;
+		ALTER TABLE items ADD COLUMN IF NOT EXISTS allow_branch_purchase BOOLEAN NOT NULL DEFAULT TRUE;
+
+		CREATE TABLE IF NOT EXISTS suppliers (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+			name VARCHAR(150) NOT NULL,
+			contact_person VARCHAR(100),
+			phone VARCHAR(50),
+			email VARCHAR(100),
+			address TEXT,
+			payment_terms_days INT NOT NULL DEFAULT 0,
+			status VARCHAR(20) NOT NULL DEFAULT 'active',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+
+		CREATE TABLE IF NOT EXISTS purchases (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+			outlet_id UUID NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+			po_number VARCHAR(50) UNIQUE NOT NULL,
+			invoice_no VARCHAR(100),
+			supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL,
+			supplier_name VARCHAR(150) NOT NULL,
+			status VARCHAR(30) NOT NULL DEFAULT 'draft',
+			payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+			payment_method VARCHAR(30) DEFAULT 'credit',
+			order_date DATE NOT NULL DEFAULT CURRENT_DATE,
+			due_date DATE,
+			received_at TIMESTAMPTZ,
+			subtotal_amount BIGINT NOT NULL DEFAULT 0,
+			discount_amount BIGINT NOT NULL DEFAULT 0,
+			tax_amount BIGINT NOT NULL DEFAULT 0,
+			shipping_cost BIGINT NOT NULL DEFAULT 0,
+			total_amount BIGINT NOT NULL DEFAULT 0,
+			amount_paid BIGINT NOT NULL DEFAULT 0,
+			amount_owed BIGINT NOT NULL DEFAULT 0,
+			notes TEXT,
+			created_by UUID REFERENCES users(id),
+			received_by UUID REFERENCES users(id),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+
+		CREATE TABLE IF NOT EXISTS purchase_items (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+			item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+			uom VARCHAR(10) NOT NULL DEFAULT 'box',
+			qty_ordered NUMERIC(14, 4) NOT NULL DEFAULT 1.0000,
+			qty_received NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
+			conversion_rate NUMERIC(14, 4) NOT NULL DEFAULT 1.0000,
+			unit_cost BIGINT NOT NULL DEFAULT 0,
+			discount_amount BIGINT NOT NULL DEFAULT 0,
+			subtotal BIGINT NOT NULL DEFAULT 0,
+			notes TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+
+		CREATE TABLE IF NOT EXISTS purchase_payments (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+			business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+			payment_no VARCHAR(50) UNIQUE NOT NULL,
+			payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+			amount_paid BIGINT NOT NULL,
+			payment_method VARCHAR(30) NOT NULL DEFAULT 'cash',
+			reference_no VARCHAR(100),
+			recorded_by UUID REFERENCES users(id),
+			notes TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
 
 		CREATE TABLE IF NOT EXISTS eod_material_usages (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

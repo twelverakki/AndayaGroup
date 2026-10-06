@@ -1,212 +1,438 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Popover, PopoverTrigger, PopoverContent } from "./popover";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Check } from "lucide-react";
+import { Calendar } from "./calendar";
+import { WheelCarouselDialog, getWeeksInMonth } from "./wheel-carousel-dialog";
+import type { WeekInfo } from "./wheel-carousel-dialog";
+import { Calendar as CalendarIcon, Clock, ChevronDown, RotateCcw, Check, CalendarDays } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { useLanguageStore } from "../../lib/i18n";
+import { id as idLocale } from "date-fns/locale/id";
+import { enUS as enLocale } from "date-fns/locale/en-US";
 
-interface DatePickerProps {
-  value?: string; // "YYYY-MM-DD"
+export interface DatePickerProps {
+  value?: string; // "YYYY-MM-DD", "YYYY-MM-DD HH:mm", "HH:mm", or "YYYY-MM-DD - YYYY-MM-DD"
   onChange: (value: string) => void;
+  mode?: "date" | "week" | "time"; // "date" (default), "week" (Pekan ISO), or "time" (Jam & Menit saja)
+  onWeekChange?: (weekInfo: WeekInfo) => void;
+  onTimeChange?: (timeStr: string) => void;
+  showTime?: boolean; // If true, adds 24-hr time selection and display (e.g. "5 Okt 2026 02:00")
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  allowClear?: boolean;
+  locale?: "id" | "en";
+  align?: "start" | "center" | "end";
 }
 
-const MONTH_NAMES_ID = [
-  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-  "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+const MONTH_NAMES_SHORT_ID = [
+  "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+  "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
 ];
 
-const DAY_NAMES_ID = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+const MONTH_NAMES_SHORT_EN = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+];
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function parseInputDate(valStr?: string): Date | null {
+  if (!valStr) return null;
+  const str = valStr.trim();
+
+  // Time format "HH:mm" (e.g. "14:30")
+  const tMatch = str.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (tMatch) {
+    const today = new Date();
+    const hh = parseInt(tMatch[1], 10);
+    const mm = parseInt(tMatch[2], 10);
+    const date = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hh, mm, 0);
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  // Range format "YYYY-MM-DD - YYYY-MM-DD" -> parse first date
+  if (str.includes(" - ")) {
+    const parts = str.split(" - ");
+    return parseInputDate(parts[0]);
+  }
+
+  // Format "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm"
+  const dtMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[T\s](\d{1,2}):(\d{1,2})/);
+  if (dtMatch) {
+    const y = parseInt(dtMatch[1], 10);
+    const m = parseInt(dtMatch[2], 10) - 1;
+    const d = parseInt(dtMatch[3], 10);
+    const hh = parseInt(dtMatch[4], 10);
+    const mm = parseInt(dtMatch[5], 10);
+    const date = new Date(y, m, d, hh, mm);
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  // Format "YYYY-MM-DD"
+  const dMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (dMatch) {
+    const y = parseInt(dMatch[1], 10);
+    const m = parseInt(dMatch[2], 10) - 1;
+    const d = parseInt(dMatch[3], 10);
+    const date = new Date(y, m, d, 0, 0);
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  const fallback = new Date(str);
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
 
 export function DatePicker({
   value,
   onChange,
-  placeholder = "Pilih tanggal",
+  mode = "date",
+  onWeekChange,
+  onTimeChange,
+  showTime = false,
+  placeholder,
   className,
   disabled = false,
+  allowClear = true,
+  locale: customLocale,
+  align = "start",
 }: DatePickerProps) {
+  const currentStoreLang = useLanguageStore((s) => s.language);
+  const lang = customLocale || currentStoreLang || "id";
+  const isId = lang === "id";
+
+  const defaultPlaceholder = isId
+    ? mode === "time"
+      ? "Pilih jam"
+      : mode === "week"
+      ? "Pilih pekan"
+      : showTime
+      ? "Pilih tanggal & jam"
+      : "Pilih tanggal"
+    : mode === "time"
+    ? "Select time"
+    : mode === "week"
+    ? "Select week"
+    : showTime
+    ? "Select date & time"
+    : "Select date";
+
+  const activePlaceholder = placeholder || defaultPlaceholder;
+
   const [open, setOpen] = useState(false);
+  const [carouselOpen, setCarouselOpen] = useState(false);
 
-  // Parse initial view date
-  const parsedDate = value ? new Date(value + "T00:00:00") : new Date();
-  const [viewYear, setViewYear] = useState(parsedDate.getFullYear());
-  const [viewMonth, setViewMonth] = useState(parsedDate.getMonth());
+  // Selected date state
+  const selectedDateObj = useMemo(() => parseInputDate(value), [value]);
 
-  const handlePrevMonth = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (viewMonth === 0) {
-      setViewMonth(11);
-      setViewYear(viewYear - 1);
+  // Selected Week Info state (for mode="week")
+  const [currentWeekInfo, setCurrentWeekInfo] = useState<WeekInfo | null>(() => {
+    if (mode !== "week" || !selectedDateObj) return null;
+    const thursday = new Date(selectedDateObj);
+    thursday.setDate(selectedDateObj.getDate() + 3);
+    const weeks = getWeeksInMonth(thursday.getFullYear(), thursday.getMonth() + 1);
+    return weeks.find((w) => selectedDateObj >= w.startDate && selectedDateObj <= w.endDate) || weeks[0] || null;
+  });
+
+  // Calendar month view navigation state
+  const [currentMonthView, setCurrentMonthView] = useState<Date>(
+    selectedDateObj || new Date()
+  );
+
+  // Keep view aligned when value changes externally
+  useEffect(() => {
+    if (selectedDateObj) {
+      setCurrentMonthView(selectedDateObj);
+      if (mode === "week") {
+        const thursday = new Date(selectedDateObj);
+        thursday.setDate(selectedDateObj.getDate() + 3);
+        const weeks = getWeeksInMonth(thursday.getFullYear(), thursday.getMonth() + 1);
+        const matched = weeks.find((w) => selectedDateObj >= w.startDate && selectedDateObj <= w.endDate);
+        if (matched) setCurrentWeekInfo(matched);
+      }
+    }
+  }, [selectedDateObj, mode]);
+
+  // Format display text (e.g. "5 Okt 2026", "5 Okt 2026 02:00", "14:30", or "05 Okt 2026 - 11 Okt 2026")
+  const formatDisplay = () => {
+    if (!value) return activePlaceholder;
+
+    // Time Mode Display
+    if (mode === "time") {
+      if (selectedDateObj) {
+        return `${pad2(selectedDateObj.getHours())}:${pad2(selectedDateObj.getMinutes())}`;
+      }
+      return value;
+    }
+
+    // Week Mode Display
+    if (mode === "week") {
+      if (currentWeekInfo) {
+        return isId ? currentWeekInfo.rangeLabelId : currentWeekInfo.rangeLabelEn;
+      }
+      return value;
+    }
+
+    if (!selectedDateObj) return activePlaceholder;
+    const day = selectedDateObj.getDate();
+    const monthIdx = selectedDateObj.getMonth();
+    const year = selectedDateObj.getFullYear();
+    const monthShort = isId
+      ? MONTH_NAMES_SHORT_ID[monthIdx]
+      : MONTH_NAMES_SHORT_EN[monthIdx];
+
+    const dateFormatted = `${day} ${monthShort} ${year}`;
+    if (showTime) {
+      const hh = pad2(selectedDateObj.getHours());
+      const mm = pad2(selectedDateObj.getMinutes());
+      return `${dateFormatted} ${hh}:${mm}`;
+    }
+    return dateFormatted;
+  };
+
+  // Emit string according to mode and showTime
+  const emitValue = (d: Date | null, week?: WeekInfo) => {
+    if (!d) {
+      onChange("");
+      setCurrentWeekInfo(null);
+      return;
+    }
+
+    if (mode === "time") {
+      const timeStr = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+      onChange(timeStr);
+      if (onTimeChange) onTimeChange(timeStr);
+      return;
+    }
+
+    if (mode === "week" && week) {
+      setCurrentWeekInfo(week);
+      onChange(`${week.startDateStr} - ${week.endDateStr}`);
+      if (onWeekChange) onWeekChange(week);
+      return;
+    }
+
+    const y = d.getFullYear();
+    const m = pad2(d.getMonth() + 1);
+    const day = pad2(d.getDate());
+    if (showTime) {
+      const hh = pad2(d.getHours());
+      const mm = pad2(d.getMinutes());
+      onChange(`${y}-${m}-${day} ${hh}:${mm}`);
     } else {
-      setViewMonth(viewMonth - 1);
+      onChange(`${y}-${m}-${day}`);
     }
   };
 
-  const handleNextMonth = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (viewMonth === 11) {
-      setViewMonth(0);
-      setViewYear(viewYear + 1);
-    } else {
-      setViewMonth(viewMonth + 1);
+  // Day selection from Calendar grid
+  const handleCalendarSelect = (d: Date | undefined) => {
+    if (!d) return;
+    const newDate = new Date(d);
+    if (showTime && selectedDateObj) {
+      newDate.setHours(selectedDateObj.getHours());
+      newDate.setMinutes(selectedDateObj.getMinutes());
+    }
+    emitValue(newDate);
+    if (!showTime) {
+      setOpen(false);
     }
   };
 
-  // Calculate calendar days
-  const firstDayOfMonth = new Date(viewYear, viewMonth, 1).getDay();
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-
-  const handleSelectDay = (dayNum: number) => {
-    const mm = String(viewMonth + 1).padStart(2, "0");
-    const dd = String(dayNum).padStart(2, "0");
-    const formatted = `${viewYear}-${mm}-${dd}`;
-    onChange(formatted);
-    setOpen(false);
+  // Apply date from Samsung Wheel Carousel Dialog
+  const handleCarouselApply = (d: Date, week?: WeekInfo) => {
+    let targetDate = d;
+    if (mode === "week" && week) {
+      const thursday = new Date(week.startDate);
+      thursday.setDate(week.startDate.getDate() + 3);
+      targetDate = thursday;
+    }
+    setCurrentMonthView(targetDate);
+    emitValue(targetDate, week);
+    if (mode === "date") {
+      setOpen(true); // Keep calendar popover open for date mode
+    }
   };
 
+  const handlePopoverOpenChange = (nextOpen: boolean) => {
+    // If carousel dialog is open, do not let popover close
+    if (carouselOpen && !nextOpen) {
+      return;
+    }
+    setOpen(nextOpen);
+  };
+
+  const handleCarouselOpenChange = (nextCarouselOpen: boolean) => {
+    setCarouselOpen(nextCarouselOpen);
+    if (!nextCarouselOpen && mode === "date") {
+      setOpen(true); // Keep calendar visible when dialog closes in date mode
+    }
+  };
+
+  // Quick Action Today
   const handleSelectToday = () => {
     const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
-    setViewYear(yyyy);
-    setViewMonth(today.getMonth());
-    onChange(`${yyyy}-${mm}-${dd}`);
-    setOpen(false);
+    setCurrentMonthView(today);
+    if (mode === "time") {
+      emitValue(today);
+      setOpen(false);
+    } else if (mode === "week") {
+      const weeks = getWeeksInMonth(today.getFullYear(), today.getMonth() + 1);
+      const matched = weeks.find((w) => today >= w.startDate && today <= w.endDate) || weeks[0];
+      if (matched) emitValue(matched.startDate, matched);
+      setOpen(false);
+    } else {
+      emitValue(today);
+      if (!showTime) {
+        setOpen(false);
+      }
+    }
   };
 
-  // Format display string
-  const formatDisplay = (valStr?: string) => {
-    if (!valStr) return placeholder;
-    const d = new Date(valStr + "T00:00:00");
-    if (isNaN(d.getTime())) return valStr;
-    const day = d.getDate();
-    const monthName = MONTH_NAMES_ID[d.getMonth()].substring(0, 3);
-    const year = d.getFullYear();
-    return `${day} ${monthName} ${year}`;
+  const handleReset = () => {
+    emitValue(null);
   };
 
-  const selectedDateObj = value ? new Date(value + "T00:00:00") : null;
-  const isSelectedDay = (dayNum: number) => {
-    if (!selectedDateObj) return false;
-    return (
-      selectedDateObj.getFullYear() === viewYear &&
-      selectedDateObj.getMonth() === viewMonth &&
-      selectedDateObj.getDate() === dayNum
-    );
+  const dayPickerLocale = isId ? idLocale : enLocale;
+
+  // In week & time modes, clicking trigger opens the 3D Wheel Carousel directly
+  const handleTriggerClick = (e: React.MouseEvent) => {
+    if (mode === "week" || mode === "time") {
+      e.preventDefault();
+      setCarouselOpen(true);
+    }
   };
 
-  const todayObj = new Date();
-  const isTodayDay = (dayNum: number) => {
-    return (
-      todayObj.getFullYear() === viewYear &&
-      todayObj.getMonth() === viewMonth &&
-      todayObj.getDate() === dayNum
-    );
-  };
+  const isDirectModalMode = mode === "week" || mode === "time";
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        disabled={disabled}
-        className={cn(
-          "flex items-center justify-between gap-2 px-3 py-1.5 rounded-2xl border bg-white dark:bg-[#25252A] border-slate-200/80 dark:border-[#333338] text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-all cursor-pointer select-none outline-none disabled:opacity-50",
-          className
-        )}
-      >
-        <div className="flex items-center gap-2">
-          <CalendarIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <span className={cn(!value && "text-slate-400 font-normal")}>
-            {formatDisplay(value)}
-          </span>
-        </div>
-      </PopoverTrigger>
-
-      <PopoverContent className="w-64 p-3 space-y-3 shadow-2xl">
-        {/* Month Header & Controls */}
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handlePrevMonth}
-            className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-          >
-            <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
-          </button>
-          <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
-            {MONTH_NAMES_ID[viewMonth]} {viewYear}
-          </span>
-          <button
-            type="button"
-            onClick={handleNextMonth}
-            className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-          >
-            <ChevronRight className="w-4 h-4 stroke-[2.5]" />
-          </button>
-        </div>
-
-        {/* Days of Week Header */}
-        <div className="grid grid-cols-7 text-center">
-          {DAY_NAMES_ID.map((d) => (
-            <span key={d} className="text-[10px] font-semibold text-slate-400">
-              {d}
-            </span>
-          ))}
-        </div>
-
-        {/* Days Grid */}
-        <div className="grid grid-cols-7 gap-1 text-center">
-          {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-            <div key={`empty-${i}`} />
-          ))}
-
-          {Array.from({ length: daysInMonth }).map((_, idx) => {
-            const dayNum = idx + 1;
-            const selected = isSelectedDay(dayNum);
-            const today = isTodayDay(dayNum);
-
-            return (
-              <button
-                key={dayNum}
-                type="button"
-                onClick={() => handleSelectDay(dayNum)}
-                className={cn(
-                  "w-7 h-7 mx-auto rounded-full text-xs font-semibold flex items-center justify-center transition-all cursor-pointer",
-                  selected
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm"
-                    : today
-                    ? "border border-slate-900/40 dark:border-white/40 text-slate-900 dark:text-white"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10"
-                )}
-              >
-                {dayNum}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Footer Quick Action */}
-        <div className="pt-2 border-t border-slate-100 dark:border-[#333338] flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleSelectToday}
-            className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:underline cursor-pointer"
-          >
-            Hari Ini
-          </button>
-          {value && (
-            <button
-              type="button"
-              onClick={() => {
-                onChange("");
-                setOpen(false);
-              }}
-              className="text-[11px] font-semibold text-slate-400 hover:text-red-500 cursor-pointer"
-            >
-              Reset
-            </button>
+    <>
+      <Popover open={isDirectModalMode ? false : open} onOpenChange={handlePopoverOpenChange}>
+        <PopoverTrigger
+          disabled={disabled}
+          onClick={handleTriggerClick}
+          className={cn(
+            "flex items-center justify-between gap-2.5 px-3 py-1.5 rounded-2xl border bg-white dark:bg-[#202024] border-slate-200/80 dark:border-[#38383C] text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-all cursor-pointer select-none outline-none disabled:opacity-50 shadow-xs group",
+            className
           )}
-        </div>
-      </PopoverContent>
-    </Popover>
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {mode === "time" ? (
+              <Clock className="w-3.5 h-3.5 text-blue-500 dark:text-[#E2FF66] shrink-0" />
+            ) : mode === "week" ? (
+              <CalendarDays className="w-3.5 h-3.5 text-emerald-500 dark:text-[#E2FF66] shrink-0" />
+            ) : showTime ? (
+              <div className="flex items-center gap-1.5 shrink-0 text-slate-400 dark:text-slate-500">
+                <CalendarIcon className="w-3.5 h-3.5 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+                <span className="text-slate-300 dark:text-[#44444C] text-[11px] font-light">|</span>
+                <Clock className="w-3.5 h-3.5 text-blue-500 dark:text-[#E2FF66]" />
+              </div>
+            ) : (
+              <CalendarIcon className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+            )}
+            <span
+              className={cn(
+                "truncate",
+                !value && "text-slate-400 dark:text-slate-500 font-normal"
+              )}
+            >
+              {formatDisplay()}
+            </span>
+          </div>
+
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors shrink-0" />
+        </PopoverTrigger>
+
+        {!isDirectModalMode && (
+          <PopoverContent
+            align={align}
+            className="w-auto p-3 shadow-2xl rounded-3xl border border-slate-200/80 dark:border-[#333338] bg-white dark:bg-[#1E1E22] text-slate-900 dark:text-slate-100 space-y-2.5"
+          >
+            {/* Official Shadcn DayPicker Calendar */}
+            <Calendar
+              mode="single"
+              selected={selectedDateObj || undefined}
+              onSelect={handleCalendarSelect}
+              month={currentMonthView}
+              onMonthChange={setCurrentMonthView}
+              locale={dayPickerLocale}
+              onMonthYearClick={() => setCarouselOpen(true)}
+              className="p-0 select-none bg-transparent"
+            />
+
+            {/* Time Picker Bar if showTime is enabled: (icon time) TIME */}
+            {showTime && (
+              <button
+                type="button"
+                onClick={() => setCarouselOpen(true)}
+                className="w-full py-2.5 px-3 rounded-2xl border border-slate-200/80 dark:border-[#333338] bg-slate-50/80 dark:bg-[#25252A] hover:bg-slate-100 dark:hover:bg-[#2E2E34] text-slate-900 dark:text-white flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs group"
+                title={isId ? "Klik untuk atur jam & menit" : "Click to set hour & minute"}
+              >
+                <Clock className="w-4 h-4 text-blue-500 dark:text-[#E2FF66] group-hover:scale-110 transition-transform" />
+                <span className="font-mono font-black text-sm tracking-wider">
+                  {selectedDateObj
+                    ? `${pad2(selectedDateObj.getHours())}:${pad2(selectedDateObj.getMinutes())}`
+                    : "00:00"}
+                </span>
+              </button>
+            )}
+
+            {/* Footer Toolbar: Reset & Today */}
+            <div className="pt-2 border-t border-slate-100 dark:border-[#2C2C32] flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
+                {allowClear && (
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all cursor-pointer"
+                    title={isId ? "Hapus pilihan" : "Clear selection"}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSelectToday}
+                  className="px-2.5 py-1 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 transition-all cursor-pointer"
+                >
+                  {isId ? "Hari Ini" : "Today"}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="px-3.5 py-1 rounded-full text-xs font-bold bg-[#E2FF66] text-slate-900 hover:bg-[#d4f54c] shadow-xs transition-all cursor-pointer flex items-center gap-1"
+              >
+                <Check className="w-3 h-3 stroke-[3]" />
+                {isId ? "Selesai" : "Done"}
+              </button>
+            </div>
+          </PopoverContent>
+        )}
+      </Popover>
+
+      {/* Samsung 3D Depth Wheel Carousel Dialog */}
+      <WheelCarouselDialog
+        open={carouselOpen}
+        onOpenChange={handleCarouselOpenChange}
+        initialDate={
+          mode === "week" && currentWeekInfo
+            ? new Date(currentWeekInfo.startDate.getTime() + 3 * 86400000)
+            : selectedDateObj || currentMonthView
+        }
+        mode={mode}
+        showTime={showTime}
+        locale={lang}
+        onApply={handleCarouselApply}
+        onApplyWeek={onWeekChange}
+        onApplyTime={onTimeChange}
+      />
+    </>
   );
+}
+
+// Convenient dedicated TimePicker component export
+export function TimePicker(props: Omit<DatePickerProps, "mode">) {
+  return <DatePicker {...props} mode="time" />;
 }

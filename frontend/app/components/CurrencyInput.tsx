@@ -1,10 +1,12 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { cn } from "~/lib/utils";
 
 export interface CurrencyInputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange" | "value"> {
   value: number;
   onChange: (value: number) => void;
+  max?: number;
+  onMaxExceeded?: (maxVal: number) => void;
   prefix?: string;
   suffix?: string;
   allowDecimals?: boolean;
@@ -31,12 +33,15 @@ export const CurrencyInput = React.forwardRef<HTMLInputElement, CurrencyInputPro
     {
       value,
       onChange,
+      max,
+      onMaxExceeded,
       prefix = "Rp",
       suffix,
       allowDecimals = false,
       className,
       disabled,
       placeholder = "0",
+      onBlur,
       ...props
     },
     ref
@@ -71,15 +76,34 @@ export const CurrencyInput = React.forwardRef<HTMLInputElement, CurrencyInputPro
         return;
       }
 
-      const numericVal = parseThousands(raw);
+      let numericVal = parseThousands(raw);
+
+      // Clamping to max if max is provided
+      if (max !== undefined && max > 0 && numericVal > max) {
+        numericVal = max;
+        setDisplayValue(formatThousands(max));
+        onChange(max);
+        onMaxExceeded?.(max);
+        return;
+      }
+
       setDisplayValue(formatThousands(numericVal));
       onChange(numericVal);
+    };
+
+    const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+      if (max !== undefined && max > 0 && value > max) {
+        setDisplayValue(formatThousands(max));
+        onChange(max);
+        onMaxExceeded?.(max);
+      }
+      onBlur?.(e);
     };
 
     return (
       <div className="relative flex items-center w-full">
         {prefix && (
-          <span className="absolute left-3 text-xs font-semibold text-slate-400 dark:text-slate-500 pointer-events-none select-none">
+          <span className="absolute left-3 text-xs font-bold text-slate-500 dark:text-slate-400 pointer-events-none select-none z-10">
             {prefix}
           </span>
         )}
@@ -90,19 +114,20 @@ export const CurrencyInput = React.forwardRef<HTMLInputElement, CurrencyInputPro
           disabled={disabled}
           value={displayValue}
           onChange={handleChange}
+          onBlur={handleBlur}
           placeholder={placeholder}
           className={cn(
             "h-10 w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-[#1A1A1E] text-slate-900 dark:text-slate-100 text-sm font-medium transition-all outline-none",
             "focus:border-[#3F73F7] focus:ring-2 focus:ring-[#3F73F7]/20 dark:focus:ring-[#3F73F7]/30",
             "disabled:cursor-not-allowed disabled:opacity-50",
-            prefix ? "pl-9" : "pl-3.5",
-            suffix ? "pr-12" : "pr-3.5",
-            className
+            className,
+            prefix ? "!pl-10" : "pl-3.5",
+            suffix ? "!pr-12" : "pr-3.5"
           )}
           {...props}
         />
         {suffix && (
-          <span className="absolute right-3 text-xs font-medium text-slate-400 dark:text-slate-500 pointer-events-none select-none">
+          <span className="absolute right-3 text-xs font-medium text-slate-400 dark:text-slate-500 pointer-events-none select-none z-10">
             {suffix}
           </span>
         )}

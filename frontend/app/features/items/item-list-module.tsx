@@ -101,6 +101,11 @@ export interface UnifiedItem {
   box_sell_price: number;
   standard_cost: number;
   min_stock_alert?: number;
+  needs_review?: boolean;
+  creation_source?: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  reviewed_by_name?: string;
   status: string;
   category_name?: string;
   image_url?: string;
@@ -162,6 +167,7 @@ export function ItemListModule({
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [filterNeedsReviewOnly, setFilterNeedsReviewOnly] = useState<boolean>(false);
   const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState<boolean>(false);
 
   // Category Modal & Deletion Guard
@@ -246,6 +252,10 @@ export function ItemListModule({
   // Filtered List based on Search & Multi-Select Checkboxes
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
+      if (filterNeedsReviewOnly && !item.needs_review) {
+        return false;
+      }
+
       const q = searchQuery.toLowerCase().trim();
       const matchSearch =
         !q ||
@@ -265,10 +275,14 @@ export function ItemListModule({
 
       return matchSearch && matchType && matchCategory && matchStatus;
     });
-  }, [items, searchQuery, selectedTypes, selectedCategories, selectedStatuses]);
+  }, [items, searchQuery, selectedTypes, selectedCategories, selectedStatuses, filterNeedsReviewOnly]);
 
   // Combined Filtered Items
   const displayedItems = filteredItems;
+
+  const pendingReviewCount = useMemo(() => {
+    return items.filter((i) => i.needs_review).length;
+  }, [items]);
 
   // KPI summary metrics calculated from total items list
   const kpiMetrics = useMemo(() => {
@@ -278,6 +292,7 @@ export function ItemListModule({
       raw: items.filter((i) => i.item_type === "raw_material").length,
       consumables: items.filter((i) => i.item_type === "consumable" || i.item_type === "fixed_tool").length,
       active: items.filter((i) => i.status === "active").length,
+      needsReview: items.filter((i) => i.needs_review).length,
     };
   }, [items]);
 
@@ -597,8 +612,13 @@ export function ItemListModule({
       };
 
       if (currentView === "edit" && editingItem) {
-        await api.put(`/items/${editingItem.id}`, payload);
-        toast.success(`Master item "${formData.name}" berhasil diperbarui!`);
+        if (editingItem.needs_review) {
+          await api.patch(`/items/${editingItem.id}/review`, payload);
+          toast.success(`Master item "${formData.name}" berhasil diverifikasi dan disahkan!`);
+        } else {
+          await api.put(`/items/${editingItem.id}`, payload);
+          toast.success(`Master item "${formData.name}" berhasil diperbarui!`);
+        }
       } else {
         await api.post("/items", payload);
         toast.success(`Master item baru "${formData.name}" berhasil ditambahkan!`);
@@ -702,8 +722,14 @@ export function ItemListModule({
             />
           </div>
           <div>
-            <div className="font-semibold text-slate-900 dark:text-slate-100">
-              {row.name}
+            <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
+              <span>{row.name}</span>
+              {row.needs_review && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800 inline-flex items-center gap-1 shrink-0">
+                  <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                  Perlu Ditinjau
+                </span>
+              )}
             </div>
             <div className="text-xs text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
               <span>{row.sku || (t.itemsNoBarcode || "Tanpa Barcode")}</span>
@@ -853,7 +879,19 @@ export function ItemListModule({
           >
             <MoreVertical className="w-4 h-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 rounded-2xl p-1.5 shadow-xl">
+          <DropdownMenuContent align="end" className="w-52 rounded-2xl p-1.5 shadow-xl">
+            {row.needs_review && isItemAdmin && (
+              <>
+                <DropdownMenuItem
+                  onClick={() => handleOpenEdit(row)}
+                  className="gap-2 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Verifikasi & Sahkan Item</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             {isItemAdmin ? (
               <DropdownMenuItem
                 onClick={() => handleOpenEdit(row)}
@@ -3129,6 +3167,39 @@ export function ItemListModule({
           </div>
         </div>
       </div>
+
+      {/* ── REVIEW QUEUE ALERT BANNER ── */}
+      {pendingReviewCount > 0 && isItemAdmin && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in-30">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-900 flex items-center justify-center font-black shrink-0 shadow-xs">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-bold text-amber-950 dark:text-amber-200 text-sm flex items-center gap-2">
+                <span>{pendingReviewCount} Barang Baru Memerlukan Peninjauan Master</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200">
+                  PO Inline
+                </span>
+              </div>
+              <p className="text-amber-800/80 dark:text-amber-300/80 text-[11px] mt-0.5">
+                Barang dibuat secara kilat dari dokumen pengadaan PO. Lengkapi barcode, batas stok minimum, dan kategori sebelum disahkan.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFilterNeedsReviewOnly(!filterNeedsReviewOnly)}
+            className={`px-4 py-2 rounded-xl font-bold transition shrink-0 cursor-pointer shadow-xs ${
+              filterNeedsReviewOnly
+                ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900"
+                : "bg-amber-500 hover:bg-amber-600 text-slate-950"
+            }`}
+          >
+            {filterNeedsReviewOnly ? "Tampilkan Semua Barang" : "Tinjau Sekarang"}
+          </button>
+        </div>
+      )}
 
       {/* ── CONTROL BAR (Search & Unified 1-Popup Multi-Column Filter) ── */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">

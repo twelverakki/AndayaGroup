@@ -78,12 +78,16 @@ func (s *ItemsService) GetItems(ctx context.Context, businessID uuid.UUID, outle
 		       COALESCE(i.is_thawable, i.requires_thaw, FALSE) AS is_thawable,
 		       i.base_unit, i.box_unit, i.conversion_rate, COALESCE(i.price_unit, 'base') AS price_unit, i.sell_price, i.box_sell_price, i.standard_cost,
 		       COALESCE(i.min_stock_alert, 5.0) AS min_stock_alert,
+		       COALESCE(i.needs_review, FALSE) AS needs_review,
+		       COALESCE(i.creation_source, 'manual') AS creation_source,
+		       i.reviewed_at, i.reviewed_by, u.name AS reviewed_by_name,
 		       i.image_url, i.status,
 		       i.created_at, i.updated_at, c.name AS category_name,
 		       COALESCE(SUM(st.qty_sealed), 0) AS qty_sealed,
 		       COALESCE(SUM(st.qty_loose), 0) AS qty_loose
 		FROM items i
 		LEFT JOIN categories c ON i.category_id = c.id
+		LEFT JOIN users u ON i.reviewed_by = u.id
 		%s
 		WHERE i.business_id = $1
 	`, stockJoin)
@@ -106,7 +110,7 @@ func (s *ItemsService) GetItems(ctx context.Context, businessID uuid.UUID, outle
 		paramIdx++
 	}
 
-	query += ` GROUP BY i.id, c.name ORDER BY i.name ASC`
+	query += ` GROUP BY i.id, c.name, u.name ORDER BY i.name ASC`
 
 	rows, err := s.DB.Query(ctx, query, args...)
 	if err != nil {
@@ -117,16 +121,21 @@ func (s *ItemsService) GetItems(ctx context.Context, businessID uuid.UUID, outle
 	list := make([]ItemResponse, 0)
 	for rows.Next() {
 		var item ItemResponse
+		var reviewedByName *string
 		err := rows.Scan(
 			&item.ID, &item.BusinessID, &item.CategoryID, &item.SKU, &item.Name, &item.ItemType,
 			&item.IsSellable, &item.IsInventoryTracked, &item.IsProduced, &item.IsPurchasable, &item.IsThawable,
 			&item.BaseUnit, &item.BoxUnit, &item.ConversionRate,
 			&item.PriceUnit, &item.SellPrice, &item.BoxSellPrice, &item.StandardCost, &item.MinStockAlert,
+			&item.NeedsReview, &item.CreationSource, &item.ReviewedAt, &item.ReviewedBy, &reviewedByName,
 			&item.ImageURL, &item.Status, &item.CreatedAt, &item.UpdatedAt,
 			&item.CategoryName, &item.QtySealed, &item.QtyLoose,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if reviewedByName != nil {
+			item.ReviewedByName = *reviewedByName
 		}
 		item.IsTrackingStock = item.IsInventoryTracked
 		item.RequiresThaw = item.IsThawable
@@ -851,6 +860,190 @@ func (s *ItemsService) GetStockMatrix(ctx context.Context, businessID uuid.UUID)
 		Outlets: outlets,
 		Items:   items,
 	}, nil
+}
+
+type QuickCreateItemRequest struct {
+	Name           string          `json:"name"`
+	CategoryID     *uuid.UUID      `json:"category_id,omitempty"`
+	ItemType       models.ItemType `json:"item_type"`
+	BaseUnit       string          `json:"base_unit"`
+	BoxUnit        string          `json:"box_unit"`
+	ConversionRate float64         `json:"conversion_rate"`
+	StandardCost   int64           `json:"standard_cost"`
+	SellPrice      int64           `json:"sell_price"`
+	BoxSellPrice   int64           `json:"box_sell_price"`
+	Source         string          `json:"source"` // default 'po_inline'
+}
+
+func (s *ItemsService) QuickCreateItem(ctx context.Context, businessID uuid.UUID, req QuickCreateItemRequest) (*ItemResponse, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, errors.New("nama barang wajib diisi")
+	}
+
+	if req.BaseUnit == "" {
+		req.BaseUnit = "pcs"
+	}
+	if req.BoxUnit == "" {
+		req.BoxUnit = "kardus"
+	}
+	if req.ConversionRate <= 0 {
+		req.ConversionRate = 1.0
+	}
+	if req.ItemType == "" {
+		req.ItemType = models.ItemFinishedGood
+	}
+	if req.Source == "" {
+		req.Source = "po_inline"
+	}
+
+	itemID := uuid.New()
+	query := `
+		INSERT INTO items (
+			id, business_id, category_id, name, item_type,
+			is_sellable, is_inventory_tracked, is_produced, is_purchasable, is_thawable, requires_thaw,
+			base_unit, box_unit, conversion_rate, price_unit, sell_price, box_sell_price, standard_cost, min_stock_alert,
+			needs_review, creation_source, status, created_at, updated_at
+		)
+		VALUES (
+			$1, $2, $3, $4, $5,
+			TRUE, TRUE, FALSE, TRUE, FALSE, FALSE,
+			$6, $7, $8, 'base', $9, $10, $11, 5.0,
+			TRUE, $12, 'active', NOW(), NOW()
+		)
+		RETURNING id, business_id, category_id, sku, name, item_type, is_sellable, is_inventory_tracked,
+		          is_produced, is_purchasable, is_thawable, base_unit, box_unit, conversion_rate, price_unit,
+		          sell_price, box_sell_price, standard_cost, min_stock_alert, needs_review, creation_source,
+		          status, created_at, updated_at
+	`
+
+	var item models.Item
+	err := s.DB.QueryRow(ctx, query,
+		itemID, businessID, req.CategoryID, name, req.ItemType,
+		req.BaseUnit, req.BoxUnit, req.ConversionRate, req.SellPrice, req.BoxSellPrice, req.StandardCost,
+		req.Source,
+	).Scan(
+		&item.ID, &item.BusinessID, &item.CategoryID, &item.SKU, &item.Name, &item.ItemType,
+		&item.IsSellable, &item.IsInventoryTracked, &item.IsProduced, &item.IsPurchasable, &item.IsThawable,
+		&item.BaseUnit, &item.BoxUnit, &item.ConversionRate, &item.PriceUnit,
+		&item.SellPrice, &item.BoxSellPrice, &item.StandardCost, &item.MinStockAlert,
+		&item.NeedsReview, &item.CreationSource, &item.Status, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("gagal membuat barang cepat: %w", err)
+	}
+
+	item.IsTrackingStock = item.IsInventoryTracked
+	item.RequiresThaw = item.IsThawable
+
+	return &ItemResponse{
+		Item:          item,
+		QtySealed:     0,
+		QtyLoose:      0,
+		CurrentStock:  0,
+		PurchasePrice: item.StandardCost,
+		UnitType:      item.BaseUnit,
+		InventoryMode: "dry_strict",
+	}, nil
+}
+
+func (s *ItemsService) GetPendingReviewItems(ctx context.Context, businessID uuid.UUID) ([]ItemResponse, error) {
+	query := `
+		SELECT i.id, i.business_id, i.category_id, i.sku, i.name, i.item_type, i.is_sellable, i.is_inventory_tracked,
+		       COALESCE(i.is_produced, FALSE) AS is_produced,
+		       COALESCE(i.is_purchasable, TRUE) AS is_purchasable,
+		       COALESCE(i.is_thawable, i.requires_thaw, FALSE) AS is_thawable,
+		       i.base_unit, i.box_unit, i.conversion_rate, COALESCE(i.price_unit, 'base') AS price_unit, i.sell_price, i.box_sell_price, i.standard_cost,
+		       COALESCE(i.min_stock_alert, 5.0) AS min_stock_alert,
+		       COALESCE(i.needs_review, FALSE) AS needs_review,
+		       COALESCE(i.creation_source, 'manual') AS creation_source,
+		       i.reviewed_at, i.reviewed_by, NULL AS reviewed_by_name,
+		       i.image_url, i.status,
+		       i.created_at, i.updated_at, c.name AS category_name,
+		       COALESCE(SUM(st.qty_sealed), 0) AS qty_sealed,
+		       COALESCE(SUM(st.qty_loose), 0) AS qty_loose
+		FROM items i
+		LEFT JOIN categories c ON i.category_id = c.id
+		LEFT JOIN item_stocks st ON i.id = st.item_id AND st.held_by_user_id IS NULL
+		WHERE i.business_id = $1 AND i.needs_review = TRUE
+		GROUP BY i.id, c.name
+		ORDER BY i.created_at DESC
+	`
+
+	rows, err := s.DB.Query(ctx, query, businessID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]ItemResponse, 0)
+	for rows.Next() {
+		var item ItemResponse
+		var reviewedByName *string
+		err := rows.Scan(
+			&item.ID, &item.BusinessID, &item.CategoryID, &item.SKU, &item.Name, &item.ItemType,
+			&item.IsSellable, &item.IsInventoryTracked, &item.IsProduced, &item.IsPurchasable, &item.IsThawable,
+			&item.BaseUnit, &item.BoxUnit, &item.ConversionRate,
+			&item.PriceUnit, &item.SellPrice, &item.BoxSellPrice, &item.StandardCost, &item.MinStockAlert,
+			&item.NeedsReview, &item.CreationSource, &item.ReviewedAt, &item.ReviewedBy, &reviewedByName,
+			&item.ImageURL, &item.Status, &item.CreatedAt, &item.UpdatedAt,
+			&item.CategoryName, &item.QtySealed, &item.QtyLoose,
+		)
+		if err != nil {
+			return nil, err
+		}
+		item.IsTrackingStock = item.IsInventoryTracked
+		item.RequiresThaw = item.IsThawable
+		item.Category = item.CategoryName
+		item.PurchasePrice = item.StandardCost
+		item.CurrentStock = item.QtyLoose
+		item.UnitType = item.BaseUnit
+		item.InventoryMode = "dry_strict"
+		list = append(list, item)
+	}
+
+	return list, nil
+}
+
+func (s *ItemsService) ReviewItem(ctx context.Context, businessID, itemID, reviewerID uuid.UUID, req CreateItemRequest) error {
+	if req.Name == "" {
+		return errors.New("item name is required")
+	}
+	if req.ConversionRate <= 0 {
+		req.ConversionRate = 1.0
+	}
+	if req.PriceUnit == "" {
+		req.PriceUnit = "base"
+	}
+	if req.MinStockAlert <= 0 {
+		req.MinStockAlert = 5.0
+	}
+	if req.ItemType == "" {
+		req.ItemType = "finished_good"
+	}
+
+	isTracking := req.IsTrackingStock || req.IsInventoryTracked
+	isThaw := req.IsThawable || req.RequiresThaw
+
+	result, err := s.DB.Exec(ctx, `
+		UPDATE items
+		SET category_id = $1, sku = $2, name = $3, item_type = $4,
+		    is_sellable = $5, is_inventory_tracked = $6, is_produced = $7, is_purchasable = $8, is_thawable = $9, requires_thaw = $10,
+		    base_unit = $11, box_unit = $12, conversion_rate = $13, price_unit = $14, sell_price = $15, box_sell_price = $16,
+		    standard_cost = $17, min_stock_alert = $18, image_url = $19,
+		    needs_review = FALSE, reviewed_at = NOW(), reviewed_by = $20, updated_at = NOW()
+		WHERE id = $21 AND business_id = $22
+	`, req.CategoryID, req.SKU, req.Name, req.ItemType,
+		req.IsSellable, isTracking, req.IsProduced, req.IsPurchasable, isThaw, isThaw,
+		req.BaseUnit, req.BoxUnit, req.ConversionRate, req.PriceUnit, req.SellPrice, req.BoxSellPrice,
+		req.StandardCost, req.MinStockAlert, req.ImageURL, reviewerID, itemID, businessID)
+	if err != nil {
+		return fmt.Errorf("failed to review item: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return errors.New("item not found or not owned by business")
+	}
+	return nil
 }
 
 

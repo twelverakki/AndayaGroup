@@ -13,6 +13,7 @@ import (
 	"andaya-erp/backend/internal/modules/organization"
 	"andaya-erp/backend/internal/modules/production"
 	"andaya-erp/backend/internal/modules/promotions"
+	"andaya-erp/backend/internal/modules/purchases"
 	"andaya-erp/backend/internal/modules/settlements"
 	"andaya-erp/backend/internal/modules/transactions"
 
@@ -95,8 +96,11 @@ func main() {
 	itemsGroup := scopedAPI.Group("/items")
 	itemsGroup.Get("/", itemsHandler.HandleGetItems)
 	itemsGroup.Get("/matrix", itemsHandler.HandleGetStockMatrix)
+	itemsGroup.Get("/pending-review", itemsHandler.HandleGetPendingReviewItems)
 	itemsGroup.Post("/", itemsHandler.HandleCreateItem)
+	itemsGroup.Post("/quick-create", itemsHandler.HandleQuickCreateItem)
 	itemsGroup.Put("/:id", itemsHandler.HandleUpdateItem)
+	itemsGroup.Patch("/:id/review", itemsHandler.HandleReviewItem)
 	itemsGroup.Patch("/:id/status", itemsHandler.HandleUpdateItemStatus)
 	itemsGroup.Post("/:id/unbox", itemsHandler.HandleUnboxItem)
 	itemsGroup.Post("/:id/adjust", itemsHandler.HandleAdjustStock)
@@ -146,12 +150,30 @@ func main() {
 	transactionsGroup.Post("/", transactions.HandleCreateTransaction)
 	transactionsGroup.Post("/:id/void", transactions.HandleVoidTransaction)
 
-	// Purchases / Procurement Endpoints
-	procurementsGroup := scopedAPI.Group("/procurements")
-	procurementsGroup.Get("/", itemsHandler.HandleGetProcurements)
+	// Purchases / Procurement & Suppliers Endpoints (Domain 7: The Lean Odoo Way)
+	purchasesHandler := purchases.NewPurchasesHandler(config.DB)
 
 	purchasesGroup := scopedAPI.Group("/purchases")
-	purchasesGroup.Get("/", itemsHandler.HandleGetProcurements)
+	purchasesGroup.Get("/", purchasesHandler.HandleGetPurchases)
+	purchasesGroup.Post("/", purchasesHandler.HandleCreatePurchase)
+	purchasesGroup.Get("/purchasable-items", purchasesHandler.HandleGetPurchasableItems)
+	purchasesGroup.Get("/:id", purchasesHandler.HandleGetPurchaseByID)
+	purchasesGroup.Post("/:id/receive", purchasesHandler.HandleReceivePurchase)
+	purchasesGroup.Post("/:id/payments", purchasesHandler.HandleAddPayment)
+	purchasesGroup.Get("/:id/payments", purchasesHandler.HandleGetPayments)
+
+	suppliersGroup := scopedAPI.Group("/suppliers")
+	suppliersGroup.Get("/", purchasesHandler.HandleGetSuppliers)
+	suppliersGroup.Post("/", purchasesHandler.HandleCreateSupplier)
+	suppliersGroup.Put("/:id", purchasesHandler.HandleUpdateSupplier)
+	suppliersGroup.Delete("/:id", purchasesHandler.HandleDeleteSupplier)
+
+	// Backward Compatibility Procurement Aliases
+	procurementsGroup := scopedAPI.Group("/procurements")
+	procurementsGroup.Get("/", purchasesHandler.HandleGetPurchases)
+	procurementsGroup.Post("/", purchasesHandler.HandleCreatePurchase)
+	procurementsGroup.Get("/:id", purchasesHandler.HandleGetPurchaseByID)
+	procurementsGroup.Post("/:id/receive", purchasesHandler.HandleReceivePurchase)
 
 	// Sales Reports & Analytics Endpoints
 	reportsGroup := scopedAPI.Group("/reports")

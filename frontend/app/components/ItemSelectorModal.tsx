@@ -15,6 +15,7 @@ import {
   Check,
   Filter,
   Image as ImageIcon,
+  Plus,
 } from "lucide-react";
 import { getImageUrl } from "~/lib/utils";
 
@@ -37,32 +38,50 @@ export interface ItemSelectorItem {
 }
 
 export interface ItemSelectorModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  open?: boolean;
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onClose?: () => void;
   title?: string;
   description?: string;
   items: ItemSelectorItem[];
-  selectedIds: string[];
-  onConfirm: (selectedIds: string[]) => void;
+  selectedIds?: string[];
+  selectedItemIds?: string[];
+  onConfirm?: (selectedIds: string[]) => void;
+  onApply?: (selectedIds: string[]) => void;
   showStockFilter?: boolean;
   defaultInStockOnly?: boolean;
   emptyText?: string;
   confirmButtonText?: string;
+  onQuickCreate?: (query: string) => void;
 }
 
 export function ItemSelectorModal({
   open,
+  isOpen,
   onOpenChange,
+  onClose,
   title,
   description,
-  items,
+  items = [],
   selectedIds: initialSelectedIds,
+  selectedItemIds: initialSelectedItemIds,
   onConfirm,
+  onApply,
   showStockFilter = false,
   defaultInStockOnly = false,
   emptyText,
   confirmButtonText,
+  onQuickCreate,
 }: ItemSelectorModalProps) {
+  const isModalOpen = open ?? isOpen ?? false;
+  const handleOpenChange = (newOpen: boolean) => {
+    if (onOpenChange) onOpenChange(newOpen);
+    if (!newOpen && onClose) onClose();
+  };
+
+  const initialIds = initialSelectedIds ?? initialSelectedItemIds ?? [];
+
   const { language } = useLanguageStore();
   const t = translations[language] || translations.id;
 
@@ -70,7 +89,7 @@ export function ItemSelectorModal({
   const resolvedDesc = description || t.itemPickerDescDefault || "Tahan & geser (drag) kursor untuk memilih banyak produk dengan cepat";
   const resolvedEmptyText = emptyText || t.itemPickerEmpty || "Tidak ada produk yang cocok dengan pencarian";
   const resolvedConfirmText = confirmButtonText || t.itemPickerApply || "Terapkan Pilihan";
-  const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds);
+  const [selectedIds, setSelectedIds] = useState<string[]>(initialIds);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [inStockOnly, setInStockOnly] = useState<boolean>(defaultInStockOnly);
@@ -81,12 +100,12 @@ export function ItemSelectorModal({
 
   // Synchronize when modal opens
   useEffect(() => {
-    if (open) {
-      setSelectedIds(initialSelectedIds);
+    if (isModalOpen) {
+      setSelectedIds(initialIds);
       setSearchQuery("");
       setInStockOnly(defaultInStockOnly);
     }
-  }, [open, initialSelectedIds, defaultInStockOnly]);
+  }, [isModalOpen, initialIds, defaultInStockOnly]);
 
   // Global mouseup to release drag
   useEffect(() => {
@@ -158,12 +177,13 @@ export function ItemSelectorModal({
   };
 
   const handleConfirm = () => {
-    onConfirm(selectedIds);
-    onOpenChange(false);
+    if (onConfirm) onConfirm(selectedIds);
+    if (onApply) onApply(selectedIds);
+    handleOpenChange(false);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={isModalOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] rounded-3xl p-6 bg-white dark:bg-[#202024] border border-slate-200 dark:border-[#38383C] shadow-2xl flex flex-col gap-4 overflow-hidden">
         {/* Dialog Header: Clean without count badge */}
         <DialogHeader className="text-left pb-3 border-b border-slate-100 dark:border-white/5 space-y-1 shrink-0">
@@ -262,9 +282,19 @@ export function ItemSelectorModal({
         {/* Modal Body: Scrollable Content with Drag-to-Select */}
         <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin select-none min-h-[300px] max-h-[50vh]">
           {filteredItems.length === 0 ? (
-            <div className="py-16 text-center text-slate-400 text-xs flex flex-col items-center justify-center space-y-2">
+            <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center justify-center space-y-3">
               <Package className="w-8 h-8 stroke-[1.5] text-slate-300 dark:text-slate-600" />
               <p>{resolvedEmptyText}</p>
+              {onQuickCreate && searchQuery.trim() && (
+                <button
+                  type="button"
+                  onClick={() => onQuickCreate(searchQuery.trim())}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E2FF66] text-slate-900 font-bold text-xs hover:brightness-95 active:scale-95 transition shadow-sm cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Buat Barang Baru: &quot;{searchQuery.trim()}&quot; (Kilat)</span>
+                </button>
+              )}
             </div>
           ) : viewMode === "grid" ? (
             /* ─── GRID MODE: Drag-to-Select Cards ─── */

@@ -235,3 +235,36 @@ Untuk unit usaha F&B (Bakso Kang Gemoy, Yasaka Fried Chicken, dll.), item bahan 
    - Penambahan staf baru dengan role `manager`, pengubahan status/role ke `manager`, atau pemindahan/mutasi manager ke cabang lain yang sudah memiliki manager aktif akan ditolak secara tegas (400 Bad Request di backend dan validasi reaktif di frontend) demi mencegah dualisme wewenang otorisasi void dan persetujuan opname.
 - **Rasionalisasi:** Mencegah kebocoran rahasia margin laba kotor, standarisasi harga antar-cabang oleh pemilik usaha, isolasi inventori cabang terdesentralisasi, dan penegakan wewenang komando tunggal di setiap cabang.
 - **Status:** ✅ Final.
+
+---
+
+## 12. Tata Kelola Pengadaan & Pembelian (Procurement & Direct Store Delivery)
+
+**D-29. Standar Pengadaan (Procurement), 3-Way Matching, Penyesuaian HPP (Last Buying Price), dan Tata Kelola 2 Lapis Pengadaan Mandiri Cabang**
+1. **Dua Mode Pembelian (1-Step Direct Purchase & 2-Step PO $\rightarrow$ Goods Receipt)**:
+   - **Mode Pembelian Cepat (1-Step Direct)**: Untuk belanja harian kasir/manager di toko/pasar/agen lokal (Input nota faktur $\rightarrow$ konfirmasi $\rightarrow$ stok `item_stocks` langsung bertambah bertipe `IN_PURCHASE` di buku besar `stock_movements`, harga beli menimpa `items.standard_cost`, dan status hutang tercatat).
+   - **Mode PO Resmi (2-Step PO $\rightarrow$ GRN)**: Untuk pemesanan volume besar ke vendor/distributor resmi (Draft RFQ $\rightarrow$ PO Submitted $\rightarrow$ Goods Receipt bertahap/penuh $\rightarrow$ Vendor Bill AP).
+2. **Tata Kelola 2 Lapis Pengadaan Mandiri Cabang (Direct Store Delivery - DSD)**:
+   - **Lapis 1 (Level Outlet - `outlets.allow_direct_purchase`)**: Menentukan apakah cabang diizinkan melakukan pengadaan mandiri. Cabang gerobak pasif diset `false` (100% pasokan pusat), sedangkan toko retail/cabang mandiri diset `true`.
+   - **Lapis 2 (Level Item - `items.allow_branch_purchase`)**: Menjaga kualitas dan rahasia resep/formula. Bumbu rahasia/adonan inti diset `false` (hanya bisa dipasok dari Gudang Pusat via Domain 4). Barang komoditas umum/bulky (es batu, sayur, gas LPG, minyak, sembako) diset `true` sehingga cabang bebas membeli langsung tanpa membebani gudang pusat.
+3. **Manajemen Hutang Dagang (Accounts Payable / AP Aging)**:
+   - Melacak faktur belum lunas (`unpaid`, `partial`, `paid`), tanggal jatuh tempo (`due_date`), serta histori pembayaran bertahap di `purchase_payments`.
+- **Rasionalisasi:** Mencegah pemborosan logistik barang bulky, melindungi rahasia bumbu/resep inti, memastikan HPP modal selalu terkalibrasi secara real-time dari harga beli aktual, dan menjaga akurasi arus kas hutang dagang.
+- **Status:** ✅ Final.
+
+---
+
+## 13. Manajemen Beban Operasional & Kas Keluar (Domain 10: Expenses & Cash Outflows)
+
+**D-30. Pemisahan Transaksi Barang (COGS / Procurement) dari Beban Usaha (OPEX) dan Integrasi Kas Laci Kasir (Petty Cash)**
+1. **Pemisahan Tegas Pembelian Barang vs Beban Operasional**:
+   - Pembelian stok barang/bahan fisik (`item_type: finished_good / raw_material / consumable`) dikelola di modul **Procurement (Domain 7)** dan membentuk Harga Pokok Penjualan (HPP).
+   - Pengeluaran operasional non-stok (listrik, air/PDAM, WiFi, iuran sampah pasar, sewa lapak, servis alat, bensin kurir, uang makan kasir) dikelola secara terpusat di modul **Expenses (Domain 10)**.
+2. **Kategori Beban Standar (`expense_categories`)**:
+   - Dikelompokkan ke dalam kategori akun beban usaha terstandar (Utilitas, Kebersihan/Retribusi, Sewa, Pemeliharaan, Transportasi, Beban Staf, Perlengkapan, dan Tak Terduga).
+3. **Integrasi Kas Laci Kasir & Rekonsiliasi Harian**:
+   - Pengeluaran yang diambil dari uang fisik toko (`payment_source = 'cash_drawer'`) wajib terikat ke `session_id` kasir aktif dan otomatis memotong saldo fisik uang laci saat *Cash Drawer Count* (Domain 3/6).
+   - Menghasilkan laporan laba operasional bersih (*Net Operating Profit*) yang bersih dan akurat pada dashboard analitik (Domain 8).
+- **Rasionalisasi:** Mencegah pencemaran buku besar mutasi stok dengan transaksi non-barang, menyajikan transparansi seluruh pengeluaran kas kecil kasir harian, dan mengeliminasi biaya siluman (*hidden expense*).
+- **Status:** ✅ Final.
+

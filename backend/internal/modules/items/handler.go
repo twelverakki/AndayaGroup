@@ -517,4 +517,101 @@ func (h *ItemsHandler) HandleGetStockMatrix(c *fiber.Ctx) error {
 	})
 }
 
+func (h *ItemsHandler) HandleQuickCreateItem(c *fiber.Ctx) error {
+	businessID, _, err := getTenantContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Access to business context denied",
+		})
+	}
+
+	var req QuickCreateItemRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Payload permintaan tidak valid",
+		})
+	}
+
+	res, err := h.Service.QuickCreateItem(c.Context(), businessID, req)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"message": "Barang baru berhasil dibuat (menunggu peninjauan)",
+		"data":    res,
+	})
+}
+
+func (h *ItemsHandler) HandleGetPendingReviewItems(c *fiber.Ctx) error {
+	businessID, _, err := getTenantContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Access to business context denied",
+		})
+	}
+
+	res, err := h.Service.GetPendingReviewItems(c.Context(), businessID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"data":  res,
+		"count": len(res),
+	})
+}
+
+func (h *ItemsHandler) HandleReviewItem(c *fiber.Ctx) error {
+	businessID, _, err := getTenantContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Access to business context denied",
+		})
+	}
+
+	role, _ := c.Locals("role").(string)
+	if !isItemAdmin(role) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "Akses ditolak: Hanya Owner dan Admin Gudang yang berwenang memverifikasi data master barang.",
+		})
+	}
+
+	userIDStr, _ := c.Locals("user_id").(string)
+	reviewerID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"message": "Invalid user context",
+		})
+	}
+
+	itemID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid item ID",
+		})
+	}
+
+	var req CreateItemRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Payload permintaan tidak valid",
+		})
+	}
+
+	if err := h.Service.ReviewItem(c.Context(), businessID, itemID, reviewerID, req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Barang berhasil diverifikasi dan master katalog diperbarui",
+	})
+}
+
 

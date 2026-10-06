@@ -68,15 +68,16 @@ type Business struct {
 
 // Outlet represents a physical branch/location under a business
 type Outlet struct {
-	ID            uuid.UUID `json:"id"`
-	BusinessID    uuid.UUID `json:"business_id"`
-	Name          string    `json:"name"`
-	IsMain        bool      `json:"is_main"`
-	Address       *string   `json:"address,omitempty"`
-	Phone         *string   `json:"phone,omitempty"`
-	ReceiptFooter *string   `json:"receipt_footer,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID                  uuid.UUID `json:"id"`
+	BusinessID          uuid.UUID `json:"business_id"`
+	Name                string    `json:"name"`
+	IsMain              bool      `json:"is_main"`
+	AllowDirectPurchase bool      `json:"allow_direct_purchase"`
+	Address             *string   `json:"address,omitempty"`
+	Phone               *string   `json:"phone,omitempty"`
+	ReceiptFooter       *string   `json:"receipt_footer,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // BusinessOwner represents many-to-many business ownership for Owners
@@ -701,11 +702,12 @@ type Item struct {
 	IsSellable         bool       `json:"is_sellable"`
 	IsInventoryTracked bool       `json:"is_inventory_tracked"`
 	IsTrackingStock    bool       `json:"is_tracking_stock"` // Unified alias
-	IsProduced         bool       `json:"is_produced"`
-	IsPurchasable      bool       `json:"is_purchasable"`
-	IsThawable         bool       `json:"is_thawable"`
-	RequiresThaw       bool       `json:"requires_thaw"` // Backward compatibility alias
-	BaseUnit           string     `json:"base_unit"`
+	IsProduced          bool       `json:"is_produced"`
+	IsPurchasable       bool       `json:"is_purchasable"`
+	IsThawable          bool       `json:"is_thawable"`
+	RequiresThaw        bool       `json:"requires_thaw"` // Backward compatibility alias
+	AllowBranchPurchase bool       `json:"allow_branch_purchase"`
+	BaseUnit            string     `json:"base_unit"`
 	BoxUnit            string     `json:"box_unit"`
 	ConversionRate     float64    `json:"conversion_rate"`
 	PriceUnit          string     `json:"price_unit"`
@@ -713,6 +715,11 @@ type Item struct {
 	BoxSellPrice       int64      `json:"box_sell_price"`
 	StandardCost       int64      `json:"standard_cost"`
 	MinStockAlert      float64    `json:"min_stock_alert"`
+	NeedsReview        bool       `json:"needs_review"`
+	CreationSource     string     `json:"creation_source"`
+	ReviewedAt         *time.Time `json:"reviewed_at,omitempty"`
+	ReviewedBy         *uuid.UUID `json:"reviewed_by,omitempty"`
+	ReviewedByName     string     `json:"reviewed_by_name,omitempty"`
 	ImageURL           *string    `json:"image_url,omitempty"`
 	Status             string     `json:"status"`
 	CreatedAt          time.Time  `json:"created_at"`
@@ -1007,3 +1014,129 @@ type StockTransferItem struct {
 	Notes              *string   `json:"notes,omitempty"`
 	CreatedAt          time.Time `json:"created_at"`
 }
+
+// =========================================================================
+// DOMAIN 7 & 10 MODELS (Procurement, Purchases, AP & Operational Expenses)
+// =========================================================================
+
+// Supplier represents a vendor / distributor
+type Supplier struct {
+	ID               uuid.UUID `json:"id"`
+	BusinessID       uuid.UUID `json:"business_id"`
+	Name             string    `json:"name"`
+	ContactPerson    *string   `json:"contact_person,omitempty"`
+	Phone            *string   `json:"phone,omitempty"`
+	Email            *string   `json:"email,omitempty"`
+	Address          *string   `json:"address,omitempty"`
+	PaymentTermsDays int       `json:"payment_terms_days"`
+	Status           string    `json:"status"` // active, inactive
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// Purchase represents a Purchase Order or Direct Vendor Bill
+type Purchase struct {
+	ID             uuid.UUID      `json:"id"`
+	BusinessID     uuid.UUID      `json:"business_id"`
+	OutletID       uuid.UUID      `json:"outlet_id"`
+	OutletName     string         `json:"outlet_name,omitempty"`
+	PONumber       string         `json:"po_number"`
+	InvoiceNo      *string        `json:"invoice_no,omitempty"`
+	SupplierID     *uuid.UUID     `json:"supplier_id,omitempty"`
+	SupplierName   string         `json:"supplier_name"`
+	Status         string         `json:"status"`         // draft, submitted, partially_received, received, cancelled
+	PaymentStatus  string         `json:"payment_status"` // unpaid, partial, paid
+	PaymentMethod  string         `json:"payment_method"` // cash, bank_transfer, credit, qris
+	OrderDate      string         `json:"order_date"`     // YYYY-MM-DD
+	DueDate        *string        `json:"due_date,omitempty"`
+	ReceivedAt     *time.Time     `json:"received_at,omitempty"`
+	SubtotalAmount int64          `json:"subtotal_amount"`
+	DiscountAmount int64          `json:"discount_amount"`
+	TaxAmount      int64          `json:"tax_amount"`
+	ShippingCost   int64          `json:"shipping_cost"`
+	TotalAmount    int64          `json:"total_amount"`
+	AmountPaid     int64          `json:"amount_paid"`
+	AmountOwed     int64          `json:"amount_owed"`
+	Notes          *string        `json:"notes,omitempty"`
+	CreatedBy      *uuid.UUID     `json:"created_by,omitempty"`
+	CreatedByName  string         `json:"created_by_name,omitempty"`
+	ReceivedBy     *uuid.UUID     `json:"received_by,omitempty"`
+	ReceivedByName string         `json:"received_by_name,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	Items          []PurchaseItem `json:"items,omitempty"`
+}
+
+// PurchaseItem represents a line item in a Purchase Order
+type PurchaseItem struct {
+	ID             uuid.UUID `json:"id"`
+	PurchaseID     uuid.UUID `json:"purchase_id"`
+	ItemID         uuid.UUID `json:"item_id"`
+	ItemName       string    `json:"item_name,omitempty"`
+	ItemSKU        string    `json:"item_sku,omitempty"`
+	ItemType       string    `json:"item_type,omitempty"`
+	BaseUnit       string    `json:"base_unit,omitempty"`
+	BoxUnit        string    `json:"box_unit,omitempty"`
+	UOM            string    `json:"uom"` // box, base
+	QtyOrdered     float64   `json:"qty_ordered"`
+	QtyReceived    float64   `json:"qty_received"`
+	ConversionRate float64   `json:"conversion_rate"`
+	UnitCost       int64     `json:"unit_cost"`
+	DiscountAmount int64     `json:"discount_amount"`
+	Subtotal       int64     `json:"subtotal"`
+	Notes          *string   `json:"notes,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// PurchasePayment represents partial or full payment for Accounts Payable
+type PurchasePayment struct {
+	ID            uuid.UUID `json:"id"`
+	PurchaseID    uuid.UUID `json:"purchase_id"`
+	BusinessID    uuid.UUID `json:"business_id"`
+	PaymentNo     string    `json:"payment_no"`
+	PaymentDate   string    `json:"payment_date"`
+	AmountPaid    int64     `json:"amount_paid"`
+	PaymentMethod string    `json:"payment_method"` // cash, bank_transfer, qris
+	ReferenceNo   *string   `json:"reference_no,omitempty"`
+	RecordedBy    *uuid.UUID `json:"recorded_by,omitempty"`
+	RecordedByName string   `json:"recorded_by_name,omitempty"`
+	Notes         *string   `json:"notes,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// ExpenseCategory represents standardized operational cost account
+type ExpenseCategory struct {
+	ID          uuid.UUID `json:"id"`
+	BusinessID  uuid.UUID `json:"business_id"`
+	Name        string    `json:"name"`
+	Code        *string   `json:"code,omitempty"`
+	Description *string   `json:"description,omitempty"`
+	IsActive    bool      `json:"is_active"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// Expense represents an operational cash-out record
+type Expense struct {
+	ID              uuid.UUID  `json:"id"`
+	BusinessID      uuid.UUID  `json:"business_id"`
+	OutletID        uuid.UUID  `json:"outlet_id"`
+	OutletName      string     `json:"outlet_name,omitempty"`
+	CategoryID      uuid.UUID  `json:"category_id"`
+	CategoryName    string     `json:"category_name,omitempty"`
+	ExpenseNo       string     `json:"expense_no"`
+	ExpenseDate     string     `json:"expense_date"`
+	Amount          int64      `json:"amount"`
+	PaymentSource   string     `json:"payment_source"` // cash_drawer, petty_cash, bank_transfer, owner_personal
+	SessionID       *uuid.UUID `json:"session_id,omitempty"`
+	Description     string     `json:"description"`
+	ReceiptImageURL *string    `json:"receipt_image_url,omitempty"`
+	PaidTo          *string    `json:"paid_to,omitempty"`
+	CreatedBy       uuid.UUID  `json:"created_by"`
+	CreatedByName   string     `json:"created_by_name,omitempty"`
+	ApprovedBy      *uuid.UUID `json:"approved_by,omitempty"`
+	ApprovedByName  string     `json:"approved_by_name,omitempty"`
+	Status          string     `json:"status"` // draft, pending_approval, approved, rejected
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
