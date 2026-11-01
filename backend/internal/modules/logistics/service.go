@@ -386,7 +386,7 @@ func (s *LogisticsService) CreateTransfer(ctx context.Context, businessID uuid.U
 				)
 			`, uuid.New(), businessID, itm.ItemID, transferID,
 				fromOutletID, toOutletID,
-				totalUnits, standardCost, int64(totalUnits*float64(standardCost)),
+				totalUnits, standardCost, int64(math.Round(totalUnits*float64(standardCost))),
 				senderID, fmt.Sprintf("Surat Jalan %s: Kirim %.2f dus & %.2f pcs '%s'", transferNo, itm.QtySentSealed, itm.QtySentLoose, itemName))
 			if err != nil {
 				return nil, fmt.Errorf("failed to record stock movement: %w", err)
@@ -987,7 +987,7 @@ func (s *LogisticsService) UpdateTransfer(ctx context.Context, businessID uuid.U
 				)
 			`, uuid.New(), businessID, di.itemID, transferID,
 				fromOutletID, toOutletID,
-				totalUnits, di.standardCost, int64(totalUnits*float64(di.standardCost)),
+				totalUnits, di.standardCost, int64(math.Round(totalUnits*float64(di.standardCost))),
 				senderID, fmt.Sprintf("Surat Jalan %s: Kirim %.2f dus & %.2f pcs '%s'", transferNo, di.sentSealed, di.sentLoose, di.itemName))
 			if err != nil {
 				return nil, fmt.Errorf("failed to record dispatch movement: %w", err)
@@ -1122,7 +1122,7 @@ func (s *LogisticsService) UpdateTransfer(ctx context.Context, businessID uuid.U
 				)
 			`, uuid.New(), businessID, ri.itemID, transferID,
 				toOutletID, fromOutletID,
-				totalUnits, ri.standardCost, int64(totalUnits*float64(ri.standardCost)),
+				totalUnits, ri.standardCost, int64(math.Round(totalUnits*float64(ri.standardCost))),
 				senderID, fmt.Sprintf("Pembatalan Surat Jalan %s: Kembalikan %.2f dus & %.2f pcs '%s'", transferNo, ri.sentSealed, ri.sentLoose, ri.itemName))
 			if err != nil {
 				return nil, fmt.Errorf("failed to record reversal movement: %w", err)
@@ -1277,7 +1277,7 @@ func (s *LogisticsService) UnboxOrThawItem(ctx context.Context, businessID uuid.
 			'loose', $6, $7, $8, $9, $10, NOW()
 		)
 	`, docID, businessID, req.ItemID, docID,
-		targetOutletID, netLoose, standardCost, int64(netLoose*float64(standardCost)),
+		targetOutletID, netLoose, standardCost, int64(math.Round(netLoose*float64(standardCost))),
 		userID, fmt.Sprintf("Pecah Kemasan/Thaw: Buka %.2f %s -> Jadi %.2f %s '%s'", req.QtyBoxes, boxUnit, netLoose, baseUnit, itemName))
 	if err != nil {
 		return fmt.Errorf("failed to record stock movement: %w", err)
@@ -1296,7 +1296,7 @@ func (s *LogisticsService) UnboxOrThawItem(ctx context.Context, businessID uuid.
 				'loose', $6, $7, $8, $9, $10, NOW()
 			)
 		`, uuid.New(), businessID, req.ItemID, docID,
-			targetOutletID, req.ShrinkageLoose, standardCost, int64(req.ShrinkageLoose*float64(standardCost)),
+			targetOutletID, req.ShrinkageLoose, standardCost, int64(math.Round(req.ShrinkageLoose*float64(standardCost))),
 			userID, fmt.Sprintf("Susut Pencairan/Thaw: %.2f %s '%s'", req.ShrinkageLoose, baseUnit, itemName))
 		if err != nil {
 			return fmt.Errorf("failed to record thaw shrinkage movement: %w", err)

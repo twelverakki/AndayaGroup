@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"andaya-erp/backend/internal/config"
@@ -143,10 +144,50 @@ func CloseShift(ctx context.Context, id uuid.UUID, closingCashActual int64) (*mo
 // =========================================================================
 
 type TxItemInput struct {
+	ItemID         *uuid.UUID `json:"item_id,omitempty"`
 	ProductID      uuid.UUID  `json:"product_id"`
 	Qty            float64    `json:"qty"`
 	PromotionID    *uuid.UUID `json:"promotion_id,omitempty"`
 	DiscountAmount int64      `json:"discount_amount,omitempty"`
+}
+
+// verifyManagerOverridePIN checks inputPIN against all active managers assigned to outletID (or business owners)
+func verifyManagerOverridePIN(ctx context.Context, outletID uuid.UUID, inputPIN string) (uuid.UUID, error) {
+	db := config.DB
+	rows, err := db.Query(ctx, `
+		SELECT mp.user_id, mp.pin_hash
+		FROM manager_pins mp
+		JOIN outlet_staff os ON mp.user_id = os.user_id
+		WHERE os.outlet_id = $1 AND os.role = 'manager' AND os.status = 'active'
+	`, outletID)
+	if err != nil {
+		return uuid.Nil, errors.New("no active manager configured for this outlet")
+	}
+	defer rows.Close()
+
+	type pinCandidate struct {
+		userID  uuid.UUID
+		pinHash string
+	}
+	var candidates []pinCandidate
+	for rows.Next() {
+		var c pinCandidate
+		if err := rows.Scan(&c.userID, &c.pinHash); err == nil {
+			candidates = append(candidates, c)
+		}
+	}
+
+	if len(candidates) == 0 {
+		return uuid.Nil, errors.New("no active manager configured for this outlet")
+	}
+
+	for _, c := range candidates {
+		if comparePIN(c.pinHash, inputPIN) == nil {
+			return c.userID, nil
+		}
+	}
+
+	return uuid.Nil, errors.New("invalid manager override PIN")
 }
 
 type CreateTxInput struct {
@@ -205,35 +246,11 @@ func CreateTransaction(ctx context.Context, businessID uuid.UUID, outletID uuid.
 		if input.ManagerPIN == nil || *input.ManagerPIN == "" {
 			return nil, errors.New("manager override PIN is required for void transactions")
 		}
-		
-		// Authenticate Manager PIN
-		var mID uuid.UUID
-		err = db.QueryRow(ctx, `
-			SELECT mp.user_id 
-			FROM manager_pins mp
-			JOIN outlet_staff os ON mp.user_id = os.user_id
-			WHERE os.outlet_id = $1 AND os.role = 'manager' AND os.status = 'active'
-		`, outletID).Scan(&mID) // In production, we'd hash the pin and compare, let's check:
-		
-		if err != nil {
-			return nil, errors.New("no active manager configured for this outlet")
-		}
 
-		// Verify PIN against DB hash
-		var pinHash string
-		err = db.QueryRow(ctx, "SELECT pin_hash FROM manager_pins WHERE user_id = $1", mID).Scan(&pinHash)
+		mID, err := verifyManagerOverridePIN(ctx, outletID, *input.ManagerPIN)
 		if err != nil {
-			return nil, errors.New("unauthorized manager pin")
+			return nil, err
 		}
-
-		// Compare PIN using bcrypt
-		// In service.go, we import golang.org/x/crypto/bcrypt
-		// Let's import it if we need it
-		err = comparePIN(pinHash, *input.ManagerPIN)
-		if err != nil {
-			return nil, errors.New("invalid manager override PIN")
-		}
-		
 		managerID = &mID
 	}
 
@@ -269,79 +286,112 @@ func CreateTransaction(ctx context.Context, businessID uuid.UUID, outletID uuid.
 	var calculatedTotal int64 = 0
 	savedItems := []*models.TransactionItem{}
 
-	// 5. Process items
+	// 5. Process items against Unified Item Master (items + item_stocks + stock_movements)
 	for _, item := range input.Items {
-		// Fetch product
-		var p models.Product
+		targetItemID := item.ProductID
+		if item.ItemID != nil && *item.ItemID != uuid.Nil {
+			targetItemID = *item.ItemID
+		}
+
+		var itmID uuid.UUID
+		var itmSKU *string
+		var itmName string
+		var sellPrice, standardCost int64
+		var isInventoryTracked, isThawable bool
+
 		err = tx.QueryRow(ctx, `
-			SELECT id, name, sell_price, current_stock, inventory_mode 
-			FROM products 
-			WHERE id = $1 AND business_id = $2 FOR UPDATE
-		`, item.ProductID, businessID).Scan(&p.ID, &p.Name, &p.SellPrice, &p.CurrentStock, &p.InventoryMode)
+			SELECT id, sku, name, sell_price, standard_cost, is_inventory_tracked, COALESCE(is_thawable, requires_thaw, FALSE)
+			FROM items
+			WHERE id = $1 AND business_id = $2
+			FOR UPDATE
+		`, targetItemID, businessID).Scan(
+			&itmID, &itmSKU, &itmName, &sellPrice, &standardCost, &isInventoryTracked, &isThawable,
+		)
 		if err != nil {
 			if err == pgx.ErrNoRows {
-				return nil, errors.New("product not found: " + item.ProductID.String())
+				return nil, errors.New("product not found: " + targetItemID.String())
 			}
 			return nil, err
 		}
 
-		// Inventory Mode stock checks
-		if p.InventoryMode == models.ModeDryStrict && t.Type == models.TxSale {
-			if p.CurrentStock < item.Qty {
-				return nil, errors.New("insufficient stock for product: " + p.Name)
+		// Lock and check outlet stock balance in item_stocks
+		var stockRowID uuid.UUID
+		var currentLoose float64
+		stockErr := tx.QueryRow(ctx, `
+			SELECT id, qty_loose
+			FROM item_stocks
+			WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL
+			FOR UPDATE
+		`, itmID, outletID).Scan(&stockRowID, &currentLoose)
+		if stockErr != nil && stockErr != pgx.ErrNoRows {
+			return nil, stockErr
+		}
+
+		// Strict stock validation for inventory-tracked non-thaw items on POS sale
+		if isInventoryTracked && !isThawable && t.Type == models.TxSale {
+			if currentLoose < item.Qty {
+				return nil, errors.New("insufficient stock for product: " + itmName)
 			}
 		}
 
-		// Deduct stock for active sales and internal takes
-		if t.Type == models.TxSale || t.Type == models.TxInternalTake {
-			if p.InventoryMode == models.ModeBatchThaw {
-				// Deduct from staff's opened batch
-				var batchID uuid.UUID
-				var currentBatchQty float64
-				err = tx.QueryRow(ctx, `
-					SELECT id, quantity FROM stock_batches 
-					WHERE product_id = $1 AND held_by_user_id = $2 AND batch_status = 'opened'
-					FOR UPDATE
-				`, p.ID, t.StaffID).Scan(&batchID, &currentBatchQty)
-
-				if err == pgx.ErrNoRows {
-					// Create a new opened batch with negative quantity (bypass check, allow negative stock)
-					_, err = tx.Exec(ctx, `
-						INSERT INTO stock_batches (id, product_id, held_by_user_id, batch_status, quantity, opened_at, quality_check_status)
-						VALUES ($1, $2, $3, 'opened', $4, NOW(), 'pass')
-					`, uuid.New(), p.ID, t.StaffID, -item.Qty)
-				} else if err != nil {
-					return nil, err
-				} else {
-					// Update existing opened batch
-					_, err = tx.Exec(ctx, `
-						UPDATE stock_batches SET quantity = quantity - $1
-						WHERE id = $2
-					`, item.Qty, batchID)
-				}
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				newStock := p.CurrentStock - item.Qty
-				_, err = tx.Exec(ctx, "UPDATE products SET current_stock = $1, updated_at = NOW() WHERE id = $2", newStock, p.ID)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-
-		subtotal := int64(item.Qty * float64(p.SellPrice))
-		// If it's an internal take, we can allow $0 or cost price, let's keep sell price but mark type
+		subtotal := int64(math.Round(item.Qty * float64(sellPrice)))
+		totalCost := int64(math.Round(item.Qty * float64(standardCost)))
 		calculatedTotal += subtotal
 
+		// Deduct stock and append to stock_movements ledger for active sales and internal takes
+		if t.Type == models.TxSale || t.Type == models.TxInternalTake {
+			if stockErr == pgx.ErrNoRows {
+				_, err = tx.Exec(ctx, `
+					INSERT INTO item_stocks (id, item_id, outlet_id, qty_sealed, qty_loose, updated_at)
+					VALUES ($1, $2, $3, 0, $4, NOW())
+				`, uuid.New(), itmID, outletID, -item.Qty)
+			} else {
+				_, err = tx.Exec(ctx, `
+					UPDATE item_stocks
+					SET qty_loose = qty_loose - $1, updated_at = NOW()
+					WHERE id = $2
+				`, item.Qty, stockRowID)
+			}
+			if err != nil {
+				return nil, err
+			}
+
+			sourceDocType := "pos_sale"
+			toLocationType := "customer"
+			movementNote := "Penjualan POS"
+			if t.Type == models.TxInternalTake {
+				sourceDocType = "internal_take"
+				toLocationType = "internal_consumption"
+				movementNote = "Konsumsi Internal Outlet"
+			}
+
+			_, err = tx.Exec(ctx, `
+				INSERT INTO stock_movements (
+					id, business_id, item_id, source_document_type, source_document_id,
+					from_location_type, from_outlet_id, to_location_type,
+					package_form, qty, unit_cost, total_cost, performed_by, notes, created_at
+				) VALUES ($1, $2, $3, $4, $5, 'outlet', $6, $7, 'loose', $8, $9, $10, $11, $12, NOW())
+			`, uuid.New(), businessID, itmID, sourceDocType, txID, outletID, toLocationType,
+				item.Qty, standardCost, totalCost, staffID, movementNote)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		itemIDCopy := itmID
 		ti := &models.TransactionItem{
 			ID:             uuid.New(),
 			TransactionID:  txID,
-			ProductID:      p.ID,
+			ItemID:         &itemIDCopy,
+			ProductID:      itmID,
+			SKU:            itmSKU,
+			Name:           itmName,
+			ProductName:    itmName,
 			Qty:            item.Qty,
-			UnitPrice:      p.SellPrice,
+			UnitPrice:      sellPrice,
 			Subtotal:       subtotal,
+			UnitCost:       standardCost,
+			TotalCost:      totalCost,
 			DiscountAmount: item.DiscountAmount,
 			PromotionID:    item.PromotionID,
 			CreatedAt:      time.Now(),
@@ -466,9 +516,9 @@ func CreateTransaction(ctx context.Context, businessID uuid.UUID, outletID uuid.
 		}
 
 		if promo.RewardType == "discount_pct" {
-			verifiedDiscount = int64(float64(eligibleSubtotal) * (promo.RewardValue / 100.0))
+			verifiedDiscount = int64(math.Round(float64(eligibleSubtotal) * (promo.RewardValue / 100.0)))
 		} else if promo.RewardType == "discount_fixed" {
-			verifiedDiscount = int64(promo.RewardValue)
+			verifiedDiscount = int64(math.Round(promo.RewardValue))
 		}
 
 		if promo.MaxDiscountCap != nil && *promo.MaxDiscountCap > 0 && verifiedDiscount > int64(*promo.MaxDiscountCap) {
@@ -524,13 +574,13 @@ func CreateTransaction(ctx context.Context, businessID uuid.UUID, outletID uuid.
 		return nil, err
 	}
 
-	// 7. Insert Transaction Items
+	// 7. Insert Transaction Items (linked to Unified Master Items via item_id)
 	for _, ti := range savedItems {
 		_, err = tx.Exec(ctx, `
 			INSERT INTO transaction_items (
-				id, transaction_id, product_id, qty, unit_price, subtotal, discount_amount, promotion_id, created_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		`, ti.ID, ti.TransactionID, ti.ProductID, ti.Qty, ti.UnitPrice, ti.Subtotal, ti.DiscountAmount, ti.PromotionID, ti.CreatedAt)
+				id, transaction_id, item_id, sku, name, qty, unit_price, subtotal, unit_cost, total_cost, discount_amount, promotion_id, created_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		`, ti.ID, ti.TransactionID, ti.ItemID, ti.SKU, ti.Name, ti.Qty, ti.UnitPrice, ti.Subtotal, ti.UnitCost, ti.TotalCost, ti.DiscountAmount, ti.PromotionID, ti.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -655,6 +705,41 @@ func GetTransactions(ctx context.Context, outletID uuid.UUID, shiftID *uuid.UUID
 		}
 		result = append(result, td)
 	}
+	rows.Close()
+
+	// Populate line items for each transaction from Unified Item Master
+	for idx := range result {
+		itemRows, itemErr := db.Query(ctx, `
+			SELECT ti.id, ti.transaction_id, COALESCE(ti.item_id, ti.product_id),
+			       COALESCE(ti.name, i.name, 'Item'), COALESCE(i.base_unit, 'pcs'),
+			       ti.qty, ti.unit_price, ti.subtotal, COALESCE(ti.discount_amount, 0), ti.created_at
+			FROM transaction_items ti
+			LEFT JOIN items i ON COALESCE(ti.item_id, ti.product_id) = i.id
+			WHERE ti.transaction_id = $1
+			ORDER BY ti.created_at ASC
+		`, result[idx].ID)
+		if itemErr == nil {
+			var items []models.TransactionItem
+			for itemRows.Next() {
+				var ti models.TransactionItem
+				var resolvedItemID *uuid.UUID
+				if scanErr := itemRows.Scan(
+					&ti.ID, &ti.TransactionID, &resolvedItemID,
+					&ti.ProductName, &ti.UnitType,
+					&ti.Qty, &ti.UnitPrice, &ti.Subtotal, &ti.DiscountAmount, &ti.CreatedAt,
+				); scanErr == nil {
+					if resolvedItemID != nil {
+						ti.ItemID = resolvedItemID
+						ti.ProductID = *resolvedItemID
+					}
+					ti.Name = ti.ProductName
+					items = append(items, ti)
+				}
+			}
+			itemRows.Close()
+			result[idx].Items = items
+		}
+	}
 
 	return result, nil
 }
@@ -761,19 +846,20 @@ func GetSalesReportSummary(ctx context.Context, businessID uuid.UUID, outletID *
 		}
 	}
 
-	// 5. Top Selling Products (Top 8)
+	// 5. Top Selling Products (Top 8 from Unified Master Items)
 	topProdQuery := `
 		SELECT 
-			p.id,
-			p.name,
-			COALESCE(p.category, 'General') as category,
+			COALESCE(i.id, ti.item_id, ti.product_id) as item_id,
+			COALESCE(i.name, ti.name, 'Item') as item_name,
+			COALESCE(c.name, 'General') as category_name,
 			COALESCE(SUM(ti.qty), 0) as qty_sold,
 			COALESCE(SUM(ti.subtotal), 0) as total_sales
 		FROM transaction_items ti
 		JOIN transactions t ON ti.transaction_id = t.id
-		JOIN products p ON ti.product_id = p.id
-		` + whereClause + ` AND t.status = 'completed'
-		GROUP BY p.id, p.name, p.category
+		LEFT JOIN items i ON COALESCE(ti.item_id, ti.product_id) = i.id
+		LEFT JOIN categories c ON i.category_id = c.id
+		` + whereClause + ` AND t.status = 'completed' AND COALESCE(i.id, ti.item_id, ti.product_id) IS NOT NULL
+		GROUP BY COALESCE(i.id, ti.item_id, ti.product_id), COALESCE(i.name, ti.name, 'Item'), COALESCE(c.name, 'General')
 		ORDER BY total_sales DESC
 		LIMIT 8
 	`
@@ -814,31 +900,14 @@ func GetSalesReportSummary(ctx context.Context, businessID uuid.UUID, outletID *
 	return res, nil
 }
 
-// VoidTransaction marks a transaction as voided and restores stock
+// VoidTransaction marks a transaction as voided and restores stock in item_stocks & stock_movements
 func VoidTransaction(ctx context.Context, txID uuid.UUID, outletID uuid.UUID, staffID uuid.UUID, input VoidTxInput) (*models.Transaction, error) {
 	db := config.DB
 
-	// 1. Authenticate Manager PIN
-	var mID uuid.UUID
-	err := db.QueryRow(ctx, `
-		SELECT mp.user_id 
-		FROM manager_pins mp
-		JOIN outlet_staff os ON mp.user_id = os.user_id
-		WHERE os.outlet_id = $1 AND os.role = 'manager' AND os.status = 'active'
-	`, outletID).Scan(&mID)
+	// 1. Authenticate Manager PIN across all active managers assigned to this outlet
+	mID, err := verifyManagerOverridePIN(ctx, outletID, input.ManagerPIN)
 	if err != nil {
-		return nil, errors.New("no active manager configured for this outlet")
-	}
-
-	var pinHash string
-	err = db.QueryRow(ctx, "SELECT pin_hash FROM manager_pins WHERE user_id = $1", mID).Scan(&pinHash)
-	if err != nil {
-		return nil, errors.New("unauthorized manager pin")
-	}
-
-	err = comparePIN(pinHash, input.ManagerPIN)
-	if err != nil {
-		return nil, errors.New("invalid manager override PIN")
+		return nil, err
 	}
 
 	// 2. Begin TX
@@ -855,6 +924,7 @@ func VoidTransaction(ctx context.Context, txID uuid.UUID, outletID uuid.UUID, st
 		       payment_method, status, client_uuid, synced_at, created_at, updated_at
 		FROM transactions 
 		WHERE id = $1 AND outlet_id = $2
+		FOR UPDATE
 	`, txID, outletID).Scan(
 		&t.ID, &t.BusinessID, &t.OutletID, &t.ShiftID, &t.StaffID, &t.Type,
 		&t.TotalAmount, &t.PaymentMethod, &t.Status, &t.ClientUUID, &t.SyncedAt,
@@ -881,44 +951,58 @@ func VoidTransaction(ctx context.Context, txID uuid.UUID, outletID uuid.UUID, st
 	t.Status = models.TxVoided
 	t.UpdatedAt = now
 
-	// 4. Restore inventory stock
-	itemRows, err := tx.Query(ctx, `SELECT product_id, qty FROM transaction_items WHERE transaction_id = $1`, txID)
+	// 4. Restore inventory stock to item_stocks and append reversal to stock_movements
+	itemRows, err := tx.Query(ctx, `
+		SELECT COALESCE(item_id, product_id), qty, COALESCE(unit_cost, 0)
+		FROM transaction_items
+		WHERE transaction_id = $1
+	`, txID)
 	if err == nil {
 		type itemRestock struct {
-			pID uuid.UUID
-			qty float64
+			itemID   uuid.UUID
+			qty      float64
+			unitCost int64
 		}
 		var itemsToRestock []itemRestock
 		for itemRows.Next() {
 			var ir itemRestock
-			if err := itemRows.Scan(&ir.pID, &ir.qty); err == nil {
+			var itemIDPtr *uuid.UUID
+			if err := itemRows.Scan(&itemIDPtr, &ir.qty, &ir.unitCost); err == nil && itemIDPtr != nil {
+				ir.itemID = *itemIDPtr
 				itemsToRestock = append(itemsToRestock, ir)
 			}
 		}
 		itemRows.Close()
 
 		for _, item := range itemsToRestock {
-			var invMode string
-			_ = tx.QueryRow(ctx, "SELECT inventory_mode FROM products WHERE id = $1", item.pID).Scan(&invMode)
+			var stockRowID uuid.UUID
+			stockErr := tx.QueryRow(ctx, `
+				SELECT id FROM item_stocks
+				WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL
+				FOR UPDATE
+			`, item.itemID, outletID).Scan(&stockRowID)
 
-			if invMode == string(models.ModeBatchThaw) {
+			if stockErr == pgx.ErrNoRows {
 				_, _ = tx.Exec(ctx, `
-					UPDATE stock_batches 
-					SET quantity = quantity + $1
-					WHERE product_id = $2 AND held_by_user_id = $3 AND batch_status = 'opened'
-				`, item.qty, item.pID, t.StaffID)
-			} else {
+					INSERT INTO item_stocks (id, item_id, outlet_id, qty_sealed, qty_loose, updated_at)
+					VALUES ($1, $2, $3, 0, $4, $5)
+				`, uuid.New(), item.itemID, outletID, item.qty, now)
+			} else if stockErr == nil {
 				_, _ = tx.Exec(ctx, `
-					UPDATE products 
-					SET current_stock = current_stock + $1, updated_at = $2 
+					UPDATE item_stocks
+					SET qty_loose = qty_loose + $1, updated_at = $2
 					WHERE id = $3
-				`, item.qty, now, item.pID)
+				`, item.qty, now, stockRowID)
 			}
 
+			totalCost := int64(math.Round(item.qty * float64(item.unitCost)))
 			_, _ = tx.Exec(ctx, `
-				INSERT INTO inventory_ledger (id, product_id, outlet_id, change_qty, reason, reference_id, created_at)
-				VALUES ($1, $2, $3, $4, 'void_sale', $5, $6)
-			`, uuid.New(), item.pID, outletID, item.qty, txID, now)
+				INSERT INTO stock_movements (
+					id, business_id, item_id, source_document_type, source_document_id,
+					from_location_type, to_location_type, to_outlet_id,
+					package_form, qty, unit_cost, total_cost, performed_by, notes, created_at
+				) VALUES ($1, $2, $3, 'pos_void', $4, 'customer', 'outlet', $5, 'loose', $6, $7, $8, $9, $10, $11)
+			`, uuid.New(), t.BusinessID, item.itemID, txID, outletID, item.qty, item.unitCost, totalCost, staffID, "Pembatalan (Void) Transaksi POS", now)
 		}
 	}
 

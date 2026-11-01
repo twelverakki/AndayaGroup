@@ -14,9 +14,19 @@ import {
   SelectContent,
   SelectItem,
 } from "../../../components/ui/select";
-import { Building2 } from "lucide-react";
+import { Label } from "../../../components/ui/label";
+import { Button } from "../../../components/ui/button";
+import {
+  InputGroup,
+  InputGroupInput,
+  InputGroupAddon,
+  InputGroupText,
+  InputGroupTextarea,
+} from "../../../components/ui/input-group";
+import { Building2, User, Phone, Mail, CalendarClock, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
+import { useLanguageStore, translations } from "../../../lib/i18n";
 import type { Supplier } from "../types";
 
 interface SupplierDialogProps {
@@ -32,6 +42,9 @@ export function SupplierDialog({
   supplier,
   onSaved,
 }: SupplierDialogProps) {
+  const { language } = useLanguageStore();
+  const t = translations[language] || translations.id;
+
   const [formData, setFormData] = useState({
     name: "",
     contact_person: "",
@@ -72,7 +85,7 @@ export function SupplierDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
-      toast.error("Nama supplier / vendor wajib diisi");
+      toast.error(t.supplierDialogRequiredName);
       return;
     }
 
@@ -80,17 +93,17 @@ export function SupplierDialog({
     try {
       if (supplier) {
         const res = await api.put(`/suppliers/${supplier.id}`, formData);
-        toast.success(`Supplier "${formData.name}" berhasil diperbarui`);
+        toast.success(t.supplierDialogUpdateSuccess.replace("{name}", formData.name));
         onOpenChange(false);
         onSaved(res.data?.data);
       } else {
         const res = await api.post("/suppliers", formData);
-        toast.success(`Supplier "${formData.name}" berhasil ditambahkan ke Master Data`);
+        toast.success(t.supplierDialogCreateSuccess.replace("{name}", formData.name));
         onOpenChange(false);
         onSaved(res.data?.data);
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.error || "Gagal menyimpan supplier");
+      toast.error(err.response?.data?.error || t.supplierDialogSaveError);
     } finally {
       setIsSubmitting(false);
     }
@@ -102,138 +115,176 @@ export function SupplierDialog({
         <DialogHeader>
           <DialogTitle className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
             <Building2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            {supplier ? "Edit Data Supplier" : "Tambah Master Supplier Baru"}
+            {supplier ? t.supplierDialogEditTitle : t.supplierDialogCreateTitle}
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
-            Kelola data vendor rekanan, kontak PIC, dan termin jatuh tempo pembayaran faktur.
+            {t.supplierDialogDesc}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5 py-2">
+        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+          {/* Nama Supplier */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-              Nama Supplier / Perusahaan *
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="PT. Sumber Makmur Sejahtera"
-              className="h-10 w-full px-3.5 rounded-xl text-xs bg-slate-50 dark:bg-[#1E1E22] border border-slate-200 dark:border-[#2E2E34] text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
+            <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              {t.supplierDialogNameLabel} <span className="text-rose-500">*</span>
+            </Label>
+            <InputGroup>
+              <InputGroupAddon align="inline-start">
+                <Building2 className="size-4 text-slate-400" />
+              </InputGroupAddon>
+              <InputGroupInput
+                type="text"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="PT. Sumber Makmur Sejahtera"
+              />
+            </InputGroup>
           </div>
 
+          {/* Kontak PIC & No Telepon */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Nama Kontak PIC
-              </label>
-              <input
-                type="text"
-                value={formData.contact_person}
-                onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
-                placeholder="Bpk. Hendra"
-                className="h-10 w-full px-3.5 rounded-xl text-xs bg-slate-50 dark:bg-[#1E1E22] border border-slate-200 dark:border-[#2E2E34] text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                {t.supplierDialogContactLabel}
+              </Label>
+              <InputGroup>
+                <InputGroupAddon align="inline-start">
+                  <User className="size-4 text-slate-400" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="text"
+                  value={formData.contact_person}
+                  onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
+                  placeholder="Bpk. Hendra"
+                />
+              </InputGroup>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                No. WhatsApp / Telepon
-              </label>
-              <input
-                type="text"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="08123456789"
-                className="h-10 w-full px-3.5 rounded-xl text-xs bg-slate-50 dark:bg-[#1E1E22] border border-slate-200 dark:border-[#2E2E34] text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                {t.supplierDialogPhoneLabel}
+              </Label>
+              <InputGroup>
+                <InputGroupAddon align="inline-start">
+                  <Phone className="size-4 text-slate-400" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="08123456789"
+                />
+              </InputGroup>
             </div>
           </div>
 
+          {/* Email & Termin Tempo */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Email Vendor
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="sales@vendor.com"
-                className="h-10 w-full px-3.5 rounded-xl text-xs bg-slate-50 dark:bg-[#1E1E22] border border-slate-200 dark:border-[#2E2E34] text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                {t.supplierDialogEmailLabel}
+              </Label>
+              <InputGroup>
+                <InputGroupAddon align="inline-start">
+                  <Mail className="size-4 text-slate-400" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="sales@vendor.com"
+                />
+              </InputGroup>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Termin Tempo (Hari)
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={formData.payment_terms_days}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    payment_terms_days: parseInt(e.target.value) || 0,
-                  })
-                }
-                placeholder="0 = Tunai"
-                className="h-10 w-full px-3.5 rounded-xl text-xs bg-slate-50 dark:bg-[#1E1E22] border border-slate-200 dark:border-[#2E2E34] text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                {t.supplierDialogTermsLabel}
+              </Label>
+              <InputGroup>
+                <InputGroupAddon align="inline-start">
+                  <CalendarClock className="size-4 text-slate-400" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="number"
+                  min="0"
+                  value={formData.payment_terms_days || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      payment_terms_days: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  placeholder="0"
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupText>{t.supplierDialogTermsUnit}</InputGroupText>
+                </InputGroupAddon>
+              </InputGroup>
             </div>
           </div>
 
+          {/* Alamat Fisik */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-              Alamat Fisik Gudang / Kantor
-            </label>
-            <textarea
-              rows={2}
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              placeholder="Jl. Industri No. 88..."
-              className="w-full p-3 rounded-xl text-xs bg-slate-50 dark:bg-[#1E1E22] border border-slate-200 dark:border-[#2E2E34] text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
+            <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              {t.supplierDialogAddressLabel}
+            </Label>
+            <InputGroup>
+              <InputGroupAddon align="inline-start">
+                <MapPin className="size-4 text-slate-400 self-start mt-2" />
+              </InputGroupAddon>
+              <InputGroupTextarea
+                rows={2}
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="Jl. Industri No. 88..."
+              />
+            </InputGroup>
           </div>
 
+          {/* Status Kerjasama */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-              Status Kerjasama
-            </label>
+            <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              {t.supplierDialogStatusLabel}
+            </Label>
             <Select
               value={formData.status}
               onValueChange={(val: "active" | "inactive") =>
                 setFormData({ ...formData, status: val })
               }
             >
-              <SelectTrigger className="h-10 w-full px-3.5 text-xs font-medium rounded-xl bg-slate-50 dark:bg-[#1E1E22] border-slate-200 dark:border-[#2E2E34]">
+              <SelectTrigger className="h-9 w-full px-3 text-xs font-medium rounded-lg bg-transparent border-input dark:bg-input/30">
                 <SelectValue placeholder="Pilih Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="active">Aktif (Bisa Order PO)</SelectItem>
-                <SelectItem value="inactive">Non-aktif / Diberhentikan</SelectItem>
+                <SelectItem value="active">{t.supplierDialogStatusActive}</SelectItem>
+                <SelectItem value="inactive">{t.supplierDialogStatusInactive}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-2">
-            <button
+          <DialogFooter className="gap-2 sm:gap-0 pt-3">
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => onOpenChange(false)}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
-              Batal
-            </button>
-            <button
+              {t.supplierDialogCancel}
+            </Button>
+            <Button
               type="submit"
+              size="sm"
               disabled={isSubmitting || !formData.name.trim()}
-              className="px-5 py-2.5 rounded-xl bg-[#E2FF66] text-slate-900 text-xs font-bold hover:brightness-95 disabled:opacity-50 transition shadow-sm"
+              className="bg-[#E2FF66] text-slate-900 font-bold hover:brightness-95 disabled:opacity-50"
             >
-              {isSubmitting ? "Menyimpan..." : supplier ? "Simpan Perubahan" : "Tambah Supplier"}
-            </button>
+              {isSubmitting
+                ? t.supplierDialogSubmitting
+                : supplier
+                ? t.supplierDialogSubmitUpdate
+                : t.supplierDialogSubmitCreate}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

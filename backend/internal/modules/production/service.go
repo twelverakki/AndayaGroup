@@ -128,7 +128,7 @@ func (s *ProductionService) CreateProduction(ctx context.Context, businessID uui
 	batchCode := fmt.Sprintf("BATCH-%s-%s", time.Now().Format("20060102"), productionID.String()[:4])
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO productions (id, business_id, product_id, qty_produced, produced_by, produced_at, created_at)
+		INSERT INTO productions (id, business_id, item_id, qty_produced, produced_by, produced_at, created_at)
 		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
 	`, productionID, businessID, req.ItemID, req.QtyProduced, userID)
 	if err != nil {
@@ -176,9 +176,9 @@ func (s *ProductionService) CreateProduction(ctx context.Context, businessID uui
 
 func (s *ProductionService) GetProductions(ctx context.Context, businessID uuid.UUID) ([]models.ProductionRun, error) {
 	rows, err := s.DB.Query(ctx, `
-		SELECT p.id, p.business_id, p.product_id, p.qty_produced, p.produced_by, p.produced_at, p.created_at
+		SELECT p.id, p.business_id, COALESCE(p.item_id, p.product_id), p.qty_produced, p.produced_by, p.produced_at, p.created_at
 		FROM productions p
-		WHERE p.business_id = $1
+		WHERE p.business_id = $1 AND COALESCE(p.item_id, p.product_id) IS NOT NULL
 		ORDER BY p.created_at DESC LIMIT 50
 	`, businessID)
 	if err != nil {

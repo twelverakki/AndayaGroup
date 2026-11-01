@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Dialog, DialogContent } from "./dialog";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, Check } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useLanguageStore } from "../../lib/i18n";
 
@@ -772,7 +772,7 @@ export function WheelCarouselDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        showCloseButton={false}
+        showCloseButton={true}
         className={cn(
           "p-6 rounded-3xl border border-slate-200/80 dark:border-[#333338] bg-white dark:bg-[#1E1E22] text-slate-900 dark:text-slate-100 shadow-2xl transition-all",
           mode === "time" ? "max-w-xs sm:max-w-xs" : mode === "date" && showTime ? "max-w-lg sm:max-w-xl" : "max-w-md"
@@ -848,7 +848,7 @@ export function WheelCarouselDialog({
                 loop={true}
               />
 
-              {/* Month -> NON-INFINITE */}
+              {/* Bulan -> NON-INFINITE */}
               <SamsungCylinderColumn
                 label={isId ? "Bulan" : "Month"}
                 items={monthItems}
@@ -857,7 +857,7 @@ export function WheelCarouselDialog({
                 loop={false}
               />
 
-              {/* Year -> EXACTLY 5 YEARS, NON-INFINITE */}
+              {/* Tahun -> EXACTLY 5 YEARS, NON-INFINITE */}
               <SamsungCylinderColumn
                 label={isId ? "Tahun" : "Year"}
                 items={yearItems}
@@ -900,26 +900,34 @@ export function WheelCarouselDialog({
           )}
         </div>
 
-        {/* Dynamic ISO Date Range Badge for Week Mode */}
-        {mode === "week" && currentWeekInfo && (
-          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#2C2C32] flex items-center justify-between px-2">
-            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500">
-              {isId ? `Total ${weekList.length} pekan di bulan ini` : `Total ${weekList.length} weeks this month`}
-            </span>
-            <div className="text-xs font-black tracking-tight text-blue-600 dark:text-[#E2FF66] bg-blue-50 dark:bg-[#E2FF66]/10 px-3 py-1 rounded-full border border-blue-200/50 dark:border-[#E2FF66]/20">
-              {isId ? currentWeekInfo.rangeLabelId : currentWeekInfo.rangeLabelEn}
-            </div>
+        {/* Footer Bar: Status Info & Done Button */}
+        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#2C2C32] flex items-center justify-between gap-2 px-1">
+          <div className="min-w-0 flex-1">
+            {mode === "week" && currentWeekInfo ? (
+              <div className="text-xs font-black tracking-tight text-blue-600 dark:text-[#E2FF66] bg-blue-50 dark:bg-[#E2FF66]/10 px-3 py-1 rounded-full border border-blue-200/50 dark:border-[#E2FF66]/20 truncate inline-block">
+                {isId ? currentWeekInfo.rangeLabelId : currentWeekInfo.rangeLabelEn}
+              </div>
+            ) : mode === "time" ? (
+              <div className="text-sm font-mono font-black tracking-widest text-blue-600 dark:text-[#E2FF66] bg-blue-50 dark:bg-[#E2FF66]/10 px-3.5 py-0.5 rounded-full border border-blue-200/50 dark:border-[#E2FF66]/20 inline-block">
+                {pad2(hour)}:{pad2(minute)}
+              </div>
+            ) : (
+              <div className="text-xs font-mono font-black tracking-tight text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full inline-block">
+                {pad2(day)} {isId ? MONTHS_BILINGUAL[month - 1]?.idShort : MONTHS_BILINGUAL[month - 1]?.enShort} {year}
+                {showTime && ` • ${pad2(hour)}:${pad2(minute)}`}
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Selected Time Badge for Time Mode */}
-        {mode === "time" && (
-          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#2C2C32] flex items-center justify-center">
-            <div className="text-sm font-mono font-black tracking-widest text-blue-600 dark:text-[#E2FF66] bg-blue-50 dark:bg-[#E2FF66]/10 px-4 py-1 rounded-full border border-blue-200/50 dark:border-[#E2FF66]/20">
-              {pad2(hour)}:{pad2(minute)}
-            </div>
-          </div>
-        )}
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="px-4 py-1.5 rounded-full text-xs font-bold bg-[#E2FF66] text-slate-900 hover:bg-[#d4f54c] shadow-xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+          >
+            <Check className="w-3.5 h-3.5 stroke-[3]" />
+            <span>{isId ? "Selesai" : "Done"}</span>
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   );

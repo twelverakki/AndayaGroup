@@ -45,14 +45,6 @@ func TestSettlementsAndDirectSales(t *testing.T) {
 		t.Fatalf("Failed to create test item: %v", err)
 	}
 
-	_, err = config.DB.Exec(ctx, `
-		INSERT INTO products (id, business_id, name, sku, unit_type, inventory_mode, purchase_price, sell_price, current_stock, status, created_at, updated_at)
-		VALUES ($1, $2, 'F&B Food Item Closing Test', $3, 'pack', 'batch_thaw', 30000, 45000, 30, 'active', NOW(), NOW())
-	`, fgItemID, tenantFnBUUID, skuItem)
-	if err != nil {
-		t.Fatalf("Failed to create test product: %v", err)
-	}
-
 	// Fetch default outlet
 	var outletID uuid.UUID
 	err = config.DB.QueryRow(ctx, `SELECT id FROM outlets WHERE business_id = $1 LIMIT 1`, tenantFnBUUID).Scan(&outletID)
@@ -70,15 +62,14 @@ func TestSettlementsAndDirectSales(t *testing.T) {
 	}
 
 	defer func() {
-		_, _ = config.DB.Exec(ctx, "DELETE FROM wastage_logs WHERE product_id = $1", fgItemID)
+		_, _ = config.DB.Exec(ctx, "DELETE FROM wastage_logs WHERE item_id = $1 OR product_id = $1", fgItemID)
 		_, _ = config.DB.Exec(ctx, "DELETE FROM daily_settlement_items WHERE item_id = $1", fgItemID)
 		_, _ = config.DB.Exec(ctx, "DELETE FROM daily_settlements WHERE business_id = $1", tenantFnBUUID)
-		_, _ = config.DB.Exec(ctx, "DELETE FROM transaction_items WHERE product_id = $1", fgItemID)
+		_, _ = config.DB.Exec(ctx, "DELETE FROM transaction_items WHERE item_id = $1 OR product_id = $1", fgItemID)
 		_, _ = config.DB.Exec(ctx, "DELETE FROM transactions WHERE business_id = $1 AND shift_id IS NULL", tenantFnBUUID)
 		_, _ = config.DB.Exec(ctx, "DELETE FROM stock_movements WHERE item_id = $1", fgItemID)
 		_, _ = config.DB.Exec(ctx, "DELETE FROM item_stocks WHERE item_id = $1", fgItemID)
 		_, _ = config.DB.Exec(ctx, "DELETE FROM items WHERE id = $1", fgItemID)
-		_, _ = config.DB.Exec(ctx, "DELETE FROM products WHERE id = $1", fgItemID)
 	}()
 
 	// 1. Daily Settlement Closing Simulation

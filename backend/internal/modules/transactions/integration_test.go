@@ -42,20 +42,33 @@ func createTestProduct(t *testing.T, businessID uuid.UUID, name string, mode mod
 	sku := "SKU-" + uuid.New().String()[:8]
 	id := uuid.New()
 
+	isInventoryTracked := mode != models.ModeWetInfinite
+	isThawable := mode == models.ModeBatchThaw
+
 	_, err := config.DB.Exec(ctx, `
-		INSERT INTO items (id, business_id, sku, name, item_type, is_sellable, is_inventory_tracked, base_unit, box_unit, conversion_rate, sell_price, standard_cost, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'finished_good', true, true, 'pcs', 'kardus', 1, $5, $6, 'active', NOW(), NOW())
-	`, id, businessID, sku, name, price, price/2)
+		INSERT INTO items (
+			id, business_id, sku, name, item_type, is_sellable, is_inventory_tracked,
+			is_thawable, requires_thaw, base_unit, box_unit, conversion_rate,
+			sell_price, standard_cost, status, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, 'finished_good', true, $5, $6, $6, 'pcs', 'kardus', 1, $7, $8, 'active', NOW(), NOW())
+	`, id, businessID, sku, name, isInventoryTracked, isThawable, price, price/2)
 	if err != nil {
 		t.Fatalf("Failed to create test item: %v", err)
 	}
 
+	// Find default outlet for business (or use outletJnAuuid if Tenant A)
+	targetOutlet := outletJnAuuid
+	if businessID != businessJnAuuid {
+		_ = config.DB.QueryRow(ctx, "SELECT id FROM outlets WHERE business_id = $1 LIMIT 1", businessID).Scan(&targetOutlet)
+	}
+
 	_, err = config.DB.Exec(ctx, `
-		INSERT INTO products (id, business_id, name, sku, unit_type, inventory_mode, purchase_price, sell_price, current_stock, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'pcs', $5, $6, $7, $8, 'active', NOW(), NOW())
-	`, id, businessID, name, sku, mode, price/2, price, stock)
+		INSERT INTO item_stocks (id, item_id, outlet_id, qty_sealed, qty_loose, updated_at)
+		VALUES ($1, $2, $3, 0, $4, NOW())
+	`, uuid.New(), id, targetOutlet, stock)
 	if err != nil {
-		t.Fatalf("Failed to create test product: %v", err)
+		t.Fatalf("Failed to create test item_stocks: %v", err)
 	}
 
 	return &models.Product{
@@ -71,7 +84,7 @@ func createTestProduct(t *testing.T, businessID uuid.UUID, name string, mode mod
 	}
 }
 
-// Helper to clean up products, shifts, transactions, override logs, and wastage logs
+// Helper to clean up items, shifts, transactions, override logs, and wastage logs
 func cleanUpTestEntities(t *testing.T, productIDs []uuid.UUID, shiftIDs []uuid.UUID, txIDs []uuid.UUID, wastageIDs []uuid.UUID) {
 	ctx := context.Background()
 	db := config.DB
@@ -81,6 +94,7 @@ func cleanUpTestEntities(t *testing.T, productIDs []uuid.UUID, shiftIDs []uuid.U
 		_, _ = db.Exec(ctx, "DELETE FROM wastage_logs WHERE id = $1", id)
 	}
 	for _, id := range txIDs {
+		_, _ = db.Exec(ctx, "DELETE FROM stock_movements WHERE source_document_id = $1", id)
 		_, _ = db.Exec(ctx, "DELETE FROM override_logs WHERE transaction_id = $1", id)
 		_, _ = db.Exec(ctx, "DELETE FROM transaction_items WHERE transaction_id = $1", id)
 		_, _ = db.Exec(ctx, "DELETE FROM transactions WHERE id = $1", id)
@@ -89,9 +103,9 @@ func cleanUpTestEntities(t *testing.T, productIDs []uuid.UUID, shiftIDs []uuid.U
 		_, _ = db.Exec(ctx, "DELETE FROM shifts WHERE id = $1", id)
 	}
 	for _, id := range productIDs {
+		_, _ = db.Exec(ctx, "DELETE FROM stock_movements WHERE item_id = $1", id)
 		_, _ = db.Exec(ctx, "DELETE FROM item_stocks WHERE item_id = $1", id)
 		_, _ = db.Exec(ctx, "DELETE FROM items WHERE id = $1", id)
-		_, _ = db.Exec(ctx, "DELETE FROM products WHERE id = $1", id)
 	}
 }
 
@@ -214,9 +228,9 @@ func TestDryVsWetGoodsStock(t *testing.T) {
 	defer cleanUpTestEntities(t, nil, nil, []uuid.UUID{txB.ID}, nil)
 
 	var updatedDryStock float64
-	err = config.DB.QueryRow(ctx, "SELECT current_stock FROM products WHERE id = $1", dryProd.ID).Scan(&updatedDryStock)
+	err = config.DB.QueryRow(ctx, "SELECT qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL", dryProd.ID, outletJnAuuid).Scan(&updatedDryStock)
 	if err != nil || updatedDryStock != 0 {
-		t.Fatalf("Expected dry product stock to be 0, got %f. Err: %v", updatedDryStock, err)
+		t.Fatalf("Expected dry item stock to be 0, got %f. Err: %v", updatedDryStock, err)
 	}
 	t.Log("Pass: Dry Goods checkout successfully deducted stock to 0.")
 
@@ -237,9 +251,9 @@ func TestDryVsWetGoodsStock(t *testing.T) {
 	defer cleanUpTestEntities(t, nil, nil, []uuid.UUID{txC.ID}, nil)
 
 	var updatedWetStock float64
-	err = config.DB.QueryRow(ctx, "SELECT current_stock FROM products WHERE id = $1", wetProd.ID).Scan(&updatedWetStock)
+	err = config.DB.QueryRow(ctx, "SELECT qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL", wetProd.ID, outletJnAuuid).Scan(&updatedWetStock)
 	if err != nil || updatedWetStock != -10 {
-		t.Fatalf("Expected wet product stock to be -10, got %f. Err: %v", updatedWetStock, err)
+		t.Fatalf("Expected wet item stock to be -10, got %f. Err: %v", updatedWetStock, err)
 	}
 	t.Log("Pass: Wet Goods checkout allowed infinite sales and deducted stock as expected.")
 }
@@ -342,11 +356,11 @@ func TestInternalTake(t *testing.T) {
 	}
 	defer cleanUpTestEntities(t, nil, nil, []uuid.UUID{tx.ID}, nil)
 
-	// Verify stock is reduced
+	// Verify stock is reduced in item_stocks
 	var currentStock float64
-	err = config.DB.QueryRow(ctx, "SELECT current_stock FROM products WHERE id = $1", prod.ID).Scan(&currentStock)
+	err = config.DB.QueryRow(ctx, "SELECT qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL", prod.ID, outletJnAuuid).Scan(&currentStock)
 	if err != nil || currentStock != 4 {
-		t.Fatalf("Expected product stock to be 4, got %f. Err: %v", currentStock, err)
+		t.Fatalf("Expected item stock to be 4, got %f. Err: %v", currentStock, err)
 	}
 
 	// Verify transaction type is internal_take
@@ -362,27 +376,26 @@ func TestInternalTake(t *testing.T) {
 func TestBlindCountOpname(t *testing.T) {
 	ctx := context.Background()
 
-	// Create dry goods product with stock = 15
+	// Create dry goods item with stock = 15 in item_stocks
 	prod := createTestProduct(t, businessJnAuuid, "Susu UHT Opname", models.ModeDryStrict, 15, 15000)
 	defer cleanUpTestEntities(t, []uuid.UUID{prod.ID}, nil, nil, nil)
 
 	// Input a wastage/opname log (Blind Count) as Staff
 	wLog := &models.WastageLog{
-		BusinessID:   businessJnAuuid,
-		OutletID:     outletJnAuuid,
-		ProductID:    &prod.ID,
-		ActualQty:    12, // Discrepancy should be 12 - 15 = -3
-		InputBy:      staffJnAuuid,
-		Status:       models.WastagePending,
+		BusinessID: businessJnAuuid,
+		OutletID:   outletJnAuuid,
+		ActualQty:  12, // Discrepancy should be 12 - 15 = -3
+		InputBy:    staffJnAuuid,
+		Status:     models.WastagePending,
 	}
 
 	wLog.ID = uuid.New()
 	wLog.ExpectedQty = 15
 	wLog.Discrepancy = -3
 	_, err := config.DB.Exec(ctx, `
-		INSERT INTO wastage_logs (id, business_id, outlet_id, product_id, expected_qty, actual_qty, discrepancy, input_by, status, created_at, updated_at)
+		INSERT INTO wastage_logs (id, business_id, outlet_id, item_id, expected_qty, actual_qty, discrepancy, input_by, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-	`, wLog.ID, wLog.BusinessID, wLog.OutletID, wLog.ProductID, wLog.ExpectedQty, wLog.ActualQty, wLog.Discrepancy, wLog.InputBy, wLog.Status)
+	`, wLog.ID, wLog.BusinessID, wLog.OutletID, prod.ID, wLog.ExpectedQty, wLog.ActualQty, wLog.Discrepancy, wLog.InputBy, wLog.Status)
 	if err != nil {
 		t.Fatalf("Failed to create wastage log: %v", err)
 	}
@@ -400,30 +413,30 @@ func TestBlindCountOpname(t *testing.T) {
 		t.Fatalf("Expected status to be pending, got %s", created.Status)
 	}
 
-	// Check that database product current stock is STILL 15 (not reconciled yet)
+	// Check that database item_stocks current stock is STILL 15 (not reconciled yet)
 	var preApproveStock float64
-	err = config.DB.QueryRow(ctx, "SELECT current_stock FROM products WHERE id = $1", prod.ID).Scan(&preApproveStock)
+	err = config.DB.QueryRow(ctx, "SELECT qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL", prod.ID, outletJnAuuid).Scan(&preApproveStock)
 	if err != nil || preApproveStock != 15 {
-		t.Fatalf("Expected product stock to remain 15 before approval, got %f. Err: %v", preApproveStock, err)
+		t.Fatalf("Expected item stock to remain 15 before approval, got %f. Err: %v", preApproveStock, err)
 	}
 
 	_, err = config.DB.Exec(ctx, "UPDATE wastage_logs SET status = 'approved', approved_by = $1, approved_at = NOW() WHERE id = $2 AND business_id = $3", managerJnAuuid, created.ID, businessJnAuuid)
 	if err != nil {
 		t.Fatalf("Failed to approve wastage log: %v", err)
 	}
-	_, err = config.DB.Exec(ctx, "UPDATE products SET current_stock = $1 WHERE id = $2", created.ActualQty, prod.ID)
+	_, err = config.DB.Exec(ctx, "UPDATE item_stocks SET qty_loose = $1 WHERE item_id = $2 AND outlet_id = $3 AND held_by_user_id IS NULL", created.ActualQty, prod.ID, outletJnAuuid)
 	if err != nil {
-		t.Fatalf("Failed to reconcile product stock: %v", err)
+		t.Fatalf("Failed to reconcile item stock: %v", err)
 	}
 	approved := created
 	approved.Status = models.WastageApproved
 	approved.ApprovedBy = &managerJnAuuid
 
-	// Verify database product stock is now updated to actual quantity = 12
+	// Verify database item stock is now updated to actual quantity = 12
 	var postApproveStock float64
-	err = config.DB.QueryRow(ctx, "SELECT current_stock FROM products WHERE id = $1", prod.ID).Scan(&postApproveStock)
+	err = config.DB.QueryRow(ctx, "SELECT qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL", prod.ID, outletJnAuuid).Scan(&postApproveStock)
 	if err != nil || postApproveStock != 12 {
-		t.Fatalf("Expected product stock to reconcile to 12 after approval, got %f. Err: %v", postApproveStock, err)
+		t.Fatalf("Expected item stock to reconcile to 12 after approval, got %f. Err: %v", postApproveStock, err)
 	}
 	t.Log("Pass: Blind count submitted expected stock properly, locked it, and reconciled stock only after approval.")
 }
@@ -464,7 +477,7 @@ func TestIdempotency(t *testing.T) {
 
 	// Verify stock is 9
 	var stock float64
-	_ = config.DB.QueryRow(ctx, "SELECT current_stock FROM products WHERE id = $1", prod.ID).Scan(&stock)
+	_ = config.DB.QueryRow(ctx, "SELECT qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL", prod.ID, outletJnAuuid).Scan(&stock)
 	if stock != 9 {
 		t.Fatalf("Expected stock to be 9, got %f", stock)
 	}
@@ -481,7 +494,7 @@ func TestIdempotency(t *testing.T) {
 	}
 
 	// Verify stock is STILL 9 (no double deduction)
-	_ = config.DB.QueryRow(ctx, "SELECT current_stock FROM products WHERE id = $1", prod.ID).Scan(&stock)
+	_ = config.DB.QueryRow(ctx, "SELECT qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL", prod.ID, outletJnAuuid).Scan(&stock)
 	if stock != 9 {
 		t.Fatalf("Expected stock to remain 9 due to idempotency, got %f", stock)
 	}

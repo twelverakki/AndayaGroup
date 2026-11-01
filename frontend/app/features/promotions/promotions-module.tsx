@@ -5,7 +5,12 @@ import { useLanguageStore, translations } from "../../lib/i18n";
 import { ErpSearchBar } from "../../components/ErpSearchBar";
 import { ErpDataTable, type ColumnDef } from "../../components/ErpDataTable";
 import { ErpFilterPopover } from "../../components/ErpFilterPopover";
-import { CurrencyInput } from "../../components/CurrencyInput";
+import {
+  InputGroup,
+  InputGroupInput,
+  InputGroupAddon,
+  InputGroupText,
+} from "../../components/ui/input-group";
 import { DatePicker, TimePicker } from "../../components/ui/date-picker";
 import {
   Tag,
@@ -1251,12 +1256,18 @@ export function PromotionsModule() {
                           <span className="absolute right-3 text-slate-400 font-bold text-xs">%</span>
                         </div>
                       ) : (
-                        <CurrencyInput
-                          value={formRewardValue}
-                          onChange={(val) => setFormRewardValue(val)}
-                          placeholder="0"
-                          className="h-10 text-xs font-bold rounded-xl"
-                        />
+                        <InputGroup className="h-10 rounded-xl">
+                          <InputGroupAddon align="inline-start">
+                            <InputGroupText className="text-xs font-bold">Rp</InputGroupText>
+                          </InputGroupAddon>
+                          <InputGroupInput
+                            currency
+                            value={formRewardValue}
+                            onValueChange={(val) => setFormRewardValue(val)}
+                            placeholder="0"
+                            className="text-xs font-bold"
+                          />
+                        </InputGroup>
                       )}
                     </div>
 
@@ -1275,12 +1286,18 @@ export function PromotionsModule() {
                             </TooltipContent>
                           </Tooltip>
                         </div>
-                        <CurrencyInput
-                          value={formMaxCap}
-                          onChange={(val) => setFormMaxCap(val)}
-                          placeholder="0 (Tanpa batas)"
-                          className="h-10 text-xs rounded-xl"
-                        />
+                        <InputGroup className="h-10 rounded-xl">
+                          <InputGroupAddon align="inline-start">
+                            <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                          </InputGroupAddon>
+                          <InputGroupInput
+                            currency
+                            value={formMaxCap}
+                            onValueChange={(val) => setFormMaxCap(val)}
+                            placeholder="0 (Tanpa batas)"
+                            className="text-xs"
+                          />
+                        </InputGroup>
                       </div>
                     )}
                   </div>
@@ -1506,12 +1523,18 @@ export function PromotionsModule() {
                     <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                       {t.promoMinOrderLabel || "Min. Belanja (Rp)"}
                     </Label>
-                    <CurrencyInput
-                      value={formMinOrder}
-                      onChange={(val) => setFormMinOrder(val)}
-                      placeholder="0 (Tanpa minimum)"
-                      className="h-10 text-xs rounded-xl"
-                    />
+                    <InputGroup className="h-10 rounded-xl">
+                      <InputGroupAddon align="inline-start">
+                        <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        currency
+                        value={formMinOrder}
+                        onValueChange={(val) => setFormMinOrder(val)}
+                        placeholder="0 (Tanpa minimum)"
+                        className="text-xs"
+                      />
+                    </InputGroup>
                     <p className="text-[10px] text-slate-400 font-normal">
                       0 = promo aktif tanpa batasan nilai nota
                     </p>

@@ -2,7 +2,12 @@ import React, { useState, useEffect, useMemo } from "react";
 import { ErpDataTable, type ColumnDef } from "../../components/ErpDataTable";
 import { ErpSearchBar } from "../../components/ErpSearchBar";
 import { ErpFilterPopover } from "../../components/ErpFilterPopover";
-import { CurrencyInput } from "../../components/CurrencyInput";
+import {
+  InputGroup,
+  InputGroupInput,
+  InputGroupAddon,
+  InputGroupText,
+} from "../../components/ui/input-group";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErpImage } from "../../components/ErpImage";
 import { getImageUrl } from "../../lib/utils";
@@ -78,6 +83,7 @@ import {
 } from "lucide-react";
 import { useLanguageStore, translations } from "../../lib/i18n";
 import { useAuthStore } from "../../lib/store";
+import { compressImageFile } from "../../lib/image-compressor";
 
 export interface UnifiedItem {
   id: string;
@@ -510,8 +516,8 @@ export function ItemListModule({
     toast.info(`SKU otomatis dibuat: ${prefix}-${randomNum}`);
   };
 
-  // Image Selection & Preview Handler (Lazy Upload on Submit)
-  const handleSelectImageFile = (file: File) => {
+  // Image Selection & Preview Handler (Auto-Compress + Lazy Upload on Submit)
+  const handleSelectImageFile = async (file: File) => {
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
@@ -519,21 +525,32 @@ export function ItemListModule({
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Ukuran file gambar maksimal 5MB");
-      return;
-    }
+    try {
+      const compressed = await compressImageFile(file, {
+        maxWidthOrHeight: 1280,
+        quality: 0.82,
+      });
 
-    // Revoke old preview object url if exists
-    if (previewImageBlobUrl) {
-      URL.revokeObjectURL(previewImageBlobUrl);
-    }
+      // Revoke old preview object url if exists
+      if (previewImageBlobUrl) {
+        URL.revokeObjectURL(previewImageBlobUrl);
+      }
 
-    const blobUrl = URL.createObjectURL(file);
-    setPendingImageFile(file);
-    setPreviewImageBlobUrl(blobUrl);
-    setFormData((prev) => ({ ...prev, imageUrl: blobUrl }));
-    toast.info("Foto produk dipilih (akan diunggah ke server saat disimpan)");
+      const blobUrl = URL.createObjectURL(compressed.file);
+      setPendingImageFile(compressed.file);
+      setPreviewImageBlobUrl(blobUrl);
+      setFormData((prev) => ({ ...prev, imageUrl: blobUrl }));
+
+      const origKB = Math.round(compressed.originalSize / 1024);
+      const compKB = Math.round(compressed.compressedSize / 1024);
+      if (compressed.originalSize > 500 * 1024) {
+        toast.info(`Foto dioptimasi otomatis (${origKB} KB → ${compKB} KB) & siap disimpan`);
+      } else {
+        toast.info("Foto produk dipilih (akan diunggah ke server saat disimpan)");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Gagal memproses file gambar");
+    }
   };
 
   const handleRemoveImage = () => {
@@ -1568,33 +1585,45 @@ export function ItemListModule({
                       <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
                         Harga Beli / {formData.boxUnit}
                       </label>
-                      <CurrencyInput
-                        value={packBuyPrice}
-                        onChange={(val) => {
-                          setPackBuyPrice(val);
-                          const totalPack = val + packFreightExtra;
-                          const perUnit = Math.round(totalPack / (formData.conversionRate || 1));
-                          setFormData((prev) => ({ ...prev, standardCost: perUnit }));
-                        }}
-                        className="h-10 text-xs rounded-xl"
-                        placeholder="Contoh: 150.000"
-                      />
+                      <InputGroup className="h-10 rounded-xl">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={packBuyPrice}
+                          onValueChange={(val) => {
+                            setPackBuyPrice(val);
+                            const totalPack = val + packFreightExtra;
+                            const perUnit = Math.round(totalPack / (formData.conversionRate || 1));
+                            setFormData((prev) => ({ ...prev, standardCost: perUnit }));
+                          }}
+                          className="text-xs"
+                          placeholder="Contoh: 150.000"
+                        />
+                      </InputGroup>
                     </div>
                     <div>
                       <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
                         Biaya Kirim & Ekspedisi
                       </label>
-                      <CurrencyInput
-                        value={packFreightExtra}
-                        onChange={(val) => {
-                          setPackFreightExtra(val);
-                          const totalPack = packBuyPrice + val;
-                          const perUnit = Math.round(totalPack / (formData.conversionRate || 1));
-                          setFormData((prev) => ({ ...prev, standardCost: perUnit }));
-                        }}
-                        className="h-10 text-xs rounded-xl"
-                        placeholder="0"
-                      />
+                      <InputGroup className="h-10 rounded-xl">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={packFreightExtra}
+                          onValueChange={(val) => {
+                            setPackFreightExtra(val);
+                            const totalPack = packBuyPrice + val;
+                            const perUnit = Math.round(totalPack / (formData.conversionRate || 1));
+                            setFormData((prev) => ({ ...prev, standardCost: perUnit }));
+                          }}
+                          className="text-xs"
+                          placeholder="0"
+                        />
+                      </InputGroup>
                     </div>
                     <div>
                       <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
@@ -1610,12 +1639,18 @@ export function ItemListModule({
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
                       Harga Modal Dasar (HPP) per {currentPriceUnitLabel}
                     </label>
-                    <CurrencyInput
-                      value={formData.standardCost}
-                      onChange={(val) => setFormData({ ...formData, standardCost: val })}
-                      className="h-10 text-xs rounded-xl"
-                      placeholder="Contoh: 3.500"
-                    />
+                    <InputGroup className="h-10 rounded-xl">
+                      <InputGroupAddon align="inline-start">
+                        <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        currency
+                        value={formData.standardCost}
+                        onValueChange={(val) => setFormData({ ...formData, standardCost: val })}
+                        className="text-xs"
+                        placeholder="Contoh: 3.500"
+                      />
+                    </InputGroup>
                   </div>
                 )}
               </div>
@@ -1624,12 +1659,18 @@ export function ItemListModule({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Harga Jual (per {currentPriceUnitLabel}) *</label>
-                  <CurrencyInput
-                    value={formData.sellPrice}
-                    onChange={(val) => setFormData({ ...formData, sellPrice: val })}
-                    className="h-11 text-sm font-bold rounded-2xl"
-                    placeholder="Contoh: 5.000"
-                  />
+                  <InputGroup className="h-11 rounded-2xl">
+                    <InputGroupAddon align="inline-start">
+                      <InputGroupText className="text-sm font-bold">Rp</InputGroupText>
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      currency
+                      value={formData.sellPrice}
+                      onValueChange={(val) => setFormData({ ...formData, sellPrice: val })}
+                      className="text-sm font-bold"
+                      placeholder="Contoh: 5.000"
+                    />
+                  </InputGroup>
                   {formData.sellPrice > 0 && formData.standardCost > 0 && (
                     <div className="flex items-center justify-between text-[11px] mt-1.5 px-1 font-semibold">
                       <span className="text-slate-500">Estimasi Margin:</span>
@@ -1642,12 +1683,18 @@ export function ItemListModule({
 
                 <div>
                   <label className={labelClass}>Harga Jual Grosir / Dus (Opsional)</label>
-                  <CurrencyInput
-                    value={formData.boxSellPrice}
-                    onChange={(val) => setFormData({ ...formData, boxSellPrice: val })}
-                    className="h-11 text-sm font-bold rounded-2xl"
-                    placeholder="Contoh: 110.000"
-                  />
+                  <InputGroup className="h-11 rounded-2xl">
+                    <InputGroupAddon align="inline-start">
+                      <InputGroupText className="text-sm font-bold">Rp</InputGroupText>
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      currency
+                      value={formData.boxSellPrice}
+                      onValueChange={(val) => setFormData({ ...formData, boxSellPrice: val })}
+                      className="text-sm font-bold"
+                      placeholder="Contoh: 110.000"
+                    />
+                  </InputGroup>
                   <p className="text-[10px] text-slate-400 mt-1.5">
                     Harga khusus saat pelanggan/warung membeli 1 dus utuh.
                   </p>
@@ -2432,31 +2479,45 @@ export function ItemListModule({
                         <label className="text-[10px] font-extrabold uppercase text-slate-500 block mb-1">
                           Harga Beli per 1 {formData.boxUnit || "Dus"}
                         </label>
-                        <CurrencyInput
-                          value={packBuyPrice}
-                          onChange={(val) => {
-                            setPackBuyPrice(val);
-                            const totalPack = val + packFreightExtra;
-                            const unitCost = Math.round(totalPack / (formData.conversionRate || 1));
-                            setFormData((prev) => ({ ...prev, standardCost: unitCost }));
-                          }}
-                          placeholder="Contoh: 120000"
-                        />
+                        <InputGroup className="h-10">
+                          <InputGroupAddon align="inline-start">
+                            <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                          </InputGroupAddon>
+                          <InputGroupInput
+                            currency
+                            value={packBuyPrice}
+                            onValueChange={(val) => {
+                              setPackBuyPrice(val);
+                              const totalPack = val + packFreightExtra;
+                              const unitCost = Math.round(totalPack / (formData.conversionRate || 1));
+                              setFormData((prev) => ({ ...prev, standardCost: unitCost }));
+                            }}
+                            className="text-xs"
+                            placeholder="Contoh: 120000"
+                          />
+                        </InputGroup>
                       </div>
                       <div>
                         <label className="text-[10px] font-extrabold uppercase text-slate-500 block mb-1">
                           Ongkir / Biaya Simpan per {formData.boxUnit || "Dus"} (Opsional)
                         </label>
-                        <CurrencyInput
-                          value={packFreightExtra}
-                          onChange={(val) => {
-                            setPackFreightExtra(val);
-                            const totalPack = packBuyPrice + val;
-                            const unitCost = Math.round(totalPack / (formData.conversionRate || 1));
-                            setFormData((prev) => ({ ...prev, standardCost: unitCost }));
-                          }}
-                          placeholder="0"
-                        />
+                        <InputGroup className="h-10">
+                          <InputGroupAddon align="inline-start">
+                            <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                          </InputGroupAddon>
+                          <InputGroupInput
+                            currency
+                            value={packFreightExtra}
+                            onValueChange={(val) => {
+                              setPackFreightExtra(val);
+                              const totalPack = packBuyPrice + val;
+                              const unitCost = Math.round(totalPack / (formData.conversionRate || 1));
+                              setFormData((prev) => ({ ...prev, standardCost: unitCost }));
+                            }}
+                            className="text-xs"
+                            placeholder="0"
+                          />
+                        </InputGroup>
                       </div>
                     </div>
 
@@ -2478,11 +2539,18 @@ export function ItemListModule({
                       </label>
                       <span className="text-[10px] text-slate-400 font-semibold">(Opsional)</span>
                     </div>
-                    <CurrencyInput
-                      value={formData.standardCost}
-                      onChange={(val) => setFormData({ ...formData, standardCost: val })}
-                      placeholder="0"
-                    />
+                    <InputGroup className="h-10">
+                      <InputGroupAddon align="inline-start">
+                        <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        currency
+                        value={formData.standardCost}
+                        onValueChange={(val) => setFormData({ ...formData, standardCost: val })}
+                        className="text-xs"
+                        placeholder="0"
+                      />
+                    </InputGroup>
                     <span className="text-[10px] text-slate-400 mt-1 block">
                       Dapat terisi otomatis via faktur pembelian (PO).
                     </span>
@@ -2493,11 +2561,18 @@ export function ItemListModule({
                     <label className={labelClass}>
                       Harga Jual (/{currentPriceUnitLabel}) *
                     </label>
-                    <CurrencyInput
-                      value={formData.sellPrice}
-                      onChange={(val) => setFormData({ ...formData, sellPrice: val })}
-                      placeholder="0"
-                    />
+                    <InputGroup className="h-10">
+                      <InputGroupAddon align="inline-start">
+                        <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        currency
+                        value={formData.sellPrice}
+                        onValueChange={(val) => setFormData({ ...formData, sellPrice: val })}
+                        className="text-xs"
+                        placeholder="0"
+                      />
+                    </InputGroup>
                     <span className="text-[10px] text-slate-400 mt-1 block">
                       Harga dasar yang dipungut kasir per {currentPriceUnitLabel}.
                     </span>
@@ -2516,11 +2591,18 @@ export function ItemListModule({
                         Harga Normal Ecer: Rp {(formData.sellPrice * formData.conversionRate).toLocaleString("id-ID")}
                       </span>
                     </div>
-                    <CurrencyInput
-                      value={formData.boxSellPrice}
-                      onChange={(val) => setFormData({ ...formData, boxSellPrice: val })}
-                      placeholder={String(formData.sellPrice * formData.conversionRate || 0)}
-                    />
+                    <InputGroup className="h-10">
+                      <InputGroupAddon align="inline-start">
+                        <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        currency
+                        value={formData.boxSellPrice}
+                        onValueChange={(val) => setFormData({ ...formData, boxSellPrice: val })}
+                        className="text-xs"
+                        placeholder={String(formData.sellPrice * formData.conversionRate || 0)}
+                      />
+                    </InputGroup>
                     <span className="text-[10px] text-slate-400 block">
                       Gunakan jika harga jual 1 {formData.boxUnit} utuh lebih murah daripada beli eceran ({formData.conversionRate}x {formData.baseUnit}).
                     </span>

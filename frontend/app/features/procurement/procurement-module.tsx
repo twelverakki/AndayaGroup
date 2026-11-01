@@ -57,8 +57,28 @@ export default function ProcurementModule({
   // Detail & Payment Modal States
   const [detailPurchase, setDetailPurchase] = useState<Purchase | null>(null);
   const [detailPayments, setDetailPayments] = useState<PurchasePayment[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentTargetPurchase, setPaymentTargetPurchase] = useState<Purchase | null>(null);
+  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
+
+  const handleEditPurchase = async (purchase: Purchase) => {
+    // If purchase items are not yet loaded (e.g. from the list view), fetch full details
+    if (!purchase.items || purchase.items.length === 0) {
+      try {
+        const res = await api.get(`/purchases/${purchase.id}`);
+        if (res.data?.data) {
+          setEditingPurchase(res.data.data);
+          setCurrentView("create");
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to fetch full draft purchase details", err);
+      }
+    }
+    setEditingPurchase(purchase);
+    setCurrentView("create");
+  };
 
   // Fetch all procurement data
   const fetchData = useCallback(async () => {
@@ -112,16 +132,17 @@ export default function ProcurementModule({
 
   // Open Full-Page Detail
   const handleOpenDetail = async (purchase: Purchase) => {
+    setDetailPurchase(purchase);
+    setCurrentView("detail");
+    setDetailLoading(true);
     try {
       const [detailRes, payRes] = await Promise.allSettled([
         api.get(`/purchases/${purchase.id}`),
         api.get(`/purchases/${purchase.id}/payments`),
       ]);
 
-      if (detailRes.status === "fulfilled") {
+      if (detailRes.status === "fulfilled" && detailRes.value.data.data) {
         setDetailPurchase(detailRes.value.data.data);
-      } else {
-        setDetailPurchase(purchase);
       }
 
       if (payRes.status === "fulfilled") {
@@ -129,10 +150,10 @@ export default function ProcurementModule({
       } else {
         setDetailPayments([]);
       }
-      setCurrentView("detail");
     } catch {
-      setDetailPurchase(purchase);
-      setCurrentView("detail");
+      // keep existing detailPurchase
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -143,10 +164,13 @@ export default function ProcurementModule({
   };
 
   // Confirm Physical Receipt
-  const handleConfirmReceive = async (purchase: Purchase) => {
+  const handleConfirmReceive = async (
+    purchase: Purchase,
+    payload?: { received_at?: string; notes?: string; items?: { item_id: string; qty_received: number }[] }
+  ) => {
     try {
-      await api.post(`/purchases/${purchase.id}/receive`, {});
-      toast.success("Barang berhasil diterima dan saldo stok bertambah!");
+      await api.post(`/purchases/${purchase.id}/receive`, payload || {});
+      toast.success("Barang berhasil diverifikasi & saldo stok fisik telah masuk!");
       fetchData();
       if (detailPurchase?.id === purchase.id) {
         handleOpenDetail(purchase);
@@ -174,8 +198,13 @@ export default function ProcurementModule({
           categories={categories}
           defaultOutletId={activeContext?.outlet_id || outlets[0]?.id || ""}
           isDirectPurchaseBlocked={isDirectPurchaseBlocked}
-          onBack={() => setCurrentView("list")}
+          editPurchase={editingPurchase}
+          onBack={() => {
+            setEditingPurchase(null);
+            setCurrentView("list");
+          }}
           onSuccess={() => {
+            setEditingPurchase(null);
             setCurrentView("list");
             fetchData();
             if (onSuccess) onSuccess();
@@ -192,9 +221,11 @@ export default function ProcurementModule({
         <PurchaseOrderDetail
           purchase={detailPurchase}
           payments={detailPayments}
+          loading={detailLoading}
           onBack={() => setCurrentView("list")}
           onConfirmReceive={handleConfirmReceive}
           onOpenPayment={handleOpenPayment}
+          onEditDraft={handleEditPurchase}
         />
       ) : (
         /* ========================================================================= */
@@ -209,25 +240,12 @@ export default function ProcurementModule({
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {t.procurementHistoryTitle || "Pembelian & Hutang Dagang (Procurement)"}
+                  {t.procurementHistoryTitle}
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                  {t.procurementHistoryDesc ||
-                    "Faktur pembelian barang/bahan dari supplier, penerimaan stok fisik, dan tata kelola hutang dagang (AP)."}
+                  {t.procurementHistoryDesc}
                 </p>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {!isDirectPurchaseBlocked && (
-                <button
-                  onClick={() => setCurrentView("create")}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#E2FF66] text-slate-900 font-bold text-sm hover:brightness-95 active:scale-95 transition shadow-sm cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Buat Faktur / PO</span>
-                </button>
-              )}
             </div>
           </div>
 
@@ -237,108 +255,154 @@ export default function ProcurementModule({
               <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">
-                  Pengadaan Mandiri Dinonaktifkan untuk Cabang Ini
+                  {t.procurementDirectBlockedTitle}
                 </h4>
                 <p className="text-xs text-amber-800/90 dark:text-amber-300/80 leading-relaxed">
-                  Outlet ini tidak diizinkan melakukan pembelian mandiri dari vendor luar. Seluruh kebutuhan pasokan barang dan bahan dipasok terpusat dari Gudang Pusat melalui menu <strong>Permintaan Pasokan Cabang (Distribusi)</strong>.
+                  {t.procurementDirectBlockedDesc}
                 </p>
               </div>
             </div>
           )}
 
-          {/* 📊 SUMMARY METRICS CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-2xl bg-white dark:bg-[#1E1E22] border border-slate-200/80 dark:border-[#2E2E34] shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Total Hutang Terutang</span>
-                <CreditCard className="w-4 h-4 text-rose-500" />
-              </div>
-              <div className="text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400 mt-2">
-                Rp {payablesSummary.totalOwed.toLocaleString("id-ID")}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                {payablesSummary.unpaidCount} faktur belum lunas
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-white dark:bg-[#1E1E22] border border-slate-200/80 dark:border-[#2E2E34] shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Total Pengadaan Selesai</span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              </div>
-              <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-2">
-                Rp {payablesSummary.totalSpend.toLocaleString("id-ID")}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                {purchases.length} total transaksi faktur
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-white dark:bg-[#1E1E22] border border-slate-200/80 dark:border-[#2E2E34] shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Master Supplier Terdaftar</span>
-                <Building2 className="w-4 h-4 text-indigo-500" />
-              </div>
-              <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-2">
-                {suppliers.length} Vendor
-              </div>
+          {/* 📊 4-COLUMN SUMMARY & ACTION CARDS (Menggantikan tabulasi horizontal) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {/* Card 1: Action Add PO Card (Ala Master Item) */}
+            {!isDirectPurchaseBlocked ? (
               <button
-                onClick={() => setActiveTab("suppliers")}
-                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mt-1 flex items-center gap-1 hover:underline cursor-pointer"
+                type="button"
+                onClick={() => {
+                  setEditingPurchase(null);
+                  setCurrentView("create");
+                }}
+                className="p-4 rounded-2xl border-2 border-dashed border-[#b8e635] bg-[#E2FF66]/15 dark:bg-[#E2FF66]/10 hover:bg-[#E2FF66]/25 dark:hover:bg-[#E2FF66]/20 transition-all cursor-pointer flex items-center justify-between text-left group active:scale-[0.98] shadow-xs"
               >
-                Kelola Master Supplier <ArrowRight className="w-3 h-3" />
+                <div className="text-left flex-1 min-w-0 pr-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-[#E2FF66] block mb-0.5 text-left">
+                    {language === "id" ? "TAMBAH PENGADAAN" : "NEW PROCUREMENT"}
+                  </span>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white group-hover:translate-x-0.5 transition-transform text-left truncate">
+                    <ShoppingCart className="w-3.5 h-3.5 text-slate-700 dark:text-[#E2FF66] shrink-0" />
+                    <span className="truncate">{language === "id" ? "Buat PO & Belanja" : "Create PO & Purchase"}</span>
+                  </div>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-[#E2FF66] text-slate-950 flex items-center justify-center font-bold shadow-sm group-hover:rotate-90 transition-transform shrink-0">
+                  <Plus className="w-5 h-5 stroke-[2.5]" />
+                </div>
               </button>
-            </div>
-          </div>
+            ) : (
+              <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-[#2E2E34] bg-slate-50/60 dark:bg-[#1E1E22] text-slate-500 flex items-center justify-between">
+                <div className="text-left flex-1 min-w-0 pr-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">
+                    {t.itemsReadOnlyBadge || "MODE BACA"}
+                  </span>
+                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">
+                    {t.procurementDirectBlockedTitle || "Pasokan Pusat"}
+                  </div>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-slate-200/70 dark:bg-white/10 text-slate-500 flex items-center justify-center">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+              </div>
+            )}
 
-          {/* 🧭 NAVIGATION TABS */}
-          <div className="flex items-center gap-2 border-b border-slate-200 dark:border-[#2E2E34] pb-2 overflow-x-auto">
-            <button
+            {/* Card 2: Total Belanja (Riwayat PO) */}
+            <div
               onClick={() => setActiveTab("purchases")}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
+              className={`p-4 rounded-2xl bg-white dark:bg-[#1E1E22] border transition-all cursor-pointer shadow-sm flex flex-col justify-between ${
                 activeTab === "purchases"
-                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm"
-                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#2A2A30]"
+                  ? "ring-2 ring-slate-900 dark:ring-white border-transparent bg-slate-50/70 dark:bg-[#25252A]"
+                  : "border-slate-200/80 dark:border-[#2E2E34] hover:border-slate-300 dark:hover:border-slate-700"
               }`}
             >
-              <ShoppingCart className="w-4 h-4" />
-              <span>Faktur Pembelian & PO</span>
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white">
-                {purchases.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("payables")}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                activeTab === "payables"
-                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm"
-                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#2A2A30]"
-              }`}
-            >
-              <CreditCard className="w-4 h-4" />
-              <span>Hutang Dagang (AP)</span>
-              {payablesSummary.unpaidCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-rose-500 text-white font-bold">
-                  {payablesSummary.unpaidCount}
+              <div>
+                <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+                  <span>{t.procurementMetricTotalSpend}</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                </div>
+                <div className="text-xl font-black text-slate-900 dark:text-white mt-1.5 truncate">
+                  Rp {payablesSummary.totalSpend.toLocaleString("id-ID")}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {purchases.length} {t.procurementMetricTotalCount}
+                </p>
+              </div>
+              <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <span className={`text-[11px] font-bold flex items-center gap-1 ${
+                  activeTab === "purchases"
+                    ? "text-slate-900 dark:text-[#E2FF66]"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                }`}>
+                  {activeTab === "purchases" ? (language === "id" ? "• Sedang Ditampilkan" : "• Currently Active") : (language === "id" ? "Lihat Riwayat PO" : "View Purchases")}
+                  {activeTab !== "purchases" && <ArrowRight className="w-3 h-3" />}
                 </span>
-              )}
-            </button>
+              </div>
+            </div>
 
-            <button
-              onClick={() => setActiveTab("suppliers")}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                activeTab === "suppliers"
-                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm"
-                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#2A2A30]"
+            {/* Card 3: Utang Tagihan / Jatuh Tempo */}
+            <div
+              onClick={() => setActiveTab("payables")}
+              className={`p-4 rounded-2xl bg-white dark:bg-[#1E1E22] border transition-all cursor-pointer shadow-sm flex flex-col justify-between ${
+                activeTab === "payables"
+                  ? "ring-2 ring-rose-500 border-transparent bg-rose-50/20 dark:bg-rose-950/20"
+                  : "border-slate-200/80 dark:border-[#2E2E34] hover:border-slate-300 dark:hover:border-slate-700"
               }`}
             >
-              <Building2 className="w-4 h-4" />
-              <span>Master Supplier</span>
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white">
-                {suppliers.length}
-              </span>
-            </button>
+              <div>
+                <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+                  <span>{t.procurementMetricTotalOwed}</span>
+                  <CreditCard className="w-4 h-4 text-rose-500" />
+                </div>
+                <div className="text-xl font-black text-rose-600 dark:text-rose-400 mt-1.5 truncate">
+                  Rp {payablesSummary.totalOwed.toLocaleString("id-ID")}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {payablesSummary.unpaidCount} {t.procurementMetricUnpaidCount}
+                </p>
+              </div>
+              <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <span className={`text-[11px] font-bold flex items-center gap-1 ${
+                  activeTab === "payables"
+                    ? "text-rose-600 dark:text-rose-400"
+                    : "text-slate-500 hover:text-rose-600 dark:hover:text-rose-400"
+                }`}>
+                  {activeTab === "payables" ? (language === "id" ? "• Sedang Ditampilkan" : "• Currently Active") : (language === "id" ? "Lihat Utang Usaha" : "View Payables")}
+                  {activeTab !== "payables" && <ArrowRight className="w-3 h-3" />}
+                </span>
+              </div>
+            </div>
+
+            {/* Card 4: Mitra Supplier */}
+            <div
+              onClick={() => setActiveTab("suppliers")}
+              className={`p-4 rounded-2xl bg-white dark:bg-[#1E1E22] border transition-all cursor-pointer shadow-sm flex flex-col justify-between ${
+                activeTab === "suppliers"
+                  ? "ring-2 ring-indigo-500 border-transparent bg-indigo-50/20 dark:bg-indigo-950/20"
+                  : "border-slate-200/80 dark:border-[#2E2E34] hover:border-slate-300 dark:hover:border-slate-700"
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+                  <span>{t.procurementMetricSuppliers}</span>
+                  <Building2 className="w-4 h-4 text-indigo-500" />
+                </div>
+                <div className="text-xl font-black text-slate-900 dark:text-white mt-1.5 truncate">
+                  {suppliers.length} {t.procurementMetricSupplierCount}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {suppliers.filter((s) => s.status === "active").length} {language === "id" ? "Mitra Aktif" : "Active Partners"}
+                </p>
+              </div>
+              <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <span className={`text-[11px] font-bold flex items-center gap-1 ${
+                  activeTab === "suppliers"
+                    ? "text-indigo-600 dark:text-indigo-400"
+                    : "text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+                }`}>
+                  {activeTab === "suppliers" ? (language === "id" ? "• Sedang Ditampilkan" : "• Currently Active") : (language === "id" ? "Kelola Supplier" : "Manage Suppliers")}
+                  {activeTab !== "suppliers" && <ArrowRight className="w-3 h-3" />}
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* TAB CONTENTS */}
@@ -347,6 +411,7 @@ export default function ProcurementModule({
               purchases={purchases}
               onOpenDetail={handleOpenDetail}
               onOpenPayment={handleOpenPayment}
+              onEditDraft={handleEditPurchase}
               onRefresh={fetchData}
             />
           )}

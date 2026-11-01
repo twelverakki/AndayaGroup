@@ -24,7 +24,12 @@ import {
 } from "../../components/ui/select";
 import { RadioGroup, RadioGroupItem } from "../../components/ui/radio-group";
 import { ItemSelectorModal } from "../../components/ItemSelectorModal";
-import { CurrencyInput } from "../../components/CurrencyInput";
+import {
+  InputGroup,
+  InputGroupInput,
+  InputGroupAddon,
+  InputGroupText,
+} from "../../components/ui/input-group";
 import { ErpImage } from "../../components/ErpImage";
 import QRCode from "qrcode";
 import {
@@ -159,6 +164,7 @@ export interface DistributionItem {
   sent_at: string;
   received_at?: string;
   created_at: string;
+  updated_at?: string;
 
   // Joined display helpers
   item_name?: string;
@@ -2543,12 +2549,18 @@ export function DistributionModule({
                         <Fuel className="w-3.5 h-3.5 text-amber-500" />
                         <span>{t.distCostBBM || "BBM / Bahan Bakar"}</span>
                       </label>
-                      <CurrencyInput
-                        value={costBBM}
-                        onChange={setCostBBM}
-                        placeholder={t.distCostBBMPlaceholder || "0 (Bensin / Solar)"}
-                        className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold py-2.5"
-                      />
+                      <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-10">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={costBBM}
+                          onValueChange={setCostBBM}
+                          placeholder={t.distCostBBMPlaceholder || "0 (Bensin / Solar)"}
+                          className="text-xs font-bold"
+                        />
+                      </InputGroup>
                     </div>
 
                     {/* Component 2: Ongkir / Tarif Ekspedisi */}
@@ -2557,12 +2569,18 @@ export function DistributionModule({
                         <Package className="w-3.5 h-3.5 text-brand-purple dark:text-primary" />
                         <span>{t.distCostOngkir || "Ongkir / Tarif Ekspedisi"}</span>
                       </label>
-                      <CurrencyInput
-                        value={costOngkir}
-                        onChange={setCostOngkir}
-                        placeholder={t.distCostOngkirPlaceholder || "0 (Tarif kirim / 3PL)"}
-                        className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold py-2.5"
-                      />
+                      <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-10">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={costOngkir}
+                          onValueChange={setCostOngkir}
+                          placeholder={t.distCostOngkirPlaceholder || "0 (Tarif kirim / 3PL)"}
+                          className="text-xs font-bold"
+                        />
+                      </InputGroup>
                     </div>
 
                     {/* Component 3: Tol & Parkir */}
@@ -2571,12 +2589,18 @@ export function DistributionModule({
                         <Car className="w-3.5 h-3.5 text-blue-500" />
                         <span>{t.distCostTolParkir || "Tol & Parkir"}</span>
                       </label>
-                      <CurrencyInput
-                        value={costTolParkir}
-                        onChange={setCostTolParkir}
-                        placeholder={t.distCostTolParkirPlaceholder || "0 (Karcis tol / retribusi)"}
-                        className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold py-2.5"
-                      />
+                      <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-10">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={costTolParkir}
+                          onValueChange={setCostTolParkir}
+                          placeholder={t.distCostTolParkirPlaceholder || "0 (Karcis tol / retribusi)"}
+                          className="text-xs font-bold"
+                        />
+                      </InputGroup>
                     </div>
 
                     {/* Component 4: Uang Jalan / Lainnya */}
@@ -2585,12 +2609,18 @@ export function DistributionModule({
                         <Coins className="w-3.5 h-3.5 text-emerald-500" />
                         <span>{t.distCostUangJalan || "Uang Jalan / Lainnya"}</span>
                       </label>
-                      <CurrencyInput
-                        value={costUangJalan}
-                        onChange={setCostUangJalan}
-                        placeholder={t.distCostUangJalanPlaceholder || "0 (Uang makan / kuli / bongkar)"}
-                        className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold py-2.5"
-                      />
+                      <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-10">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={costUangJalan}
+                          onValueChange={setCostUangJalan}
+                          placeholder={t.distCostUangJalanPlaceholder || "0 (Uang makan / kuli / bongkar)"}
+                          className="text-xs font-bold"
+                        />
+                      </InputGroup>
                     </div>
                   </div>
 
@@ -2685,12 +2715,18 @@ export function DistributionModule({
                         </label>
                         <span className="text-[10px] text-slate-400">{t.distMaxBudgetOptional || "Opsional"}</span>
                       </div>
-                      <CurrencyInput
-                        value={maxClaimBudget}
-                        onChange={setMaxClaimBudget}
-                        placeholder="0 (Tanpa Batas)"
-                        className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold py-2.5"
-                      />
+                      <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-10">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={maxClaimBudget}
+                          onValueChange={setMaxClaimBudget}
+                          placeholder="0 (Tanpa Batas)"
+                          className="text-xs font-bold"
+                        />
+                      </InputGroup>
                       <p className="text-[10px] text-slate-400">
                         {t.distMaxBudgetHelp || "Peringatan otomatis muncul jika kurir mengajukan klaim melebihi plafon ini."}
                       </p>
@@ -4875,7 +4911,7 @@ export function DistributionModule({
                     { key: "in_transit", label: t.logisticsInTransit || "Dalam Perjalanan", count: countInTransit },
                     { key: "received", label: t.logisticsReceived || "Selesai Diterima", count: countReceived },
                     { key: "returned", label: t.distKpiReturned || "Retur / Batal", count: countReturned },
-                    { key: "draft", label: isStaffOrCashier ? (t.distKpiPendingRequisitions || "Menunggu Persetujuan") : (t.distDraftsTab || "Draf Surat Jalan"), count: countDrafts },
+                    { key: "draft", label: isStaffOrCashier ? ((t as any).distKpiPendingRequisitions || "Menunggu Persetujuan") : (t.distDraftsTab || "Draf Surat Jalan"), count: countDrafts },
                   ],
                 },
                 {
@@ -5459,12 +5495,18 @@ export function DistributionModule({
                           <Fuel className="w-3.5 h-3.5 text-amber-500" />
                           <span>{t.distCostBBM || "BBM / Bahan Bakar"}</span>
                         </label>
-                        <CurrencyInput
-                          value={editCostBBM}
-                          onChange={setEditCostBBM}
-                          placeholder="0"
-                          className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold"
-                        />
+                        <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-9">
+                          <InputGroupAddon align="inline-start">
+                            <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                          </InputGroupAddon>
+                          <InputGroupInput
+                            currency
+                            value={editCostBBM}
+                            onValueChange={setEditCostBBM}
+                            placeholder="0"
+                            className="text-xs font-bold"
+                          />
+                        </InputGroup>
                       </div>
 
                       <div className="space-y-1">
@@ -5472,12 +5514,18 @@ export function DistributionModule({
                           <Package className="w-3.5 h-3.5 text-brand-purple dark:text-primary" />
                           <span>{t.distCostOngkir || "Ongkir / Tarif Ekspedisi"}</span>
                         </label>
-                        <CurrencyInput
-                          value={editCostOngkir}
-                          onChange={setEditCostOngkir}
-                          placeholder="0"
-                          className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold"
-                        />
+                        <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-9">
+                          <InputGroupAddon align="inline-start">
+                            <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                          </InputGroupAddon>
+                          <InputGroupInput
+                            currency
+                            value={editCostOngkir}
+                            onValueChange={setEditCostOngkir}
+                            placeholder="0"
+                            className="text-xs font-bold"
+                          />
+                        </InputGroup>
                       </div>
 
                       <div className="space-y-1">
@@ -5485,12 +5533,18 @@ export function DistributionModule({
                           <Car className="w-3.5 h-3.5 text-blue-500" />
                           <span>{t.distCostTolParkir || "Tol & Parkir"}</span>
                         </label>
-                        <CurrencyInput
-                          value={editCostTolParkir}
-                          onChange={setEditCostTolParkir}
-                          placeholder="0"
-                          className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold"
-                        />
+                        <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-9">
+                          <InputGroupAddon align="inline-start">
+                            <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                          </InputGroupAddon>
+                          <InputGroupInput
+                            currency
+                            value={editCostTolParkir}
+                            onValueChange={setEditCostTolParkir}
+                            placeholder="0"
+                            className="text-xs font-bold"
+                          />
+                        </InputGroup>
                       </div>
 
                       <div className="space-y-1">
@@ -5498,12 +5552,18 @@ export function DistributionModule({
                           <Coins className="w-3.5 h-3.5 text-emerald-500" />
                           <span>{t.distCostUangJalan || "Uang Jalan / Lainnya"}</span>
                         </label>
-                        <CurrencyInput
-                          value={editCostUangJalan}
-                          onChange={setEditCostUangJalan}
-                          placeholder="0"
-                          className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold"
-                        />
+                        <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-9">
+                          <InputGroupAddon align="inline-start">
+                            <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                          </InputGroupAddon>
+                          <InputGroupInput
+                            currency
+                            value={editCostUangJalan}
+                            onValueChange={setEditCostUangJalan}
+                            placeholder="0"
+                            className="text-xs font-bold"
+                          />
+                        </InputGroup>
                       </div>
                     </div>
 
@@ -5560,12 +5620,18 @@ export function DistributionModule({
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                       {t.distMaxBudgetLabel || "Plafon Anggaran Maksimal (Opsional)"}
                     </label>
-                    <CurrencyInput
-                      value={editMaxClaimBudget}
-                      onChange={setEditMaxClaimBudget}
-                      placeholder={t.distMaxBudgetPlaceholder || "0 (Opsional, 0 = Tanpa Batas)"}
-                      className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] text-xs font-bold"
-                    />
+                    <InputGroup className="bg-white dark:bg-[#202024] border-slate-200 dark:border-[#38383C] h-9">
+                      <InputGroupAddon align="inline-start">
+                        <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        currency
+                        value={editMaxClaimBudget}
+                        onValueChange={setEditMaxClaimBudget}
+                        placeholder={t.distMaxBudgetPlaceholder || "0 (Opsional, 0 = Tanpa Batas)"}
+                        className="text-xs font-bold"
+                      />
+                    </InputGroup>
                   </div>
                 )}
               </div>

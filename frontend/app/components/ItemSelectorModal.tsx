@@ -456,7 +456,7 @@ export function ItemSelectorModal({
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => onOpenChange(false)}
+              onClick={() => onOpenChange?.(false)}
               className="px-4 py-2 rounded-xl border border-slate-200 dark:border-[#38383C] text-xs font-bold hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer text-slate-700 dark:text-slate-300"
             >
               {t.cancel || "Batal"}

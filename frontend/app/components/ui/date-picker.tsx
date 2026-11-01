@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Popover, PopoverTrigger, PopoverContent } from "./popover";
 import { Calendar } from "./calendar";
 import { WheelCarouselDialog, getWeeksInMonth } from "./wheel-carousel-dialog";
@@ -122,6 +122,19 @@ export function DatePicker({
 
   const [open, setOpen] = useState(false);
   const [carouselOpen, setCarouselOpen] = useState(false);
+  // Ref untuk mengingat apakah popover kalender sebelumnya terbuka saat carousel dipicu
+  const wasPopoverOpenRef = useRef(false);
+
+  // Helper membuka carousel dengan menyembunyikan popover kalender sementara agar fokus tunggal & bebas deadlock
+  const openCarouselDialog = () => {
+    if (open) {
+      wasPopoverOpenRef.current = true;
+      setOpen(false); // Sembunyikan Popover kalender sementara
+    } else {
+      wasPopoverOpenRef.current = false;
+    }
+    setCarouselOpen(true);
+  };
 
   // Selected date state
   const selectedDateObj = useMemo(() => parseInputDate(value), [value]);
@@ -249,23 +262,22 @@ export function DatePicker({
     }
     setCurrentMonthView(targetDate);
     emitValue(targetDate, week);
-    if (mode === "date") {
-      setOpen(true); // Keep calendar popover open for date mode
-    }
   };
 
   const handlePopoverOpenChange = (nextOpen: boolean) => {
-    // If carousel dialog is open, do not let popover close
-    if (carouselOpen && !nextOpen) {
-      return;
-    }
     setOpen(nextOpen);
   };
 
   const handleCarouselOpenChange = (nextCarouselOpen: boolean) => {
     setCarouselOpen(nextCarouselOpen);
-    if (!nextCarouselOpen && mode === "date") {
-      setOpen(true); // Keep calendar visible when dialog closes in date mode
+    if (!nextCarouselOpen) {
+      // Saat dialog carousel ditutup: jika sebelumnya dibuka dari kalender (mode date), kembalikan kalender
+      if (mode === "date" && wasPopoverOpenRef.current) {
+        wasPopoverOpenRef.current = false;
+        setTimeout(() => {
+          setOpen(true);
+        }, 50);
+      }
     }
   };
 
@@ -299,6 +311,7 @@ export function DatePicker({
   const handleTriggerClick = (e: React.MouseEvent) => {
     if (mode === "week" || mode === "time") {
       e.preventDefault();
+      wasPopoverOpenRef.current = false;
       setCarouselOpen(true);
     }
   };
@@ -356,7 +369,7 @@ export function DatePicker({
               month={currentMonthView}
               onMonthChange={setCurrentMonthView}
               locale={dayPickerLocale}
-              onMonthYearClick={() => setCarouselOpen(true)}
+              onMonthYearClick={openCarouselDialog}
               className="p-0 select-none bg-transparent"
             />
 
@@ -364,7 +377,7 @@ export function DatePicker({
             {showTime && (
               <button
                 type="button"
-                onClick={() => setCarouselOpen(true)}
+                onClick={openCarouselDialog}
                 className="w-full py-2.5 px-3 rounded-2xl border border-slate-200/80 dark:border-[#333338] bg-slate-50/80 dark:bg-[#25252A] hover:bg-slate-100 dark:hover:bg-[#2E2E34] text-slate-900 dark:text-white flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs group"
                 title={isId ? "Klik untuk atur jam & menit" : "Click to set hour & minute"}
               >

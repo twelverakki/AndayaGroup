@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"andaya-erp/backend/internal/config"
+	"andaya-erp/backend/internal/models"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -308,4 +309,129 @@ func TestTwoStepPOAndReceiveAndAPPayment(t *testing.T) {
 	}
 
 	t.Log("Pass: 2-Step PO, Goods Receipt, AP settlement, and Overpayment Protection verified 100%.")
+}
+
+func TestDraftPreservesPurchaseType(t *testing.T) {
+	ctx := context.Background()
+	service := NewPurchasesService(config.DB)
+
+	// Create test item
+	var itemID uuid.UUID
+	sku := "DRAFT-TYPE-" + uuid.New().String()[:6]
+	err := config.DB.QueryRow(ctx, `
+		INSERT INTO items (
+			business_id, sku, name, item_type, is_sellable, is_inventory_tracked,
+			is_purchasable, allow_branch_purchase, base_unit, box_unit, conversion_rate,
+			sell_price, standard_cost, status
+		) VALUES (
+			$1, $2, 'Bimoli 2L Test', 'finished_good', true, true,
+			true, true, 'pcs', 'dus', 6,
+			45000, 36000, 'active'
+		) RETURNING id
+	`, testBusinessID, sku).Scan(&itemID)
+	if err != nil {
+		t.Fatalf("Failed to create test item: %v", err)
+	}
+	defer func() {
+		_, _ = config.DB.Exec(ctx, "DELETE FROM items WHERE id = $1", itemID)
+	}()
+
+	// 1. Create a DRAFT with purchase_type = "direct" (Direct Purchase / Belanja Pasar)
+	poNum := "PO-DRAFT-" + uuid.New().String()[:6]
+	draft, err := service.CreatePurchase(ctx, testBusinessID, testOutletID, testUserID, "owner", CreatePurchaseRequest{
+		OutletID:       testOutletID,
+		PONumber:       &poNum,
+		SupplierName:   "Toko Grosir Subur",
+		PurchaseType:   "direct",
+		Status:         "draft",
+		PaymentStatus:  "unpaid",
+		PaymentMethod:  "cash",
+		SubtotalAmount: 216000,
+		TotalAmount:    216000,
+		AmountPaid:     0,
+		Items: []PurchaseItemInput{
+			{
+				ItemID:         itemID,
+				UOM:            "box",
+				QtyOrdered:     1,
+				ConversionRate: 6,
+				UnitCost:       216000,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create direct purchase draft: %v", err)
+	}
+	defer func() {
+		_, _ = config.DB.Exec(ctx, "DELETE FROM purchase_items WHERE purchase_id = $1", draft.ID)
+		_, _ = config.DB.Exec(ctx, "DELETE FROM purchases WHERE id = $1", draft.ID)
+	}()
+
+	if draft.Status != "draft" {
+		t.Fatalf("Expected status draft, got %s", draft.Status)
+	}
+
+	// 2. Fetch by ID and verify purchase_type is preserved as "direct"
+	fetched, err := service.GetPurchaseByID(ctx, testBusinessID, draft.ID)
+	if err != nil {
+		t.Fatalf("Failed to fetch draft: %v", err)
+	}
+	if fetched.PurchaseType != "direct" {
+		t.Fatalf("Expected purchase_type 'direct', got '%s'", fetched.PurchaseType)
+	}
+
+	// 3. Verify in GetPurchases list
+	list, err := service.GetPurchases(ctx, testBusinessID, &testOutletID, "draft", "", "")
+	if err != nil {
+		t.Fatalf("Failed to list drafts: %v", err)
+	}
+	var foundDraft *models.Purchase
+	for _, p := range list {
+		if p.ID == draft.ID {
+			foundDraft = &p
+			break
+		}
+	}
+	if foundDraft == nil {
+		t.Fatalf("Created draft not found in GetPurchases list")
+	}
+	if foundDraft.PurchaseType != "direct" {
+		t.Fatalf("Expected foundDraft.PurchaseType 'direct', got '%s'", foundDraft.PurchaseType)
+	}
+
+	// 4. Update the draft to purchase_type = "standard"
+	standardType := "standard"
+	updated, err := service.UpdatePurchase(ctx, testBusinessID, draft.ID, testUserID, UpdatePurchaseRequest{
+		SupplierName:   "Toko Grosir Subur (Revisi)",
+		PurchaseType:   &standardType,
+		Status:         "draft",
+		PaymentStatus:  "unpaid",
+		PaymentMethod:  "credit",
+		SubtotalAmount: 216000,
+		TotalAmount:    216000,
+		AmountPaid:     0,
+		Items: []PurchaseItemInput{
+			{
+				ItemID:         itemID,
+				UOM:            "box",
+				QtyOrdered:     1,
+				ConversionRate: 6,
+				UnitCost:       216000,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to update draft purchase: %v", err)
+	}
+
+	fetchedUpdated, err := service.GetPurchaseByID(ctx, testBusinessID, draft.ID)
+	if err != nil {
+		t.Fatalf("Failed to fetch updated draft: %v", err)
+	}
+	if fetchedUpdated.PurchaseType != "standard" {
+		t.Fatalf("Expected updated draft purchase_type 'standard', got '%s'", fetchedUpdated.PurchaseType)
+	}
+
+	t.Logf("Pass: Draft successfully saved, read, and updated with purchase_type preserved. Initial: %s, Updated: %s", fetched.PurchaseType, fetchedUpdated.PurchaseType)
+	_ = updated
 }

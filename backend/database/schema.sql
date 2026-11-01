@@ -755,3 +755,7 @@ CREATE INDEX IF NOT EXISTS idx_promotions_code ON promotions(code);
 CREATE INDEX IF NOT EXISTS idx_promotion_targets_promo_id ON promotion_targets(promotion_id);
 CREATE INDEX IF NOT EXISTS idx_daily_settlements_business ON daily_settlements(business_id);
 CREATE INDEX IF NOT EXISTS idx_eod_material_usages_business ON eod_material_usages(business_id);
+
+-- PURCHASES EXTENSIONS
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS purchase_type VARCHAR(20) NOT NULL DEFAULT 'standard';
+

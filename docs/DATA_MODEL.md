@@ -491,6 +491,8 @@ CREATE TABLE purchases (
     supplier_name VARCHAR(150) NOT NULL,
     
     -- Status Rantai Pasok & Finansial
+    purchase_type VARCHAR(20) NOT NULL DEFAULT 'standard'
+        CHECK (purchase_type IN ('standard', 'direct')), -- standard: Pesan Dulu (PO 2-step), direct: Beli Langsung (1-step kasbon/nota)
     status VARCHAR(30) NOT NULL DEFAULT 'draft' 
         CHECK (status IN ('draft', 'submitted', 'partially_received', 'received', 'cancelled')),
     payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' 

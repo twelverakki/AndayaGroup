@@ -115,7 +115,7 @@ func (s *SettlementsService) CreateSettlement(ctx context.Context, businessID uu
 		// Record QC Discard in wastage_logs if discard > 0
 		if itemInput.DiscardLoose > 0 {
 			_, err = tx.Exec(ctx, `
-				INSERT INTO wastage_logs (id, business_id, outlet_id, product_id, expected_qty, actual_qty, discrepancy, input_by, status, created_at, updated_at)
+				INSERT INTO wastage_logs (id, business_id, outlet_id, item_id, expected_qty, actual_qty, discrepancy, input_by, status, created_at, updated_at)
 				VALUES ($1, $2, $3, $4, $5, 0, $6, $7, 'approved', NOW(), NOW())
 			`, uuid.New(), businessID, targetOutletID, itemInput.ItemID, itemInput.DiscardLoose, -itemInput.DiscardLoose, staffID)
 			if err != nil {
@@ -212,7 +212,7 @@ func (s *SettlementsService) CreateDirectSale(ctx context.Context, businessID uu
 	}
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO transaction_items (id, transaction_id, product_id, qty, unit_price, subtotal, created_at)
+		INSERT INTO transaction_items (id, transaction_id, item_id, qty, unit_price, subtotal, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 	`, uuid.New(), saleID, req.ItemID, req.QtyPack, req.UnitPrice, totalAmount)
 	if err != nil {

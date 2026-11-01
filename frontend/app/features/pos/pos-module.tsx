@@ -14,7 +14,12 @@ import { toast } from "sonner";
 import TransactionHistoryDrawer, { type TransactionRecord } from "../../components/TransactionHistoryDrawer";
 import { ErpSearchBar } from "../../components/ErpSearchBar";
 import { ErpImage } from "../../components/ErpImage";
-import { CurrencyInput } from "../../components/CurrencyInput";
+import {
+  InputGroup,
+  InputGroupInput,
+  InputGroupAddon,
+  InputGroupText,
+} from "../../components/ui/input-group";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "../../components/ui/input-otp";
 import { useLanguageStore, translations } from "../../lib/i18n";
 import { usePOSSettings } from "../../hooks/use-pos-settings";
@@ -978,15 +983,9 @@ export default function POSModule({ gridCols = 4, showNumpad = true, onNavigate 
       const target = recentTx.find((tx) => tx.id === showVoidModal);
       if (!target) throw new Error("Transaksi tidak ditemukan");
 
-      const voidUUID = crypto.randomUUID();
-      await api.post("/transactions", {
-        client_uuid: voidUUID,
-        total_amount: target.total_amount,
-        payment_method: target.payment_method,
-        type: "void",
+      await api.post(`/transactions/${target.id}/void`, {
         manager_pin: managerPin,
         reason: voidReason || "Void request",
-        items: [],
       });
 
       setRecentTx(
@@ -1107,13 +1106,19 @@ export default function POSModule({ gridCols = 4, showNumpad = true, onNavigate 
             <label className="block text-xs font-bold opacity-75 uppercase tracking-wider mb-2 ml-1">
               {t.posOpeningCashLabel || "Modal Awal Laci Kasir (Rupiah)"}
             </label>
-            <CurrencyInput
-              value={openingCash}
-              onChange={(val) => setOpeningCash(val)}
-              placeholder="150.000"
-              className="text-center text-xl font-bold h-14 rounded-2xl"
-              required
-            />
+            <InputGroup className="h-14 rounded-2xl">
+              <InputGroupAddon align="inline-start">
+                <InputGroupText className="font-bold text-base">Rp</InputGroupText>
+              </InputGroupAddon>
+              <InputGroupInput
+                currency
+                value={openingCash}
+                onValueChange={(val) => setOpeningCash(val)}
+                placeholder="150.000"
+                className="text-center text-xl font-bold"
+                required
+              />
+            </InputGroup>
           </div>
 
           <button
@@ -1690,13 +1695,19 @@ export default function POSModule({ gridCols = 4, showNumpad = true, onNavigate 
                 <label className="block text-xs font-bold opacity-75 uppercase tracking-wider mb-2 ml-1">
                   {t.posActualCash || "Kas Akhir Dihitung (Rupiah)"}
                 </label>
-                <CurrencyInput
-                  value={closingCashActual}
-                  onChange={(val) => setClosingCashActual(val)}
-                  placeholder="0"
-                  className="text-center text-xl font-bold h-14 rounded-2xl"
-                  required
-                />
+                <InputGroup className="h-14 rounded-2xl">
+                  <InputGroupAddon align="inline-start">
+                    <InputGroupText className="font-bold text-base">Rp</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    currency
+                    value={closingCashActual}
+                    onValueChange={(val) => setClosingCashActual(val)}
+                    placeholder="0"
+                    className="text-center text-xl font-bold"
+                    required
+                  />
+                </InputGroup>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -1898,12 +1909,18 @@ export default function POSModule({ gridCols = 4, showNumpad = true, onNavigate 
                         </button>
                       </div>
 
-                      <CurrencyInput
-                        value={cashReceived}
-                        onChange={(val) => setCashReceived(val)}
-                        placeholder="0"
-                        className="text-center font-bold text-lg h-12 rounded-xl"
-                      />
+                      <InputGroup className="h-12 rounded-xl">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="font-bold text-sm">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={cashReceived}
+                          onValueChange={(val) => setCashReceived(val)}
+                          placeholder="0"
+                          className="text-center font-bold text-lg"
+                        />
+                      </InputGroup>
 
                       {/* Quick Cash Presets */}
                       <div className="grid grid-cols-4 gap-1.5 pt-1">

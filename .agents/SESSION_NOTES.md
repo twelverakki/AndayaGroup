@@ -1,10 +1,28 @@
 # Catatan Sesi Pengembangan (Session Handover Notes)
-> **Tanggal Update**: 6 Oktober 2026 (WITA)  
+> **Tanggal Update**: 2 November 2026 (WITA) — Checkpoint Cycle #20  
 > **Status Sistem**: Stable, Production-Ready & 100% Type-Safe  
 > **Kompilasi Frontend TypeScript**: `npm run build` Lolos 100% (`Exit Code 0`)  
 > **Kompilasi Backend Go**: `go test -p 1 ./...` Lolos 100% (`Exit Code 0`)  
 
 ---
+
+## 0. Rangkuman Eksekusi Sesi Terkini (Prioritas 1–4 Audit & Konstitusi AI Jems)
+
+1. **Prioritas 1 — Eliminasi *Split-Brain Domain Model* (`products` $\rightarrow$ `items` + `item_stocks` + `stock_movements`)**:
+   - Memigrasikan [backend/internal/modules/transactions/service.go](file:///D:/laragon/www/Andaya-Group/backend/internal/modules/transactions/service.go) (`CreateTransaction`, `VoidTransaction`, `GetTransactions`, dan `GetSalesReportSummary`) sepenuhnya ke **Single Master Engine (`items`, `item_stocks`, `stock_movements`)**.
+   - Memperbaiki bug FK `product_id` vs `item_id` di [backend/internal/modules/production/service.go](file:///D:/laragon/www/Andaya-Group/backend/internal/modules/production/service.go) dan [backend/internal/modules/settlements/service.go](file:///D:/laragon/www/Andaya-Group/backend/internal/modules/settlements/service.go).
+   - Memperbaiki fungsi `verifyManagerOverridePIN` di `transactions/service.go` dan endpoint void di [frontend/app/features/pos/pos-module.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/features/pos/pos-module.tsx).
+2. **Prioritas 2 — Evolutionary Database Migrations & Presisi Matematika Finansial**:
+   - Mengekstrak 255 baris DDL dari [backend/internal/config/config.go](file:///D:/laragon/www/Andaya-Group/backend/internal/config/config.go) ke *embedded versioned migrations* di [backend/internal/config/migrator.go](file:///D:/laragon/www/Andaya-Group/backend/internal/config/migrator.go) dan `backend/internal/config/migrations/*.sql`.
+   - Memperbaiki bug pemotongan integer (*premature float-to-int truncation*) menggunakan `math.Round` di `items/service.go`, `logistics/service.go`, dan `purchases/service.go`.
+3. **Prioritas 3 — Pengamanan Multi-Tenancy, Middleware TTL Cache, CORS, & CDR Image Compression**:
+   - Menambahkan **In-Memory Read-Through Cache (TTL 30s)** + `InvalidateAuthStatusCache` di [backend/internal/middleware/middleware.go](file:///D:/laragon/www/Andaya-Group/backend/internal/middleware/middleware.go) dan mengganti refleksi `Origin` dengan *CORS Whitelist*.
+   - Mengganti *regex SQL string surgery* di [backend/internal/database/tenant_db.go](file:///D:/laragon/www/Andaya-Group/backend/internal/database/tenant_db.go) dengan `TenantScope` & `WithTenantTx` (`SET LOCAL`).
+   - Menambahkan validasi *Magic Bytes* (`http.DetectContentType`) & batas 5 MB di `HandleUploadFile` ([backend/internal/modules/items/handler.go](file:///D:/laragon/www/Andaya-Group/backend/internal/modules/items/handler.go)) serta utilitas kompresi gambar otomatis berbasis HTML5 Canvas CDR di [frontend/app/lib/image-compressor.ts](file:///D:/laragon/www/Andaya-Group/frontend/app/lib/image-compressor.ts).
+4. **Prioritas 4 (Fokus Modul `procurement` — Langkah 4A & 4B)**:
+   - Mendekomposisi [frontend/app/features/procurement/components/PurchaseOrderForm.tsx](file:///D:/laragon/www/Andaya-Group/frontend/app/features/procurement/components/PurchaseOrderForm.tsx) (memangkas **1.258 baris kode duplikat** dari 2.609 baris menjadi 1.351 baris) ke dalam struktur `utils/calculations.ts`, `hooks/usePurchaseOrderDraft.ts`, `components/PurchaseOrderVendorSection.tsx`, `components/PurchaseOrderFinancialSection.tsx`, dan `components/PurchaseOrderSummaryCard.tsx`.
+5. **Konstitusi AI & Dokumentasi Pembelajaran (`GEMINI.md` & `belajar/`)**:
+   - Memperbarui [GEMINI.md](file:///D:/laragon/www/Andaya-Group/GEMINI.md) dengan persona **Jems** dan **4 Pilar Konstitusi (termasuk Meta-Rule Distillation Protocol)** serta mencatat 3 bab pembelajaran di `belajar/`.
 
 ## 1. Rangkuman Eksekusi Sesi Ini (Completed Work)
 

@@ -1,7 +1,21 @@
-import React from "react";
-import { Trash2 } from "lucide-react";
-import { CurrencyInput } from "../../../components/CurrencyInput";
-import { calculateLineSubtotal, calculateLinePhysicalCount } from "../utils/calculations";
+import React, { useState } from "react";
+import { Trash2, SlidersHorizontal } from "lucide-react";
+import { Button } from "../../../components/ui/button";
+import { ButtonGroup } from "../../../components/ui/button-group";
+import {
+  InputGroup,
+  InputGroupInput,
+  InputGroupAddon,
+  InputGroupText,
+} from "../../../components/ui/input-group";
+import {
+  calculateLineSubtotal,
+  calculateLinePhysicalCount,
+  calculateLineGross,
+  calculateLineDiscountAmount,
+} from "../utils/calculations";
+import { cn } from "../../../lib/utils";
+import { DiscountSliderDialog } from "./DiscountSliderDialog";
 import type { LineItemInput } from "../types";
 
 interface PurchaseOrderLineItemCardProps {
@@ -17,6 +31,8 @@ export function PurchaseOrderLineItemCard({
   onUpdate,
   onRemove,
 }: PurchaseOrderLineItemCardProps) {
+  const [sliderDialogUnit, setSliderDialogUnit] = useState<"box" | "pcs" | null>(null);
+
   return (
     <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-slate-50/90 dark:bg-[#202024] border border-slate-200/90 dark:border-[#2E2E34] transition-all hover:border-slate-300 dark:hover:border-slate-600 shadow-2xs">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
@@ -91,73 +107,68 @@ export function PurchaseOrderLineItemCard({
 
           {/* Rows per Unit */}
           {line.has_dual_uom ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {/* Baris 1: Kemasan Besar (Dus/Bal) */}
               <div className="grid grid-cols-2 gap-3 items-center">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block truncate">
-                    Kemasan {line.box_unit || "Dus"}
-                  </label>
-                  <input
+                <InputGroup>
+                  <InputGroupInput
                     type="number"
                     min="0"
                     value={line.qty_box}
                     onChange={(e) =>
                       onUpdate(index, "qty_box", parseFloat(e.target.value) || 0)
                     }
-                    className="h-10 w-full px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                     placeholder="0"
                   />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block truncate">
-                    Harga / {line.box_unit || "Dus"}
-                  </label>
-                  <CurrencyInput
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupText>{line.box_unit || "Dus"}</InputGroupText>
+                  </InputGroupAddon>
+                </InputGroup>
+                <InputGroup>
+                  <InputGroupAddon align="inline-start">
+                    <InputGroupText>Rp</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    currency
                     value={line.box_cost}
-                    onChange={(val) => onUpdate(index, "box_cost", val)}
-                    className="h-10 w-full text-xs font-bold"
+                    onValueChange={(val) => onUpdate(index, "box_cost", val)}
                   />
-                </div>
+                </InputGroup>
               </div>
 
               {/* Baris 2: Eceran (Pcs/Base) */}
               <div className="grid grid-cols-2 gap-3 items-center pt-2 border-t border-dashed border-slate-100 dark:border-slate-800/80">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block truncate">
-                    + Eceran {line.base_unit || "Pcs"}
-                  </label>
-                  <input
+                <InputGroup>
+                  <InputGroupInput
                     type="number"
                     min="0"
                     value={line.qty_pcs}
                     onChange={(e) =>
                       onUpdate(index, "qty_pcs", parseFloat(e.target.value) || 0)
                     }
-                    className="h-10 w-full px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                     placeholder="0"
                   />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block truncate">
-                    Harga / {line.base_unit || "Pcs"}
-                  </label>
-                  <CurrencyInput
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupText>{line.base_unit || "Pcs"}</InputGroupText>
+                  </InputGroupAddon>
+                </InputGroup>
+                <InputGroup>
+                  <InputGroupAddon align="inline-start">
+                    <InputGroupText>Rp</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    currency
                     value={line.pcs_cost}
-                    onChange={(val) => onUpdate(index, "pcs_cost", val)}
-                    className="h-10 w-full text-xs font-bold"
+                    onValueChange={(val) => onUpdate(index, "pcs_cost", val)}
                   />
-                </div>
+                </InputGroup>
               </div>
             </div>
           ) : (
             /* Baris Single UOM */
             <div className="grid grid-cols-2 gap-3 items-center">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block truncate">
-                  Satuan {line.base_unit}
-                </label>
-                <input
+              <InputGroup>
+                <InputGroupInput
                   type="number"
                   min="0.01"
                   value={line.qty_pcs > 0 ? line.qty_pcs : line.qty_ordered}
@@ -166,27 +177,292 @@ export function PurchaseOrderLineItemCard({
                     onUpdate(index, "qty_pcs", val);
                     onUpdate(index, "qty_ordered", val);
                   }}
-                  className="h-10 w-full px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                   placeholder="1"
                 />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block truncate">
-                  Harga / {line.base_unit}
-                </label>
-                <CurrencyInput
+                <InputGroupAddon align="inline-end">
+                  <InputGroupText>{line.base_unit}</InputGroupText>
+                </InputGroupAddon>
+              </InputGroup>
+              <InputGroup>
+                <InputGroupAddon align="inline-start">
+                  <InputGroupText>Rp</InputGroupText>
+                </InputGroupAddon>
+                <InputGroupInput
+                  currency
                   value={line.pcs_cost > 0 ? line.pcs_cost : line.unit_cost}
-                  onChange={(val) => {
+                  onValueChange={(val) => {
                     onUpdate(index, "pcs_cost", val);
                     onUpdate(index, "unit_cost", val);
                   }}
-                  className="h-10 w-full text-xs font-bold"
                 />
-              </div>
+              </InputGroup>
             </div>
           )}
+
+          {/* Row Diskon per Item (Rp & %) - Mendukung Dual UOM (Per Dus & Per Pcs) */}
+          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2">
+            {line.has_dual_uom ? (
+              <div className="space-y-2">
+                {/* Baris 1: Diskon Dus */}
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                    Diskon per {line.box_unit || "Dus"}
+                  </span>
+                  <ButtonGroup className="w-full">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-lg"
+                      onClick={() => setSliderDialogUnit("box")}
+                      className={cn(
+                        "shrink-0 h-9 w-8 cursor-pointer transition shadow-xs",
+                        (line.box_discount_percent || 0) > 0 || (line.box_discount_amount || 0) > 0
+                          ? "bg-slate-900 text-white dark:bg-[#E2FF66] dark:text-slate-900 border-slate-900 dark:border-[#E2FF66]"
+                          : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                      )}
+                      title={`Buka slider diskon per ${line.box_unit || "Dus"}`}
+                    >
+                      <SlidersHorizontal className="size-3.5" />
+                    </Button>
+                    <InputGroup className="flex-1 h-9 min-w-[110px]">
+                      <InputGroupAddon align="inline-start" className="pl-2 pr-1">
+                        <InputGroupText className="text-[10px] font-bold">Rp</InputGroupText>
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        currency
+                        value={typeof line.box_discount_amount === "number" && !isNaN(line.box_discount_amount) ? line.box_discount_amount : 0}
+                        onValueChange={(val) => {
+                          const safeVal = typeof val === "number" && !isNaN(val) ? Math.max(0, val) : 0;
+                          const cost = line.box_cost || 0;
+                          const rawPct = cost > 0 ? (safeVal / cost) * 100 : 0;
+                          const pct = !isNaN(rawPct) && isFinite(rawPct) ? Number(rawPct.toFixed(1)) : 0;
+                          onUpdate(index, "box_discount_amount", safeVal);
+                          onUpdate(index, "box_discount_percent", Math.min(100, Math.max(0, pct)));
+                        }}
+                        placeholder="0"
+                        className="font-bold text-xs"
+                      />
+                    </InputGroup>
+                    <InputGroup className="w-16 shrink-0 h-9">
+                      <InputGroupInput
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={
+                          typeof line.box_discount_percent === "number" && !isNaN(line.box_discount_percent)
+                            ? line.box_discount_percent
+                            : typeof line.box_discount_amount === "number" && !isNaN(line.box_discount_amount) && (line.box_cost || 0) > 0
+                            ? Number(((line.box_discount_amount / line.box_cost) * 100).toFixed(1)) || 0
+                            : 0
+                        }
+                        onChange={(e) => {
+                          const raw = parseFloat(e.target.value);
+                          const safePct = !isNaN(raw) && isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 0;
+                          const cost = line.box_cost || 0;
+                          const amt = cost > 0 ? Math.round((cost * safePct) / 100) : 0;
+                          onUpdate(index, "box_discount_percent", safePct);
+                          onUpdate(index, "box_discount_amount", amt);
+                        }}
+                        placeholder="0"
+                        className="font-bold text-xs text-center px-1"
+                      />
+                      <InputGroupAddon align="inline-end" className="pr-1.5 pl-0">
+                        <InputGroupText className="text-[10px] font-bold">%</InputGroupText>
+                      </InputGroupAddon>
+                    </InputGroup>
+                  </ButtonGroup>
+                </div>
+
+                {/* Baris 2: Diskon Pcs */}
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                    Diskon per {line.base_unit || "Pcs"}
+                  </span>
+                  <ButtonGroup className="w-full">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-lg"
+                      onClick={() => setSliderDialogUnit("pcs")}
+                      className={cn(
+                        "shrink-0 h-9 w-8 cursor-pointer transition shadow-xs",
+                        (line.pcs_discount_percent || 0) > 0 || (line.pcs_discount_amount || 0) > 0
+                          ? "bg-slate-900 text-white dark:bg-[#E2FF66] dark:text-slate-900 border-slate-900 dark:border-[#E2FF66]"
+                          : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                      )}
+                      title={`Buka slider diskon per ${line.base_unit || "Pcs"}`}
+                    >
+                      <SlidersHorizontal className="size-3.5" />
+                    </Button>
+                    <InputGroup className="flex-1 h-9 min-w-[110px]">
+                      <InputGroupAddon align="inline-start" className="pl-2 pr-1">
+                        <InputGroupText className="text-[10px] font-bold">Rp</InputGroupText>
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        currency
+                        value={typeof line.pcs_discount_amount === "number" && !isNaN(line.pcs_discount_amount) ? line.pcs_discount_amount : 0}
+                        onValueChange={(val) => {
+                          const safeVal = typeof val === "number" && !isNaN(val) ? Math.max(0, val) : 0;
+                          const cost = line.pcs_cost || 0;
+                          const rawPct = cost > 0 ? (safeVal / cost) * 100 : 0;
+                          const pct = !isNaN(rawPct) && isFinite(rawPct) ? Number(rawPct.toFixed(1)) : 0;
+                          onUpdate(index, "pcs_discount_amount", safeVal);
+                          onUpdate(index, "pcs_discount_percent", Math.min(100, Math.max(0, pct)));
+                        }}
+                        placeholder="0"
+                        className="font-bold text-xs"
+                      />
+                    </InputGroup>
+                    <InputGroup className="w-16 shrink-0 h-9">
+                      <InputGroupInput
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={
+                          typeof line.pcs_discount_percent === "number" && !isNaN(line.pcs_discount_percent)
+                            ? line.pcs_discount_percent
+                            : typeof line.pcs_discount_amount === "number" && !isNaN(line.pcs_discount_amount) && (line.pcs_cost || 0) > 0
+                            ? Number(((line.pcs_discount_amount / line.pcs_cost) * 100).toFixed(1)) || 0
+                            : 0
+                        }
+                        onChange={(e) => {
+                          const raw = parseFloat(e.target.value);
+                          const safePct = !isNaN(raw) && isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 0;
+                          const cost = line.pcs_cost || 0;
+                          const amt = cost > 0 ? Math.round((cost * safePct) / 100) : 0;
+                          onUpdate(index, "pcs_discount_percent", safePct);
+                          onUpdate(index, "pcs_discount_amount", amt);
+                        }}
+                        placeholder="0"
+                        className="font-bold text-xs text-center px-1"
+                      />
+                      <InputGroupAddon align="inline-end" className="pr-1.5 pl-0">
+                        <InputGroupText className="text-[10px] font-bold">%</InputGroupText>
+                      </InputGroupAddon>
+                    </InputGroup>
+                  </ButtonGroup>
+                </div>
+              </div>
+            ) : (
+              /* Single UOM Discount */
+              <ButtonGroup className="w-full">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-lg"
+                  onClick={() => setSliderDialogUnit("pcs")}
+                  className={cn(
+                    "shrink-0 h-9 w-8 cursor-pointer transition shadow-xs",
+                    (line.pcs_discount_percent || line.discount_percent || 0) > 0 || (line.pcs_discount_amount || line.discount_amount || 0) > 0
+                      ? "bg-slate-900 text-white dark:bg-[#E2FF66] dark:text-slate-900 border-slate-900 dark:border-[#E2FF66]"
+                      : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                  )}
+                  title="Buka slider penyetelan diskon satuan"
+                >
+                  <SlidersHorizontal className="size-3.5" />
+                </Button>
+                <InputGroup className="flex-1 h-9 min-w-[110px]">
+                  <InputGroupAddon align="inline-start" className="pl-2 pr-1">
+                    <InputGroupText className="text-[10px] font-bold">Rp</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    currency
+                    value={
+                      typeof line.pcs_discount_amount === "number" && !isNaN(line.pcs_discount_amount)
+                        ? line.pcs_discount_amount
+                        : typeof line.discount_amount === "number" && !isNaN(line.discount_amount)
+                        ? line.discount_amount
+                        : 0
+                    }
+                    onValueChange={(val) => {
+                      const safeVal = typeof val === "number" && !isNaN(val) ? Math.max(0, val) : 0;
+                      const cost = line.pcs_cost > 0 ? line.pcs_cost : line.unit_cost || 0;
+                      const rawPct = cost > 0 ? (safeVal / cost) * 100 : 0;
+                      const pct = !isNaN(rawPct) && isFinite(rawPct) ? Number(rawPct.toFixed(1)) : 0;
+                      onUpdate(index, "pcs_discount_amount", safeVal);
+                      onUpdate(index, "pcs_discount_percent", Math.min(100, Math.max(0, pct)));
+                      onUpdate(index, "discount_amount", safeVal);
+                      onUpdate(index, "discount_percent", Math.min(100, Math.max(0, pct)));
+                    }}
+                    placeholder="0"
+                    className="font-bold text-xs"
+                  />
+                </InputGroup>
+                <InputGroup className="w-16 shrink-0 h-9">
+                  <InputGroupInput
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={
+                      typeof line.pcs_discount_percent === "number" && !isNaN(line.pcs_discount_percent)
+                        ? line.pcs_discount_percent
+                        : typeof line.discount_percent === "number" && !isNaN(line.discount_percent)
+                        ? line.discount_percent
+                        : 0
+                    }
+                    onChange={(e) => {
+                      const raw = parseFloat(e.target.value);
+                      const safePct = !isNaN(raw) && isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 0;
+                      const cost = line.pcs_cost > 0 ? line.pcs_cost : line.unit_cost || 0;
+                      const amt = cost > 0 ? Math.round((cost * safePct) / 100) : 0;
+                      onUpdate(index, "pcs_discount_percent", safePct);
+                      onUpdate(index, "pcs_discount_amount", amt);
+                      onUpdate(index, "discount_percent", safePct);
+                      onUpdate(index, "discount_amount", amt);
+                    }}
+                    placeholder="0"
+                    className="font-bold text-xs text-center px-1"
+                  />
+                  <InputGroupAddon align="inline-end" className="pr-1.5 pl-0">
+                    <InputGroupText className="text-[10px] font-bold">%</InputGroupText>
+                  </InputGroupAddon>
+                </InputGroup>
+              </ButtonGroup>
+            )}
+          </div>
         </div>
       </div>
+
+      {sliderDialogUnit !== null && (() => {
+        const isBox = sliderDialogUnit === "box";
+        const unitName = isBox ? line.box_unit || "Dus" : line.base_unit || "Pcs";
+        const unitCost = isBox
+          ? line.box_cost || 0
+          : line.pcs_cost > 0
+          ? line.pcs_cost
+          : line.unit_cost || 0;
+        const initPct = isBox
+          ? line.box_discount_percent || 0
+          : line.pcs_discount_percent ?? line.discount_percent ?? 0;
+        const initAmt = isBox
+          ? line.box_discount_amount || 0
+          : line.pcs_discount_amount ?? line.discount_amount ?? 0;
+
+        return (
+          <DiscountSliderDialog
+            open={true}
+            onOpenChange={(open) => !open && setSliderDialogUnit(null)}
+            itemName={`${line.item_name} (per ${unitName})`}
+            grossAmount={unitCost}
+            initialPercent={initPct}
+            initialAmount={initAmt}
+            onApply={(pct, amt) => {
+              if (isBox) {
+                onUpdate(index, "box_discount_percent", pct);
+                onUpdate(index, "box_discount_amount", amt);
+              } else {
+                onUpdate(index, "pcs_discount_percent", pct);
+                onUpdate(index, "pcs_discount_amount", amt);
+                onUpdate(index, "discount_percent", pct);
+                onUpdate(index, "discount_amount", amt);
+              }
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

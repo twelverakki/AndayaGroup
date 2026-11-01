@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"andaya-erp/backend/internal/middleware"
 	"andaya-erp/backend/internal/models"
 
 	"github.com/google/uuid"
@@ -306,7 +307,12 @@ func (s *service) UpdateStaffMember(ctx context.Context, businessID uuid.UUID, s
 		_, _ = tx.Exec(ctx, "UPDATE manager_pins SET pin_hash = $1, updated_at = NOW() WHERE user_id = $2", string(pinHash), userID)
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	middleware.InvalidateAuthStatusCache(userID.String())
+	return nil
 }
 
 func (s *service) GetAllBusinesses(ctx context.Context) ([]*models.Business, error) {

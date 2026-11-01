@@ -425,10 +425,17 @@ type Transaction struct {
 type TransactionItem struct {
 	ID             uuid.UUID  `json:"id"`
 	TransactionID  uuid.UUID  `json:"transaction_id"`
+	ItemID         *uuid.UUID `json:"item_id,omitempty"`
 	ProductID      uuid.UUID  `json:"product_id"`
+	SKU            *string    `json:"sku,omitempty"`
+	Name           string     `json:"name,omitempty"`
+	ProductName    string     `json:"product_name,omitempty"`
+	UnitType       string     `json:"unit_type,omitempty"`
 	Qty            float64    `json:"qty"`
 	UnitPrice      int64      `json:"unit_price"`
 	Subtotal       int64      `json:"subtotal"`
+	UnitCost       int64      `json:"unit_cost"`
+	TotalCost      int64      `json:"total_cost"`
 	DiscountAmount int64      `json:"discount_amount"`
 	PromotionID    *uuid.UUID `json:"promotion_id,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -1044,6 +1051,7 @@ type Purchase struct {
 	InvoiceNo      *string        `json:"invoice_no,omitempty"`
 	SupplierID     *uuid.UUID     `json:"supplier_id,omitempty"`
 	SupplierName   string         `json:"supplier_name"`
+	PurchaseType   string         `json:"purchase_type"`  // standard, direct
 	Status         string         `json:"status"`         // draft, submitted, partially_received, received, cancelled
 	PaymentStatus  string         `json:"payment_status"` // unpaid, partial, paid
 	PaymentMethod  string         `json:"payment_method"` // cash, bank_transfer, credit, qris

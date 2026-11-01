@@ -96,7 +96,7 @@ export default function SalesReportModule() {
   const t = translations[language] || translations.id;
 
   // Filter States
-  const [datePreset, setDatePreset] = useState<"today" | "7days" | "month" | "custom">("today");
+  const [datePreset, setDatePreset] = useState<"today" | "week" | "7days" | "month" | "custom">("today");
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [paymentFilter, setPaymentFilter] = useState("all");

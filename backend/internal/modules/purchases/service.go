@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -60,6 +61,7 @@ type CreatePurchaseRequest struct {
 	InvoiceNo      *string             `json:"invoice_no,omitempty"`
 	SupplierID     *uuid.UUID          `json:"supplier_id,omitempty"`
 	SupplierName   string              `json:"supplier_name"`
+	PurchaseType   string              `json:"purchase_type"` // standard, direct
 	Status         string              `json:"status"` // draft, submitted, received
 	PaymentStatus  string              `json:"payment_status"` // unpaid, partial, paid
 	PaymentMethod  string              `json:"payment_method"` // cash, bank_transfer, credit, qris
@@ -79,6 +81,7 @@ type UpdatePurchaseRequest struct {
 	InvoiceNo      *string             `json:"invoice_no,omitempty"`
 	SupplierID     *uuid.UUID          `json:"supplier_id,omitempty"`
 	SupplierName   string              `json:"supplier_name"`
+	PurchaseType   *string             `json:"purchase_type,omitempty"`
 	Status         string              `json:"status"`
 	PaymentStatus  string              `json:"payment_status"`
 	PaymentMethod  string              `json:"payment_method"`
@@ -307,6 +310,7 @@ func (s *PurchasesService) GetPurchases(ctx context.Context, businessID uuid.UUI
 	query := `
 		SELECT p.id, p.business_id, p.outlet_id, COALESCE(o.name, '') as outlet_name,
 		       p.po_number, p.invoice_no, p.supplier_id, p.supplier_name,
+		       COALESCE(p.purchase_type, 'standard') as purchase_type,
 		       p.status, p.payment_status, p.payment_method,
 		       TO_CHAR(p.order_date, 'YYYY-MM-DD') as order_date,
 		       TO_CHAR(p.due_date, 'YYYY-MM-DD') as due_date,
@@ -316,7 +320,7 @@ func (s *PurchasesService) GetPurchases(ctx context.Context, businessID uuid.UUI
 		       p.received_by, COALESCE(u2.name, '') as received_by_name,
 		       p.created_at, p.updated_at
 		FROM purchases p
-		JOIN outlets o ON p.outlet_id = o.id
+		LEFT JOIN outlets o ON p.outlet_id = o.id
 		LEFT JOIN users u1 ON p.created_by = u1.id
 		LEFT JOIN users u2 ON p.received_by = u2.id
 		WHERE p.business_id = $1
@@ -359,7 +363,7 @@ func (s *PurchasesService) GetPurchases(ctx context.Context, businessID uuid.UUI
 		if err := rows.Scan(
 			&p.ID, &p.BusinessID, &p.OutletID, &p.OutletName,
 			&p.PONumber, &p.InvoiceNo, &p.SupplierID, &p.SupplierName,
-			&p.Status, &p.PaymentStatus, &p.PaymentMethod,
+			&p.PurchaseType, &p.Status, &p.PaymentStatus, &p.PaymentMethod,
 			&p.OrderDate, &p.DueDate, &p.ReceivedAt,
 			&p.SubtotalAmount, &p.DiscountAmount, &p.TaxAmount,
 			&p.ShippingCost, &p.TotalAmount, &p.AmountPaid, &p.AmountOwed,
@@ -381,6 +385,7 @@ func (s *PurchasesService) GetPurchaseByID(ctx context.Context, businessID, id u
 	query := `
 		SELECT p.id, p.business_id, p.outlet_id, COALESCE(o.name, '') as outlet_name,
 		       p.po_number, p.invoice_no, p.supplier_id, p.supplier_name,
+		       COALESCE(p.purchase_type, 'standard') as purchase_type,
 		       p.status, p.payment_status, p.payment_method,
 		       TO_CHAR(p.order_date, 'YYYY-MM-DD') as order_date,
 		       TO_CHAR(p.due_date, 'YYYY-MM-DD') as due_date,
@@ -390,7 +395,7 @@ func (s *PurchasesService) GetPurchaseByID(ctx context.Context, businessID, id u
 		       p.received_by, COALESCE(u2.name, '') as received_by_name,
 		       p.created_at, p.updated_at
 		FROM purchases p
-		JOIN outlets o ON p.outlet_id = o.id
+		LEFT JOIN outlets o ON p.outlet_id = o.id
 		LEFT JOIN users u1 ON p.created_by = u1.id
 		LEFT JOIN users u2 ON p.received_by = u2.id
 		WHERE p.id = $1 AND p.business_id = $2
@@ -399,7 +404,7 @@ func (s *PurchasesService) GetPurchaseByID(ctx context.Context, businessID, id u
 	err := s.DB.QueryRow(ctx, query, id, businessID).Scan(
 		&p.ID, &p.BusinessID, &p.OutletID, &p.OutletName,
 		&p.PONumber, &p.InvoiceNo, &p.SupplierID, &p.SupplierName,
-		&p.Status, &p.PaymentStatus, &p.PaymentMethod,
+		&p.PurchaseType, &p.Status, &p.PaymentStatus, &p.PaymentMethod,
 		&p.OrderDate, &p.DueDate, &p.ReceivedAt,
 		&p.SubtotalAmount, &p.DiscountAmount, &p.TaxAmount,
 		&p.ShippingCost, &p.TotalAmount, &p.AmountPaid, &p.AmountOwed,
@@ -419,7 +424,7 @@ func (s *PurchasesService) GetPurchaseByID(ctx context.Context, businessID, id u
 		       pi.uom, pi.qty_ordered, pi.qty_received, pi.conversion_rate,
 		       pi.unit_cost, pi.discount_amount, pi.subtotal, pi.notes, pi.created_at
 		FROM purchase_items pi
-		JOIN items i ON pi.item_id = i.id
+		LEFT JOIN items i ON pi.item_id = i.id
 		WHERE pi.purchase_id = $1
 		ORDER BY pi.created_at ASC
 	`
@@ -511,6 +516,13 @@ func (s *PurchasesService) CreatePurchase(ctx context.Context, businessID uuid.U
 		status = req.Status
 	}
 
+	purchaseType := "standard"
+	if req.PurchaseType == "direct" || req.PurchaseType == "standard" {
+		purchaseType = req.PurchaseType
+	} else if status == "received" {
+		purchaseType = "direct"
+	}
+
 	paymentStatus := "unpaid"
 	if req.PaymentStatus != "" {
 		paymentStatus = req.PaymentStatus
@@ -559,19 +571,19 @@ func (s *PurchasesService) CreatePurchase(ctx context.Context, businessID uuid.U
 	insertPurchaseSQL := `
 		INSERT INTO purchases (
 			business_id, outlet_id, po_number, invoice_no, supplier_id, supplier_name,
-			status, payment_status, payment_method, order_date, due_date, received_at,
+			purchase_type, status, payment_status, payment_method, order_date, due_date, received_at,
 			subtotal_amount, discount_amount, tax_amount, shipping_cost,
 			total_amount, amount_paid, amount_owed, notes, created_by, received_by
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12,
-			$13, $14, $15, $16,
-			$17, $18, $19, $20, $21, $22
+			$7, $8, $9, $10, $11, $12, $13,
+			$14, $15, $16, $17,
+			$18, $19, $20, $21, $22, $23
 		) RETURNING id
 	`
 	err = tx.QueryRow(ctx, insertPurchaseSQL,
 		businessID, targetOutletID, poNum, req.InvoiceNo, req.SupplierID, req.SupplierName,
-		status, paymentStatus, paymentMethod, orderDate, req.DueDate, receivedAt,
+		purchaseType, status, paymentStatus, paymentMethod, orderDate, req.DueDate, receivedAt,
 		req.SubtotalAmount, req.DiscountAmount, req.TaxAmount, req.ShippingCost,
 		req.TotalAmount, req.AmountPaid, amountOwed, req.Notes, userID, receivedBy,
 	).Scan(&purchaseID)
@@ -600,7 +612,7 @@ func (s *PurchasesService) CreatePurchase(ctx context.Context, businessID uuid.U
 			}
 		}
 
-		subtotal := item.UnitCost*int64(item.QtyOrdered) - item.DiscountAmount
+		subtotal := int64(math.Round(float64(item.UnitCost)*item.QtyOrdered)) - item.DiscountAmount
 		if subtotal < 0 {
 			subtotal = 0
 		}
@@ -639,7 +651,7 @@ func (s *PurchasesService) CreatePurchase(ctx context.Context, businessID uuid.U
 				) VALUES ($1, $2, $3, 'purchase_inbound', $4, 'vendor', 'outlet', $5, $6, $7, $8, $9, $10, $11, NOW())
 			`
 			movementNote := fmt.Sprintf("Pembelian Masuk PO: %s (%s)", poNum, req.SupplierName)
-			totalCost := int64(qtyReceived * float64(item.UnitCost))
+			totalCost := int64(math.Round(qtyReceived * float64(item.UnitCost)))
 			_, err = tx.Exec(ctx, insertMovementSQL,
 				uuid.New(), businessID, item.ItemID, purchaseID,
 				targetOutletID, uom, qtyReceived, item.UnitCost, totalCost, userID, movementNote,
@@ -666,7 +678,7 @@ func (s *PurchasesService) CreatePurchase(ctx context.Context, businessID uuid.U
 			// Update items.standard_cost (Last Buying Price)
 			costPerBase := item.UnitCost
 			if uom == "box" && convRate > 0 {
-				costPerBase = int64(float64(item.UnitCost) / convRate)
+				costPerBase = int64(math.Round(float64(item.UnitCost) / convRate))
 			}
 			if costPerBase > 0 {
 				_, _ = tx.Exec(ctx, "UPDATE items SET standard_cost = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3", costPerBase, item.ItemID, businessID)
@@ -759,7 +771,7 @@ func (s *PurchasesService) ReceivePurchase(ctx context.Context, businessID, id, 
 			) VALUES ($1, $2, $3, 'purchase_inbound', $4, 'vendor', 'outlet', $5, $6, $7, $8, $9, $10, $11, NOW())
 		`
 		movementNote := fmt.Sprintf("Penerimaan Barang PO: %s (%s)", purchase.PONumber, purchase.SupplierName)
-		totalCost := int64(qtyToReceive * float64(item.UnitCost))
+		totalCost := int64(math.Round(qtyToReceive * float64(item.UnitCost)))
 		_, err = tx.Exec(ctx, insertMovementSQL,
 			uuid.New(), businessID, item.ItemID, purchase.ID,
 			purchase.OutletID, item.UOM, qtyToReceive, item.UnitCost, totalCost, userID, movementNote,
@@ -786,7 +798,7 @@ func (s *PurchasesService) ReceivePurchase(ctx context.Context, businessID, id, 
 		// Update Last Buying Price
 		costPerBase := item.UnitCost
 		if item.UOM == "box" && convRate > 0 {
-			costPerBase = int64(float64(item.UnitCost) / convRate)
+			costPerBase = int64(math.Round(float64(item.UnitCost) / convRate))
 		}
 		if costPerBase > 0 {
 			_, _ = tx.Exec(ctx, "UPDATE items SET standard_cost = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3", costPerBase, item.ItemID, businessID)
@@ -798,12 +810,24 @@ func (s *PurchasesService) ReceivePurchase(ctx context.Context, businessID, id, 
 		receiveTime = *req.ReceivedAt
 	}
 
+	newStatus := "received"
+	for _, it := range purchase.Items {
+		recQty := it.QtyOrdered
+		if in, ok := receiveMap[it.ItemID]; ok {
+			recQty = in.QtyReceived
+		}
+		if recQty < it.QtyOrdered {
+			newStatus = "partially_received"
+			break
+		}
+	}
+
 	updatePurchaseSQL := `
 		UPDATE purchases
-		SET status = 'received', received_at = $1, received_by = $2, updated_at = NOW()
-		WHERE id = $3 AND business_id = $4
+		SET status = $1, received_at = $2, received_by = $3, updated_at = NOW()
+		WHERE id = $4 AND business_id = $5
 	`
-	_, err = tx.Exec(ctx, updatePurchaseSQL, receiveTime, userID, id, businessID)
+	_, err = tx.Exec(ctx, updatePurchaseSQL, newStatus, receiveTime, userID, id, businessID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update purchase status: %w", err)
 	}
@@ -931,4 +955,230 @@ func (s *PurchasesService) GetPurchasePayments(ctx context.Context, businessID, 
 		payments = []models.PurchasePayment{}
 	}
 	return payments, nil
+}
+
+func (s *PurchasesService) UpdatePurchase(ctx context.Context, businessID uuid.UUID, id uuid.UUID, userID uuid.UUID, req UpdatePurchaseRequest) (*models.Purchase, error) {
+	if len(req.Items) == 0 {
+		return nil, errors.New("daftar barang pembelian tidak boleh kosong")
+	}
+	if req.SupplierName == "" {
+		return nil, errors.New("nama supplier wajib diisi")
+	}
+
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var curStatus string
+	var targetOutletID uuid.UUID
+	var poNum string
+	var curPurchaseType string
+	err = tx.QueryRow(ctx, "SELECT status, outlet_id, po_number, COALESCE(purchase_type, 'standard') FROM purchases WHERE id = $1 AND business_id = $2 FOR UPDATE", id, businessID).Scan(&curStatus, &targetOutletID, &poNum, &curPurchaseType)
+	if err != nil {
+		return nil, fmt.Errorf("pembelian tidak ditemukan: %w", err)
+	}
+
+	if curStatus != "draft" {
+		return nil, errors.New("hanya pembelian berstatus draft yang dapat diedit")
+	}
+
+	targetStatus := "draft"
+	if req.Status != "" {
+		targetStatus = req.Status
+	}
+
+	purchaseType := curPurchaseType
+	if req.PurchaseType != nil && (*req.PurchaseType == "direct" || *req.PurchaseType == "standard") {
+		purchaseType = *req.PurchaseType
+	} else if targetStatus == "received" {
+		purchaseType = "direct"
+	}
+
+	paymentStatus := "unpaid"
+	if req.PaymentStatus != "" {
+		paymentStatus = req.PaymentStatus
+	}
+
+	paymentMethod := "credit"
+	if req.PaymentMethod != "" {
+		paymentMethod = req.PaymentMethod
+	}
+
+	if req.AmountPaid < 0 {
+		return nil, errors.New("nominal pembayaran tidak boleh kurang dari 0")
+	}
+	if req.AmountPaid > req.TotalAmount {
+		return nil, fmt.Errorf("jumlah pembayaran (Rp %d) melebihi total tagihan faktur (Rp %d)", req.AmountPaid, req.TotalAmount)
+	}
+
+	amountOwed := req.TotalAmount - req.AmountPaid
+	if amountOwed <= 0 && req.TotalAmount > 0 {
+		paymentStatus = "paid"
+		amountOwed = 0
+	} else if req.AmountPaid > 0 && req.AmountPaid < req.TotalAmount {
+		paymentStatus = "partial"
+	}
+
+	var receivedAt *time.Time
+	var receivedBy *uuid.UUID
+	if targetStatus == "received" {
+		now := time.Now()
+		receivedAt = &now
+		receivedBy = &userID
+	}
+
+	updatePurchaseSQL := `
+		UPDATE purchases
+		SET invoice_no = $1, supplier_id = $2, supplier_name = $3,
+		    purchase_type = $4, status = $5, payment_status = $6, payment_method = $7, due_date = $8,
+		    received_at = $9, received_by = $10,
+		    subtotal_amount = $11, discount_amount = $12, tax_amount = $13, shipping_cost = $14,
+		    total_amount = $15, amount_paid = $16, amount_owed = $17, notes = $18, updated_at = NOW()
+		WHERE id = $19 AND business_id = $20
+	`
+	_, err = tx.Exec(ctx, updatePurchaseSQL,
+		req.InvoiceNo, req.SupplierID, req.SupplierName,
+		purchaseType, targetStatus, paymentStatus, paymentMethod, req.DueDate,
+		receivedAt, receivedBy,
+		req.SubtotalAmount, req.DiscountAmount, req.TaxAmount, req.ShippingCost,
+		req.TotalAmount, req.AmountPaid, amountOwed, req.Notes,
+		id, businessID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update purchase: %w", err)
+	}
+
+	// Delete existing items
+	_, err = tx.Exec(ctx, "DELETE FROM purchase_items WHERE purchase_id = $1", id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to clear old purchase items: %w", err)
+	}
+
+	// Re-insert line items
+	for _, item := range req.Items {
+		convRate := item.ConversionRate
+		if convRate <= 0 {
+			convRate = 1.0
+		}
+
+		uom := item.UOM
+		if uom != "box" && uom != "base" {
+			uom = "box"
+		}
+
+		qtyReceived := 0.0
+		if targetStatus == "received" {
+			if item.QtyReceived != nil && *item.QtyReceived > 0 {
+				qtyReceived = *item.QtyReceived
+			} else {
+				qtyReceived = item.QtyOrdered
+			}
+		}
+
+		subtotal := int64(math.Round(float64(item.UnitCost)*item.QtyOrdered)) - item.DiscountAmount
+		if subtotal < 0 {
+			subtotal = 0
+		}
+
+		insertItemSQL := `
+			INSERT INTO purchase_items (
+				purchase_id, item_id, uom, qty_ordered, qty_received,
+				conversion_rate, unit_cost, discount_amount, subtotal, notes
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`
+		_, err = tx.Exec(ctx, insertItemSQL,
+			id, item.ItemID, uom, item.QtyOrdered, qtyReceived,
+			convRate, item.UnitCost, item.DiscountAmount, subtotal, item.Notes,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert purchase item: %w", err)
+		}
+
+		// If transitioning from draft to received immediately, execute stock movement
+		if targetStatus == "received" && qtyReceived > 0 {
+			var qtySealedChange, qtyLooseChange float64
+			if uom == "box" {
+				qtySealedChange = qtyReceived
+				qtyLooseChange = 0
+			} else {
+				qtySealedChange = 0
+				qtyLooseChange = qtyReceived
+			}
+
+			insertMovementSQL := `
+				INSERT INTO stock_movements (
+					id, business_id, item_id, source_document_type, source_document_id,
+					from_location_type, to_location_type, to_outlet_id,
+					package_form, qty, unit_cost, total_cost, performed_by, notes, created_at
+				) VALUES ($1, $2, $3, 'purchase_inbound', $4, 'vendor', 'outlet', $5, $6, $7, $8, $9, $10, $11, NOW())
+			`
+			movementNote := fmt.Sprintf("Pembelian Masuk PO: %s (%s)", poNum, req.SupplierName)
+			totalCost := int64(math.Round(qtyReceived * float64(item.UnitCost)))
+			_, err = tx.Exec(ctx, insertMovementSQL,
+				uuid.New(), businessID, item.ItemID, id,
+				targetOutletID, uom, qtyReceived, item.UnitCost, totalCost, userID, movementNote,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to record stock movement: %w", err)
+			}
+
+			var curSealed, curLoose float64
+			err = tx.QueryRow(ctx, "SELECT qty_sealed, qty_loose FROM item_stocks WHERE item_id = $1 AND outlet_id = $2 AND held_by_user_id IS NULL FOR UPDATE", item.ItemID, targetOutletID).Scan(&curSealed, &curLoose)
+			if err != nil {
+				_, err = tx.Exec(ctx, "INSERT INTO item_stocks (id, item_id, outlet_id, qty_sealed, qty_loose, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW())", item.ItemID, targetOutletID, qtySealedChange, qtyLooseChange)
+				if err != nil {
+					return nil, fmt.Errorf("failed to insert initial stock: %w", err)
+				}
+			} else {
+				_, err = tx.Exec(ctx, "UPDATE item_stocks SET qty_sealed = qty_sealed + $1, qty_loose = qty_loose + $2, updated_at = NOW() WHERE item_id = $3 AND outlet_id = $4 AND held_by_user_id IS NULL", qtySealedChange, qtyLooseChange, item.ItemID, targetOutletID)
+				if err != nil {
+					return nil, fmt.Errorf("failed to update item stock: %w", err)
+				}
+			}
+
+			costPerBase := item.UnitCost
+			if uom == "box" && convRate > 0 {
+				costPerBase = int64(math.Round(float64(item.UnitCost) / convRate))
+			}
+			_, _ = tx.Exec(ctx, "UPDATE items SET standard_cost = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3", costPerBase, item.ItemID, businessID)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit update transaction: %w", err)
+	}
+
+	return s.GetPurchaseByID(ctx, businessID, id)
+}
+
+func (s *PurchasesService) DeletePurchase(ctx context.Context, businessID uuid.UUID, id uuid.UUID) error {
+	var status string
+	err := s.DB.QueryRow(ctx, "SELECT status FROM purchases WHERE id = $1 AND business_id = $2", id, businessID).Scan(&status)
+	if err != nil {
+		return fmt.Errorf("pembelian tidak ditemukan: %w", err)
+	}
+
+	if status != "draft" {
+		return errors.New("hanya draf pembelian yang dapat dihapus")
+	}
+
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, "DELETE FROM purchase_items WHERE purchase_id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete purchase items: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, "DELETE FROM purchases WHERE id = $1 AND business_id = $2", id, businessID)
+	if err != nil {
+		return fmt.Errorf("failed to delete purchase: %w", err)
+	}
+
+	return tx.Commit(ctx)
 }

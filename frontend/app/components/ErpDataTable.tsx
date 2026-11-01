@@ -20,7 +20,7 @@ export interface ColumnDef<T> {
 export interface ErpDataTableProps<T> {
   data: T[];
   columns: ColumnDef<T>[];
-  keyExtractor: (item: T) => string;
+  keyExtractor?: (item: T, index?: number) => string;
   loading?: boolean;
   emptyText?: string;
   emptyIcon?: React.ReactNode;
@@ -28,6 +28,11 @@ export interface ErpDataTableProps<T> {
   onRowContextMenu?: (e: React.MouseEvent, item: T) => void;
   renderMobileItem?: (item: T) => React.ReactNode;
   enableColumnToggle?: boolean;
+  title?: React.ReactNode;
+  icon?: React.ReactNode;
+  subtitle?: React.ReactNode;
+  headerActions?: React.ReactNode;
+  frameless?: boolean;
   className?: string;
 }
 
@@ -42,9 +47,28 @@ export function ErpDataTable<T>({
   onRowContextMenu,
   renderMobileItem,
   enableColumnToggle = true,
+  title,
+  icon,
+  subtitle,
+  headerActions,
+  frameless = false,
   className = "",
 }: ErpDataTableProps<T>) {
   const { isDark } = useTheme();
+
+  // Bulletproof key extractor fallback
+  const getKey = (item: T, idx: number): string => {
+    if (typeof keyExtractor === "function") {
+      try {
+        const k = keyExtractor(item, idx);
+        if (k !== undefined && k !== null) return String(k);
+      } catch {
+        // fallback below
+      }
+    }
+    const candidate = (item as any)?.id ?? (item as any)?.key ?? (item as any)?.uuid;
+    return candidate ? String(candidate) : `row-${idx}`;
+  };
 
   // Column Visibility State
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
@@ -77,28 +101,61 @@ export function ErpDataTable<T>({
     <div className={`w-full space-y-4 ${className}`}>
       {/* ── MOBILE VIEW (< md) ── */}
       {renderMobileItem && (
-        <div className="md:hidden w-full divide-y divide-slate-200/60 dark:divide-[#2C2C32] select-none text-left">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 bg-white/40 dark:bg-dark-card/40 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
-              <div className="w-10 h-10 border-4 border-slate-700 dark:border-primary border-t-transparent rounded-full animate-spin mb-3" />
-              <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">
-                Memuat data...
-              </span>
+        <div className="md:hidden w-full space-y-3">
+          {(title || headerActions) && (
+            <div className="flex items-center justify-between gap-2 px-1 pb-2 border-b border-slate-200/60 dark:border-[#2C2C32]">
+              <div className="flex items-center gap-2">
+                {icon && (
+                  <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center text-xs shrink-0">
+                    {icon}
+                  </div>
+                )}
+                <div>
+                  {typeof title === "string" ? (
+                    <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                      {title}
+                    </h3>
+                  ) : (
+                    title
+                  )}
+                  {subtitle && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {subtitle}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {headerActions && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {headerActions}
+                </div>
+              )}
             </div>
-          ) : data.length === 0 ? (
-            <div className="text-center py-16 px-4 space-y-2 bg-white/40 dark:bg-dark-card/40 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
-              {emptyIcon || <Package className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />}
-              <p className="text-slate-400 dark:text-slate-500 text-sm font-semibold">
-                {emptyText}
-              </p>
-            </div>
-          ) : (
-            data.map((item) => (
-              <React.Fragment key={keyExtractor(item)}>
-                {renderMobileItem(item)}
-              </React.Fragment>
-            ))
           )}
+
+          <div className="w-full divide-y divide-slate-200/60 dark:divide-[#2C2C32] select-none text-left">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-20 bg-white/40 dark:bg-dark-card/40 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+                <div className="w-10 h-10 border-4 border-slate-700 dark:border-primary border-t-transparent rounded-full animate-spin mb-3" />
+                <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">
+                  Memuat data...
+                </span>
+              </div>
+            ) : data.length === 0 ? (
+              <div className="text-center py-16 px-4 space-y-2 bg-white/40 dark:bg-dark-card/40 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+                {emptyIcon || <Package className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />}
+                <p className="text-slate-400 dark:text-slate-500 text-sm font-semibold">
+                  {emptyText}
+                </p>
+              </div>
+            ) : (
+              data.map((item, idx) => (
+                <React.Fragment key={getKey(item, idx)}>
+                  {renderMobileItem(item)}
+                </React.Fragment>
+              ))
+            )}
+          </div>
         </div>
       )}
 
@@ -106,13 +163,53 @@ export function ErpDataTable<T>({
       <div
         className={`${
           renderMobileItem ? "hidden md:block" : "block"
-        } bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border rounded-[28px] shadow-sm p-4 sm:p-6`}
-        style={{
-          boxShadow: isDark
-            ? "0 4px 24px 0 rgba(0,0,0,0.35)"
-            : "0 4px 20px 0 rgba(0,0,0,0.06)",
-        }}
+        } ${
+          frameless
+            ? ""
+            : "bg-white dark:bg-dark-card border border-slate-200/80 dark:border-dark-border rounded-[28px] shadow-sm p-4 sm:p-6"
+        }`}
+        style={
+          frameless
+            ? undefined
+            : {
+                boxShadow: isDark
+                  ? "0 4px 24px 0 rgba(0,0,0,0.35)"
+                  : "0 4px 20px 0 rgba(0,0,0,0.06)",
+              }
+        }
       >
+        {/* Table Title / Header inside Card */}
+        {(title || headerActions) && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100 dark:border-slate-800/80">
+            <div className="flex items-center gap-2.5">
+              {icon && (
+                <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center text-sm shrink-0">
+                  {icon}
+                </div>
+              )}
+              <div>
+                {typeof title === "string" ? (
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                    {title}
+                  </h3>
+                ) : (
+                  title
+                )}
+                {subtitle && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
+            </div>
+            {headerActions && (
+              <div className="flex items-center gap-2 shrink-0">
+                {headerActions}
+              </div>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24">
             <div className="w-10 h-10 border-4 border-slate-700 dark:border-primary border-t-transparent rounded-full animate-spin mb-3" />
@@ -210,8 +307,8 @@ export function ErpDataTable<T>({
                     </td>
                   </tr>
                 ) : (
-                  data.map((item) => {
-                    const rowKey = keyExtractor(item);
+                  data.map((item, idx) => {
+                    const rowKey = getKey(item, idx);
 
                     return (
                       <tr

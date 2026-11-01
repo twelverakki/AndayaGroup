@@ -5,7 +5,12 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Checkbox } from "./ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { CurrencyInput } from "./CurrencyInput";
+import {
+  InputGroup,
+  InputGroupInput,
+  InputGroupAddon,
+  InputGroupText,
+} from "./ui/input-group";
 import { Sparkles, PackagePlus, Check, ChevronsUpDown, Plus, PenLine, ListFilter, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "~/lib/api";
@@ -393,24 +398,36 @@ export function QuickItemCreateDialog({
                   <span className="sm:hidden text-[10px] font-bold text-slate-500 block mb-1">
                     Harga Beli / Modal:
                   </span>
-                  <CurrencyInput
-                    value={standardCost}
-                    onChange={handleBaseCostChange}
-                    className="h-10 w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                    placeholder="0"
-                  />
+                  <InputGroup className="h-10">
+                    <InputGroupAddon align="inline-start">
+                      <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      currency
+                      value={standardCost}
+                      onValueChange={handleBaseCostChange}
+                      className="text-xs font-semibold"
+                      placeholder="0"
+                    />
+                  </InputGroup>
                 </div>
 
                 <div className="col-span-3 w-full">
                   <span className="sm:hidden text-[10px] font-bold text-slate-500 block mb-1">
                     Harga Jual:
                   </span>
-                  <CurrencyInput
-                    value={sellPrice}
-                    onChange={setSellPrice}
-                    className="h-10 w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                    placeholder="0"
-                  />
+                  <InputGroup className="h-10">
+                    <InputGroupAddon align="inline-start">
+                      <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      currency
+                      value={sellPrice}
+                      onValueChange={setSellPrice}
+                      className="text-xs font-semibold"
+                      placeholder="0"
+                    />
+                  </InputGroup>
                 </div>
               </div>
 
@@ -472,24 +489,36 @@ export function QuickItemCreateDialog({
                       <span className="sm:hidden text-[10px] font-bold text-slate-500 block mb-1">
                         Harga Beli / Kemasan:
                       </span>
-                      <CurrencyInput
-                        value={boxStandardCost}
-                        onChange={setBoxStandardCost}
-                        className="h-10 w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                        placeholder="0"
-                      />
+                      <InputGroup className="h-10">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={boxStandardCost}
+                          onValueChange={setBoxStandardCost}
+                          className="text-xs font-semibold"
+                          placeholder="0"
+                        />
+                      </InputGroup>
                     </div>
 
                     <div className="col-span-3 w-full animate-in fade-in-30">
                       <span className="sm:hidden text-[10px] font-bold text-slate-500 block mb-1">
                         Harga Jual / Kemasan:
                       </span>
-                      <CurrencyInput
-                        value={boxSellPrice}
-                        onChange={setBoxSellPrice}
-                        className="h-10 w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                        placeholder="0"
-                      />
+                      <InputGroup className="h-10">
+                        <InputGroupAddon align="inline-start">
+                          <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          currency
+                          value={boxSellPrice}
+                          onValueChange={setBoxSellPrice}
+                          className="text-xs font-semibold"
+                          placeholder="0"
+                        />
+                      </InputGroup>
                     </div>
                   </>
                 ) : (

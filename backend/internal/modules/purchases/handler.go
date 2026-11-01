@@ -322,3 +322,58 @@ func (h *PurchasesHandler) HandleGetPayments(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"data": payments})
 }
+
+func (h *PurchasesHandler) HandleUpdatePurchase(c *fiber.Ctx) error {
+	businessIDStr, _ := c.Locals("business_id").(string)
+	businessID, err := uuid.Parse(businessIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid business ID"})
+	}
+
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid purchase ID"})
+	}
+
+	userIDStr, _ := c.Locals("user_id").(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "User context invalid"})
+	}
+
+	var req UpdatePurchaseRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body: " + err.Error()})
+	}
+
+	purchase, err := h.service.UpdatePurchase(c.Context(), businessID, id, userID, req)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Draf pembelian berhasil diperbarui",
+		"data":    purchase,
+	})
+}
+
+func (h *PurchasesHandler) HandleDeletePurchase(c *fiber.Ctx) error {
+	businessIDStr, _ := c.Locals("business_id").(string)
+	businessID, err := uuid.Parse(businessIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid business ID"})
+	}
+
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid purchase ID"})
+	}
+
+	if err := h.service.DeletePurchase(c.Context(), businessID, id); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Draf pembelian berhasil dihapus",
+	})
+}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"andaya-erp/backend/internal/config"
+	"andaya-erp/backend/internal/middleware"
 	"andaya-erp/backend/internal/models"
 
 	"github.com/google/uuid"
@@ -210,6 +211,7 @@ func UpdateUser(ctx context.Context, id uuid.UUID, name, email, status string) (
 		return nil, err
 	}
 
+	middleware.InvalidateAuthStatusCache(id.String())
 	return &u, nil
 }
 
@@ -255,7 +257,12 @@ func UpdateUserAssignments(ctx context.Context, userID uuid.UUID, assignments []
 		}
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	middleware.InvalidateAuthStatusCache(userID.String())
+	return nil
 }
 
 type OwnerBusinessSummary struct {

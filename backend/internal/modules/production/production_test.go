@@ -64,20 +64,11 @@ func TestProductionHPPAndTenantIsolation(t *testing.T) {
 		t.Fatalf("Failed to create finished good item: %v", err)
 	}
 
-	_, err = config.DB.Exec(ctx, `
-		INSERT INTO products (id, business_id, name, sku, unit_type, inventory_mode, purchase_price, sell_price, current_stock, status, created_at, updated_at)
-		VALUES ($1, $2, 'Item Olahan Central Kitchen Test', $3, 'pack', 'batch_thaw', 30000, 45000, 0, 'active', NOW(), NOW())
-	`, fgFnBItemID, tenantFnBUUID, skuFnBItem)
-	if err != nil {
-		t.Fatalf("Failed to create finished good product: %v", err)
-	}
-
 	defer func() {
 		_, _ = config.DB.Exec(ctx, "DELETE FROM stock_movements WHERE item_id IN ($1, $2, $3)", rawDagingID, rawTepungID, fgFnBItemID)
 		_, _ = config.DB.Exec(ctx, "DELETE FROM item_stocks WHERE item_id IN ($1, $2, $3)", rawDagingID, rawTepungID, fgFnBItemID)
-		_, _ = config.DB.Exec(ctx, "DELETE FROM productions WHERE product_id = $1", fgFnBItemID)
+		_, _ = config.DB.Exec(ctx, "DELETE FROM productions WHERE item_id = $1 OR product_id = $1", fgFnBItemID)
 		_, _ = config.DB.Exec(ctx, "DELETE FROM items WHERE id IN ($1, $2, $3)", rawDagingID, rawTepungID, fgFnBItemID)
-		_, _ = config.DB.Exec(ctx, "DELETE FROM products WHERE id = $1", fgFnBItemID)
 	}()
 
 	// Scenario 1: Tenant Isolation - Retail tenant tries to trigger production using Central Kitchen's finished good -> MUST FAIL

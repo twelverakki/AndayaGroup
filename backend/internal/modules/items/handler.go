@@ -2,6 +2,8 @@ package items
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,11 +47,19 @@ func getTenantContext(c *fiber.Ctx) (uuid.UUID, *uuid.UUID, error) {
 	return businessID, outletID, nil
 }
 
+const maxUploadFileSize = 5 * 1024 * 1024 // 5 MB
+
 func (h *ItemsHandler) HandleUploadFile(c *fiber.Ctx) error {
 	file, err := c.FormFile("file")
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"message": "No file uploaded",
+		})
+	}
+
+	if file.Size <= 0 || file.Size > maxUploadFileSize {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Ukuran file maksimal adalah 5 MB",
 		})
 	}
 
@@ -60,7 +70,39 @@ func (h *ItemsHandler) HandleUploadFile(c *fiber.Ctx) error {
 		})
 	}
 
-	filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), uuid.New().String()[:8], ext)
+	// Verify actual binary content via Magic Bytes (first 512 bytes)
+	srcFile, err := file.Open()
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Gagal membaca stream file unggahan",
+		})
+	}
+	defer srcFile.Close()
+
+	headerBuf := make([]byte, 512)
+	n, err := srcFile.Read(headerBuf)
+	if err != nil && err != io.EOF {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Gagal memvalidasi header biner file",
+		})
+	}
+
+	detectedMIME := http.DetectContentType(headerBuf[:n])
+	var canonicalExt string
+	switch detectedMIME {
+	case "image/jpeg":
+		canonicalExt = ".jpg"
+	case "image/png":
+		canonicalExt = ".png"
+	case "image/webp":
+		canonicalExt = ".webp"
+	default:
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Konten file tidak valid: hanya citra biner asli (JPEG, PNG, WebP) yang diizinkan",
+		})
+	}
+
+	filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), uuid.New().String()[:8], canonicalExt)
 	_ = os.MkdirAll("./uploads", 0755)
 	savePath := fmt.Sprintf("./uploads/%s", filename)
 

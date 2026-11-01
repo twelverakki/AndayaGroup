@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useParams } from "react-router";
 import axios from "axios";
-import { CurrencyInput } from "../components/CurrencyInput";
+import {
+  InputGroup,
+  InputGroupInput,
+  InputGroupAddon,
+  InputGroupText,
+} from "../components/ui/input-group";
+import { compressImageFile } from "../lib/image-compressor";
 import { toast, Toaster } from "sonner";
 import {
   Truck,
@@ -77,22 +83,22 @@ export default function DriverClaimPage() {
     fetchClaimData();
   }, [token]);
 
-  // Handle Photo / Receipt file upload
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Photo / Receipt file upload with automatic client-side compression
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Ukuran foto maksimal 5 MB");
-      return;
+    try {
+      const compressed = await compressImageFile(file, {
+        maxWidthOrHeight: 1280,
+        quality: 0.80,
+      });
+      setAttachmentBase64(compressed.dataUrl);
+      const compKB = Math.round(compressed.compressedSize / 1024);
+      toast.success(`Foto struk siap dikirim (${compKB} KB)`);
+    } catch (err: any) {
+      toast.error(err?.message || "Gagal memproses foto struk");
     }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setAttachmentBase64(reader.result as string);
-      toast.success("Foto struk berhasil dipilih");
-    };
-    reader.readAsDataURL(file);
   };
 
   // Submit Claim
@@ -296,12 +302,18 @@ export default function DriverClaimPage() {
                   </span>
                 )}
               </label>
-              <CurrencyInput
-                value={claimedAmount}
-                onChange={setClaimedAmount}
-                placeholder="0"
-                className="bg-slate-950 border-slate-800 text-white text-lg font-mono font-black h-12"
-              />
+              <InputGroup className="bg-slate-950 border-slate-800 h-12 rounded-xl">
+                <InputGroupAddon align="inline-start">
+                  <InputGroupText className="font-bold text-slate-400">Rp</InputGroupText>
+                </InputGroupAddon>
+                <InputGroupInput
+                  currency
+                  value={claimedAmount}
+                  onValueChange={setClaimedAmount}
+                  placeholder="0"
+                  className="text-white text-lg font-mono font-black"
+                />
+              </InputGroup>
               {isExceedingBudget && (
                 <p className="text-[11px] text-amber-400 flex items-center gap-1 pt-0.5">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />

@@ -40,6 +40,7 @@ export interface Purchase {
   invoice_no?: string;
   supplier_id?: string;
   supplier_name: string;
+  purchase_type?: "standard" | "direct";
   status: "draft" | "submitted" | "partially_received" | "received" | "cancelled";
   payment_status: "unpaid" | "partial" | "paid";
   payment_method: "cash" | "bank_transfer" | "credit" | "qris";
@@ -109,14 +110,24 @@ export interface LineItemInput {
   // Dual-UOM Fields (Combined inputs)
   qty_box: number;
   box_cost: number;
+  original_box_cost?: number; // Baseline modal awal dari master barang
   qty_pcs: number;
   pcs_cost: number;
+  original_pcs_cost?: number; // Baseline modal awal dari master barang
 
-  // Legacy / fallback fields
+  // Diskon per Satuan UOM (Per Dus & Per Pcs)
+  box_discount_amount?: number;
+  box_discount_percent?: number;
+  pcs_discount_amount?: number;
+  pcs_discount_percent?: number;
+
+  // Legacy / fallback / total row fields
   uom: "box" | "base";
   qty_ordered: number;
   unit_cost: number;
   discount_amount: number;
+  discount_percent?: number;
+  discount_mode?: "nominal" | "percent";
   notes?: string;
 }
 

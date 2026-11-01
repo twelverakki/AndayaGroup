@@ -515,6 +515,7 @@ func (s *ItemsService) UnboxItem(ctx context.Context, businessID uuid.UUID, outl
 		movementNotes += " - " + req.Notes
 	}
 
+	totalUnboxCost := int64(math.Round(looseQtyToAdd * float64(item.StandardCost)))
 	_, err = tx.Exec(ctx, `
 		INSERT INTO stock_movements (
 			business_id, item_id, source_document_type, from_location_type, from_outlet_id,
@@ -523,7 +524,7 @@ func (s *ItemsService) UnboxItem(ctx context.Context, businessID uuid.UUID, outl
 			$1, $2, 'UNBOX_TO_SHELF', 'warehouse_sealed', $3,
 			'retail_shelf', $3, 'loose', $4, $5, $6, $7, $8, NOW()
 		)
-	`, businessID, itemID, targetOutletID, looseQtyToAdd, item.StandardCost, int64(looseQtyToAdd)*item.StandardCost, userID, movementNotes)
+	`, businessID, itemID, targetOutletID, looseQtyToAdd, item.StandardCost, totalUnboxCost, userID, movementNotes)
 	if err != nil {
 		return nil, fmt.Errorf("gagal mencatat ledger pergerakan stok: %w", err)
 	}
@@ -658,7 +659,7 @@ func (s *ItemsService) AdjustStock(ctx context.Context, businessID uuid.UUID, ou
 			toLoc = "inventory_adjustment_loss"
 		}
 
-		costAmount := int64(absDiscrepancy) * item.StandardCost
+		costAmount := int64(math.Round(absDiscrepancy * float64(item.StandardCost)))
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO stock_movements (

@@ -156,6 +156,8 @@ func main() {
 	purchasesGroup := scopedAPI.Group("/purchases")
 	purchasesGroup.Get("/", purchasesHandler.HandleGetPurchases)
 	purchasesGroup.Post("/", purchasesHandler.HandleCreatePurchase)
+	purchasesGroup.Put("/:id", purchasesHandler.HandleUpdatePurchase)
+	purchasesGroup.Delete("/:id", purchasesHandler.HandleDeletePurchase)
 	purchasesGroup.Get("/purchasable-items", purchasesHandler.HandleGetPurchasableItems)
 	purchasesGroup.Get("/:id", purchasesHandler.HandleGetPurchaseByID)
 	purchasesGroup.Post("/:id/receive", purchasesHandler.HandleReceivePurchase)
@@ -172,6 +174,8 @@ func main() {
 	procurementsGroup := scopedAPI.Group("/procurements")
 	procurementsGroup.Get("/", purchasesHandler.HandleGetPurchases)
 	procurementsGroup.Post("/", purchasesHandler.HandleCreatePurchase)
+	procurementsGroup.Put("/:id", purchasesHandler.HandleUpdatePurchase)
+	procurementsGroup.Delete("/:id", purchasesHandler.HandleDeletePurchase)
 	procurementsGroup.Get("/:id", purchasesHandler.HandleGetPurchaseByID)
 	procurementsGroup.Post("/:id/receive", purchasesHandler.HandleReceivePurchase)
 

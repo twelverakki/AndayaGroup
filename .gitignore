@@ -73,3 +73,8 @@ Desktop.ini
 .gemini/
 .agents/scratch/
 brain/
+
+# 9. Folder Catatan Belajar Pribadi (Local Learning Notes)
+belajar/
+/belajar/
+backend/erp-api

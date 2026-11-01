@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"andaya-erp/backend/internal/config"
@@ -9,6 +11,31 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+const authStatusCacheTTL = 30 * time.Second
+
+type cachedAuthStatus struct {
+	userActive  bool
+	staffActive bool
+	suspension  string
+	expiresAt   time.Time
+}
+
+var authStatusCache sync.Map
+
+// InvalidateAuthStatusCache immediately evicts all cached status entries for a given userID
+// so account suspension or outlet reassignment takes effect on the very next HTTP request.
+func InvalidateAuthStatusCache(userID string) {
+	if userID == "" {
+		return
+	}
+	authStatusCache.Range(func(key, _ interface{}) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, userID+":") {
+			authStatusCache.Delete(key)
+		}
+		return true
+	})
+}
 
 func clearTokenCookie(c *fiber.Ctx) {
 	c.Cookie(&fiber.Cookie{
@@ -23,6 +50,7 @@ func clearTokenCookie(c *fiber.Ctx) {
 }
 
 // AuthGuard parses and validates JWT tokens from cookies or Authorization header
+// and verifies live account status using a 30-second read-through in-memory cache.
 func AuthGuard() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		var tokenString string
@@ -46,7 +74,6 @@ func AuthGuard() fiber.Handler {
 
 		// Parse and validate token
 		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-			// Ensure token signing method is HMAC
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fiber.ErrUnauthorized
 			}
@@ -72,32 +99,69 @@ func AuthGuard() fiber.Handler {
 		businessID, _ := claims["business_id"].(string)
 		outletID, _ := claims["outlet_id"].(string)
 
-		// Check live active status in database to immediately enforce suspension / deactivation
+		// Verify active status using Read-Through In-Memory Cache (TTL 30s)
 		if userID != "" && config.DB != nil {
+			cacheKey := userID + ":" + outletID
+			now := time.Now()
+
+			if val, found := authStatusCache.Load(cacheKey); found {
+				entry := val.(cachedAuthStatus)
+				if now.Before(entry.expiresAt) {
+					if !entry.userActive || !entry.staffActive {
+						clearTokenCookie(c)
+						return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+							"code":    "ACCOUNT_SUSPENDED",
+							"message": entry.suspension,
+						})
+					}
+					goto Verified
+				}
+			}
+
 			var userStatus string
 			err := config.DB.QueryRow(c.Context(), "SELECT status FROM users WHERE id = $1", userID).Scan(&userStatus)
 			if err != nil || userStatus != "active" {
+				msg := "Akun Anda telah dinonaktifkan oleh administrator. Silakan hubungi pemilik usaha."
+				authStatusCache.Store(cacheKey, cachedAuthStatus{
+					userActive:  false,
+					staffActive: false,
+					suspension:  msg,
+					expiresAt:   now.Add(authStatusCacheTTL),
+				})
 				clearTokenCookie(c)
 				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 					"code":    "ACCOUNT_SUSPENDED",
-					"message": "Akun Anda telah dinonaktifkan oleh administrator. Silakan hubungi pemilik usaha.",
+					"message": msg,
 				})
 			}
 
-			// For staff with specific outlet assignment, also check outlet staff status
 			if outletID != "" {
 				var staffStatus string
 				err := config.DB.QueryRow(c.Context(), "SELECT status FROM outlet_staff WHERE user_id = $1 AND outlet_id = $2", userID, outletID).Scan(&staffStatus)
 				if err == nil && staffStatus != "active" {
+					msg := "Penugasan outlet Anda telah dinonaktifkan oleh administrator. Silakan hubungi pemilik usaha."
+					authStatusCache.Store(cacheKey, cachedAuthStatus{
+						userActive:  true,
+						staffActive: false,
+						suspension:  msg,
+						expiresAt:   now.Add(authStatusCacheTTL),
+					})
 					clearTokenCookie(c)
 					return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 						"code":    "ACCOUNT_SUSPENDED",
-						"message": "Penugasan outlet Anda telah dinonaktifkan oleh administrator. Silakan hubungi pemilik usaha.",
+						"message": msg,
 					})
 				}
 			}
+
+			authStatusCache.Store(cacheKey, cachedAuthStatus{
+				userActive:  true,
+				staffActive: true,
+				expiresAt:   now.Add(authStatusCacheTTL),
+			})
 		}
 
+	Verified:
 		c.Locals("user_id", userID)
 		c.Locals("role", role)
 		c.Locals("business_id", businessID)
@@ -110,14 +174,10 @@ func AuthGuard() fiber.Handler {
 // TenantContext ensures that business_id (and optionally outlet_id) is set and injected
 func TenantContext() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// These variables must be populated by the AuthGuard middleware
 		businessID := c.Locals("business_id")
 		role := c.Locals("role")
 
-		// If the user is an owner, they must have a business_id active context (or outlet_id for Yasaka)
-		// For staff/manager, they must have an outlet_id and business_id active context.
 		if businessID == nil || businessID == "" {
-			// We check if outlet_id is present (for outlet-scoped owners like Yasaka)
 			outletID := c.Locals("outlet_id")
 			if (outletID == nil || outletID == "") && role != "superadmin" {
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
@@ -130,16 +190,43 @@ func TenantContext() fiber.Handler {
 	}
 }
 
-// CORS returns standard CORS configuration
+func isAllowedOrigin(origin string) bool {
+	if origin == "" {
+		return false
+	}
+
+	// Check explicit whitelist from CORS_ALLOWED_ORIGINS (comma-separated)
+	if envOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); envOrigins != "" {
+		for _, allowed := range strings.Split(envOrigins, ",") {
+			if strings.EqualFold(strings.TrimSpace(allowed), origin) {
+				return true
+			}
+		}
+	}
+
+	// In non-production environments, permit standard local development origins
+	if config.AppConfig == nil || config.AppConfig.Env != "production" {
+		if strings.HasPrefix(origin, "http://localhost:") ||
+			strings.HasPrefix(origin, "http://127.0.0.1:") ||
+			origin == "http://localhost" ||
+			origin == "http://127.0.0.1" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// CORS enforces a strict Origin whitelist rather than blind Origin reflection
 func CORS() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// In development, we can allow localhost or read from config in production
 		origin := c.Get("Origin")
-		if origin == "" {
-			origin = "*"
+		if isAllowedOrigin(origin) {
+			c.Set("Access-Control-Allow-Origin", origin)
+			c.Set("Access-Control-Allow-Credentials", "true")
+			c.Set("Vary", "Origin")
 		}
-		c.Set("Access-Control-Allow-Origin", origin)
-		c.Set("Access-Control-Allow-Credentials", "true")
+
 		c.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, Cookie")
 		c.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 
